@@ -5,14 +5,17 @@
 // Imports
 //======================================================================================================================
 
-use crate::runtime::{
-    fail::Fail,
-    types::{
-        demi_qresult_t,
-        demi_sgarray_t,
+use crate::{
+    runtime::{
+        fail::Fail,
+        types::{
+            demi_qresult_t,
+            demi_sgarray_t,
+        },
+        QDesc,
+        QToken,
     },
-    QDesc,
-    QToken,
+    inetstack::protocols::tcp::peer::TcpState,
 };
 use ::std::{
     net::SocketAddrV4,
@@ -311,6 +314,32 @@ impl NetworkLibOS {
             NetworkLibOS::Catcollar(libos) => libos.sgafree(sga),
             #[cfg(feature = "catnip-libos")]
             NetworkLibOS::Catnip(libos) => libos.sgafree(sga),
+        }
+    }
+
+    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.migrate_out_tcp_connection(fd),
+        }
+    }
+
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> Result<QDesc, Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.migrate_in_tcp_connection(state),
         }
     }
 }

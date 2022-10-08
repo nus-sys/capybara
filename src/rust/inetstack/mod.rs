@@ -15,7 +15,10 @@ use crate::{
                 EtherType2,
                 Ethernet2Header,
             },
-            tcp::operations::ConnectFuture,
+            tcp::{
+                operations::ConnectFuture,
+                peer::TcpState,
+            },
             udp::UdpOperation,
             Peer,
         },
@@ -653,5 +656,52 @@ impl InetStack {
             self.clock.advance_clock(Instant::now());
         }
         self.ts_iters = (self.ts_iters + 1) % TIMER_RESOLUTION;
+    }
+
+    pub fn get_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+        match self.file_table.get(fd) {
+            Some(qtype) => {
+                match QType::try_from(qtype) {
+                    Ok(QType::TcpSocket) => {
+                        self.ipv4.tcp.get_tcp_state(fd)
+                    }
+                    _ => {
+                        info!("Found unsupported socket type: {}", qtype);
+                        Err(Fail::new(EINVAL, "invalid queue type"))
+                    }
+                }
+            },
+            None => {
+                panic!("No such socket found on file table..");
+            }
+        }
+    }
+
+    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+        match self.file_table.get(fd) {
+            Some(qtype) => {
+                match QType::try_from(qtype) {
+                    Ok(QType::TcpSocket) => {
+                        let state = self.ipv4.tcp.get_tcp_state(fd)?;
+                        self.ipv4.tcp.migrate_out_tcp_connection(fd)?;
+                        self.file_table.free(fd);
+                        Ok(state)
+                    }
+                    _ => {
+                        info!("Found unsupported socket type: {}", qtype);
+                        Err(Fail::new(EINVAL, "invalid queue type"))
+                    }
+                }
+            },
+            None => {
+                Err(Fail::new(EBADF, "bad file descriptor"))
+            }
+        }
+    }
+
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> Result<QDesc, Fail> {
+        let qd = self.file_table.alloc(u32::from(QType::TcpSocket));
+        self.ipv4.tcp.migrate_in_tcp_connection(state, qd)?;
+        Ok(qd)
     }
 }

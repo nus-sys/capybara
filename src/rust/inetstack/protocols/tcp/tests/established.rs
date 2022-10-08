@@ -45,7 +45,7 @@ use ::std::{
 //=============================================================================
 
 /// Cooks a buffer.
-fn cook_buffer(size: usize, stamp: Option<u8>) -> Buffer {
+pub fn cook_buffer(size: usize, stamp: Option<u8>) -> Buffer {
     let mut buf: DataBuffer = DataBuffer::new(size).unwrap();
     for i in 0..size {
         buf[i] = stamp.unwrap_or(i as u8);
@@ -55,7 +55,7 @@ fn cook_buffer(size: usize, stamp: Option<u8>) -> Buffer {
 
 //=============================================================================
 
-fn send_data(
+pub fn send_data(
     ctx: &mut Context,
     now: &mut Instant,
     receiver: &mut Engine,
@@ -103,7 +103,7 @@ fn send_data(
 
 //=============================================================================
 
-fn recv_data(ctx: &mut Context, receiver: &mut Engine, sender: &mut Engine, receiver_fd: QDesc, bytes: Buffer) {
+pub fn recv_data(ctx: &mut Context, receiver: &mut Engine, sender: &mut Engine, receiver_fd: QDesc, bytes: Buffer) {
     trace!(
         "recv_data ====> pop: {:?} -> {:?}",
         sender.rt.ipv4_addr,
@@ -153,7 +153,7 @@ fn recv_pure_ack(now: &mut Instant, sender: &mut Engine, receiver: &mut Engine, 
 
 //=============================================================================
 
-fn send_recv(
+pub fn send_recv(
     ctx: &mut Context,
     now: &mut Instant,
     server: &mut Engine,
@@ -188,7 +188,7 @@ fn send_recv(
 
 //=============================================================================
 
-fn send_recv_round(
+pub fn send_recv_round(
     ctx: &mut Context,
     now: &mut Instant,
     server: &mut Engine,
@@ -226,7 +226,7 @@ fn send_recv_round(
 
 //=============================================================================
 
-fn connection_hangup(
+pub fn connection_hangup(
     _ctx: &mut Context,
     now: &mut Instant,
     server: &mut Engine,

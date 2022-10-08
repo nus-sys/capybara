@@ -7,9 +7,16 @@ mod ctrlblk;
 mod rto;
 mod sender;
 
-pub use self::ctrlblk::{
-    ControlBlock,
-    State,
+pub use self::{
+    ctrlblk::{
+        ControlBlock,
+        Receiver,
+        State,
+    },
+    sender::{
+        Sender,
+        UnackedSegment,
+    },
 };
 
 use self::background::background;

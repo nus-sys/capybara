@@ -7,7 +7,11 @@
 
 use super::{
     active_open::ActiveOpenSocket,
-    established::EstablishedSocket,
+    established::{
+        EstablishedSocket,
+        UnackedSegment,
+        State,
+    },
     isn_generator::IsnGenerator,
     passive_open::PassiveSocket,
 };
@@ -24,7 +28,15 @@ use crate::{
         },
         ipv4::Ipv4Header,
         tcp::{
-            established::ControlBlock,
+            established::{
+                ControlBlock,
+                Sender,
+                Receiver,
+                congestion_control::{
+                    self,
+                    CongestionControl,
+                },
+            },
             operations::{
                 AcceptFuture,
                 ConnectFuture,
@@ -72,11 +84,16 @@ use ::std::{
         RefCell,
         RefMut,
     },
-    collections::HashMap,
+    collections::{
+        HashMap,
+        VecDeque,
+        hash_map::Entry,
+    },
     net::{
         Ipv4Addr,
         SocketAddrV4,
     },
+    ops::Deref,
     rc::Rc,
     task::{
         Context,
@@ -92,11 +109,13 @@ use crate::timer;
 // Enumerations
 //==============================================================================
 
-enum Socket {
+#[derive(Debug)]
+pub enum Socket {
     Inactive { local: Option<SocketAddrV4> },
     Listening { local: SocketAddrV4 },
     Connecting { local: SocketAddrV4, remote: SocketAddrV4 },
     Established { local: SocketAddrV4, remote: SocketAddrV4 },
+    MigratedOut { local: SocketAddrV4, remote: SocketAddrV4 },
 }
 
 //==============================================================================
@@ -109,7 +128,7 @@ pub struct Inner {
     ephemeral_ports: EphemeralPorts,
 
     // FD -> local port
-    sockets: HashMap<QDesc, Socket>,
+    pub sockets: HashMap<QDesc, Socket>,
 
     passive: HashMap<SocketAddrV4, PassiveSocket>,
     connecting: HashMap<(SocketAddrV4, SocketAddrV4), ActiveOpenSocket>,
@@ -129,6 +148,30 @@ pub struct Inner {
 
 pub struct TcpPeer {
     pub(super) inner: Rc<RefCell<Inner>>,
+}
+
+/// State needed for TCP Migration
+#[derive(Debug, Clone)]
+pub struct TcpState {
+    pub local: SocketAddrV4,
+    pub remote: SocketAddrV4,
+
+    pub reader_next: SeqNumber,
+    pub receive_next: SeqNumber,
+    pub recv_queue: VecDeque<Buffer>,
+
+    pub seq_no: SeqNumber,
+    pub send_next: SeqNumber,
+    pub send_window: u32,
+    pub send_window_last_update_seq: SeqNumber,
+    pub send_window_last_update_ack: SeqNumber,
+    pub window_scale: u8,
+    pub mss: usize,
+    pub unacked_queue: VecDeque<UnackedSegment>,
+    pub unsent_queue: VecDeque<Buffer>,
+
+    pub receiver_window_size: u32,
+    pub receiver_window_scale: u32,
 }
 
 //==============================================================================
@@ -390,6 +433,7 @@ impl TcpPeer {
             Some(Socket::Connecting { .. }) => return Poll::Ready(Err(Fail::new(EINPROGRESS, "socket connecting"))),
             Some(Socket::Inactive { .. }) => return Poll::Ready(Err(Fail::new(EBADF, "socket inactive"))),
             Some(Socket::Listening { .. }) => return Poll::Ready(Err(Fail::new(ENOTCONN, "socket listening"))),
+            Some(Socket::MigratedOut { .. }) => return Poll::Ready(Err(Fail::new(EBADF, "socket migrated out"))),
             None => return Poll::Ready(Err(Fail::new(EBADF, "bad queue descriptor"))),
         };
         match inner.established.get(&key) {
@@ -483,6 +527,192 @@ impl TcpPeer {
             Some(ref s) => Ok(s.endpoints()),
             None => Err(Fail::new(ENOTCONN, "connection not established")),
         }
+    }
+
+    pub fn get_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+        info!("Retrieving TCP State for {:?}!", fd);
+        let details =  "We can only migrate out established connections.";
+        
+        let inner = self.inner.borrow_mut();
+
+        match inner.sockets.get(&fd) {
+            Some(Socket::Established { local, remote }) => {
+                let key = (*local, *remote);
+                match inner.established.get(&key) {
+                    Some(connection) => {
+                        let cb = connection.cb.clone();
+                        let mss = cb.get_mss();
+                        let (send_window, _) = cb.get_send_window();
+                        let (send_unacked, _) = cb.get_send_unacked();
+
+                        let (send_next, _) = cb.get_send_next();
+                        let receive_next = cb.receiver.receive_next.get();
+                        let sender_window_scale = cb.get_sender_window_scale();
+                        //let max_window_size = 
+
+                        let reader_next = cb.receiver.reader_next.get();
+                        //let receive_seq_no = receive_next + SeqNumber::from(cb.get_receive_window_size());
+
+                        Ok(TcpState::new(
+                            *local,
+                            *remote,
+
+                            reader_next,
+                            receive_next,
+                            cb.take_receive_queue(), // CHANGE THIS
+
+                            send_unacked,
+                            send_next,
+                            send_window,
+                            cb.sender.get_send_window_last_update_seq(),
+                            cb.sender.get_send_window_last_update_ack(),
+                            sender_window_scale,
+                            mss,
+                            cb.take_unacked_queue(),
+                            cb.take_unsent_queue(),
+
+                            cb.get_receiver_max_window_size(),
+                            cb.get_receiver_window_scale(),
+                        ))
+                    },
+                    None => {
+                        Err(Fail::new(EINVAL, details))
+                    }
+                }
+            },
+            _ => {
+                Err(Fail::new(EINVAL, details))
+            }
+        }
+    }
+
+    /// 1) Change status of our socket to MigratedOut
+    /// 2) Change status of ControlBlock state to Migrated out.
+    /// 3) Remove socket from Established hashmap.
+    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<(), Fail> {
+        let mut inner = self.inner.borrow_mut();
+        let socket = inner.sockets.get_mut(&fd);
+
+        let (local, remote) = match socket {
+            None => {
+                debug!("No entry in `sockets` for fd: {:?}", fd);
+                return Err(Fail::new(EBADF, "socket does not exist"));
+            },
+            Some(Socket::Established { local, remote }) => {
+                (*local, *remote)
+            },
+            Some(s) => {
+                panic!("Unsupported Socket variant: {:?} for migrating out.", s)
+            },
+        };
+
+        // 1) Change status of our socket to MigratedOut
+        *socket.unwrap() = Socket::MigratedOut { local, remote };
+
+        // 2) Change status of ControlBlock state to Migrated out.
+        let key = (local, remote);
+        let mut entry = match inner.established.entry(key) {
+            Entry::Occupied(entry) => entry,
+            Entry::Vacant(_) => {
+                return Err(Fail::new(EINVAL, "socket not established"));
+            }
+        };
+
+        let established = entry.get_mut();
+        match established.cb.get_state() {
+            State::Established => (),
+            s => panic!("We only migrate out established connections. Found: {:?}", s),
+        }
+
+        // 3) Remove socket from Established hashmap.
+        if let None = inner.established.remove(&key) {
+            // This panic is okay. This should never happen and represents an internal error
+            // in our implementation.
+            panic!("Established socket somehow missing.");
+        }
+
+        Ok(())
+
+    }
+
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState, qd: QDesc) -> Result<(), Fail> {
+        let mut inner = self.inner.borrow_mut();
+
+        // Check if keys already exist first. This way we don't have to undo changes we make to
+        // the state.
+        if inner.established.contains_key(&(state.local, state.remote)) {
+            debug!("Key already exists in established hashmap.");
+            // TODO: Not sure if there is a better error to use here.
+            return Err(Fail::new(EBUSY, "This connection already exists."))
+        }
+
+        // Connection should either not exist or have been migrated out (and now we are migrating
+        // it back in).
+        match inner.sockets.entry(qd) {
+            Entry::Occupied(mut e) => {
+                match e.get_mut() {
+                    e@Socket::MigratedOut { .. } => {
+                        *e = Socket::Established { local: state.local, remote: state.remote };
+                    },
+                    _ => {
+                        debug!("Key already exists in sockets hashmap.");
+                        return Err(Fail::new(EBADF, "bad file descriptor"));
+                    }
+                }
+            },
+            Entry::Vacant(v) => {
+                let socket = Socket::Established { local: state.local, remote: state.remote };
+                v.insert(socket);
+            }
+        }
+
+        let receiver = Receiver::migrated_in(
+            state.reader_next,
+            state.receive_next,
+            state.recv_queue,
+        );
+
+        let sender = Sender::migrated_in(
+            state.seq_no,
+            state.send_next,
+            state.send_window,
+            state.send_window_last_update_seq,
+            state.send_window_last_update_ack,
+            state.window_scale,
+            state.mss,
+            state.unacked_queue,
+            state.unsent_queue,
+        );
+
+        let cb = ControlBlock::migrated_in(
+            state.local,
+            state.remote,
+            inner.rt.clone(),
+            inner.scheduler.clone(),
+            inner.clock.clone(),
+            inner.local_link_addr,
+            inner.tcp_config.clone(),
+            inner.arp.clone(),
+            inner.tcp_config.get_ack_delay_timeout(),
+            state.receiver_window_size,
+            state.receiver_window_scale,
+            sender,
+            receiver,
+            congestion_control::None::new,
+            None,
+        );
+
+        let established = EstablishedSocket::new(cb, qd, inner.dead_socket_tx.clone());
+
+        if let Some(_) = inner.established.insert((state.local, state.remote), established) {
+            // This condition should have been checked for at the beginning of this function.
+            unreachable!();
+        }
+
+        // This IP might have already been migrated in. That's okay.
+        //inner.migrated_in_connections.insert(state.local.get_address());
+
+        Ok(())
     }
 }
 
@@ -602,5 +832,101 @@ impl Inner {
         self.sockets.insert(fd, Socket::Established { local, remote });
 
         Poll::Ready(Ok(()))
+    }
+
+    pub fn sockets(&self) -> &HashMap<QDesc, Socket> {
+        &self.sockets
+    }
+}
+
+impl PartialEq<Self> for TcpState {
+    fn eq(&self, other: &Self) -> bool {
+        if !(
+            (self.remote == other.remote) &&
+            (self.local == other.local) &&
+            (self.reader_next == self.reader_next) &&
+            (self.receive_next == other.receive_next) &&
+
+            (self.seq_no == other.seq_no) &&
+            (self.send_next == other.send_next) &&
+            (self.send_window == other.send_window) &&
+            (self.send_window_last_update_seq == other.send_window_last_update_seq) &&
+            (self.send_window_last_update_ack == other.send_window_last_update_ack) &&
+            (self.window_scale == other.window_scale) &&
+            (self.mss == other.mss) &&
+
+            (self.receiver_window_size == other.receiver_window_size) &&
+            (self.receiver_window_scale == other.receiver_window_scale)
+        ) {
+            return false;
+        }
+
+        for (buf1, buf2) in std::iter::zip(&self.recv_queue, &other.recv_queue) {
+            for (byte1, byte2) in std::iter::zip(buf1.deref(), buf2.deref()) {
+                if byte1 != byte2 { return false; }
+            }
+        }
+
+        for (buf1, buf2) in std::iter::zip(&self.unsent_queue, &other.unsent_queue) {
+            for (byte1, byte2) in std::iter::zip(buf1.deref(), buf2.deref()) {
+                if byte1 != byte2 { return false; }
+            }
+        }
+
+        for (UnackedSegment{bytes: buf1, ..}, UnackedSegment{bytes: buf2, ..}) in std::iter::zip(&self.unacked_queue, &other.unacked_queue) {
+            for (byte1, byte2) in std::iter::zip(buf1.deref(), buf2.deref()) {
+                if byte1 != byte2 { return false; }
+            }
+        }
+
+        true
+    }
+} 
+
+impl Eq for TcpState { }
+
+impl TcpState {
+    pub fn new(
+        local: SocketAddrV4,
+        remote: SocketAddrV4,
+
+        reader_next: SeqNumber,
+        receive_next: SeqNumber,
+        recv_queue: VecDeque<Buffer>,
+
+        seq_no: SeqNumber,
+        send_next: SeqNumber,
+        send_window: u32,
+        send_window_last_update_seq: SeqNumber,
+        send_window_last_update_ack: SeqNumber,
+        window_scale: u8,
+        mss: usize,
+        unacked_queue: VecDeque<UnackedSegment>,
+        unsent_queue: VecDeque<Buffer>,
+
+        receiver_window_size: u32,
+        receiver_window_scale: u32,
+    ) -> Self {
+        Self {
+            local,
+            remote,
+
+            reader_next,
+            receive_next,
+            recv_queue,
+
+            seq_no,
+            send_next,
+            send_window,
+            send_window_last_update_seq,
+            send_window_last_update_ack,
+            window_scale,
+            mss,
+            unacked_queue,
+            unsent_queue,
+
+            receiver_window_size,
+            receiver_window_scale,
+        }
     }
 }

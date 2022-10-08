@@ -3,6 +3,7 @@
 
 pub mod established;
 pub mod setup;
+mod tcp_migration;
 
 use crate::{
     inetstack::protocols::{
@@ -82,4 +83,12 @@ pub fn check_packet_pure_ack(
     assert_eq!(tcp_payload.len(), 0);
     assert_eq!(tcp_header.ack, true);
     assert_eq!(tcp_header.ack_num, ack_num);
+}
+
+fn extract_headers(bytes: Buffer) -> (Ethernet2Header, Ipv4Header, TcpHeader, Buffer) {
+    let (eth2_header, eth2_payload) = Ethernet2Header::parse(bytes).unwrap();
+    let (ipv4_header, ipv4_payload) = Ipv4Header::parse(eth2_payload).unwrap();
+    let (tcp_header, tcp_payload) = TcpHeader::parse(&ipv4_header, ipv4_payload, false).unwrap();
+
+    (eth2_header, ipv4_header, tcp_header, tcp_payload)
 }

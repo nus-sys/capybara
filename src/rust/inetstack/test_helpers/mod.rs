@@ -41,6 +41,8 @@ pub const BOB_MAC: MacAddress = MacAddress::new([0xab, 0x89, 0x67, 0x45, 0x23, 0
 pub const BOB_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 2);
 pub const CARRIE_MAC: MacAddress = MacAddress::new([0xef, 0xcd, 0xab, 0x89, 0x67, 0x45]);
 pub const CARRIE_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 3);
+pub const JUAN_MAC: MacAddress = MacAddress::new([0x18, 0x32, 0xef, 0xde, 0xad, 0xff]);
+pub const JUAN_IPV4: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 69);
 
 //==============================================================================
 // Standalone Functions
@@ -82,6 +84,7 @@ pub fn new_alice2(now: Instant) -> Engine {
     let mut arp: HashMap<Ipv4Addr, MacAddress> = HashMap::<Ipv4Addr, MacAddress>::new();
     arp.insert(ALICE_IPV4, ALICE_MAC);
     arp.insert(BOB_IPV4, BOB_MAC);
+    arp.insert(JUAN_IPV4, JUAN_MAC);
     let arp_options = ArpConfig::new(
         Some(Duration::from_secs(600)),
         Some(Duration::from_secs(1)),
@@ -128,6 +131,26 @@ pub fn new_carrie(now: Instant) -> Engine {
     let tcp_config = TcpConfig::default();
 
     let rt = TestRuntime::new(now, arp_options, udp_config, tcp_config, CARRIE_MAC, CARRIE_IPV4);
+    let scheduler: Scheduler = rt.scheduler.clone();
+    let clock: TimerRc = rt.clock.clone();
+    Engine::new(rt, scheduler, clock).unwrap()
+}
+
+pub fn new_juan(now: Instant) -> Engine {
+    let mut arp: HashMap<Ipv4Addr, MacAddress> = HashMap::<Ipv4Addr, MacAddress>::new();
+    arp.insert(ALICE_IPV4, ALICE_MAC);
+    
+    let arp_options = ArpConfig::new(
+        Some(Duration::from_secs(600)),
+        Some(Duration::from_secs(1)),
+        Some(2),
+        Some(arp),
+        Some(false),
+    );
+    let udp_config = UdpConfig::default();
+    let tcp_config = TcpConfig::default();
+
+    let rt = TestRuntime::new(now, arp_options, udp_config, tcp_config, JUAN_MAC, JUAN_IPV4);
     let scheduler: Scheduler = rt.scheduler.clone();
     let clock: TimerRc = rt.clock.clone();
     Engine::new(rt, scheduler, clock).unwrap()

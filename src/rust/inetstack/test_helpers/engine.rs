@@ -8,11 +8,14 @@ use crate::{
             EtherType2,
             Ethernet2Header,
         },
-        tcp::operations::{
-            AcceptFuture,
-            ConnectFuture,
-            PopFuture,
-            PushFuture,
+        tcp::{
+            operations::{
+                AcceptFuture,
+                ConnectFuture,
+                PopFuture,
+                PushFuture,
+            },
+            peer::TcpState,
         },
         udp::UdpPopFuture,
         Peer,
@@ -180,5 +183,29 @@ impl Engine {
 
     pub fn export_arp_cache(&self) -> HashMap<Ipv4Addr, MacAddress> {
         self.arp.export_cache()
+    }
+
+    pub fn tcp_migrate_in_connection(&mut self, state: TcpState) -> Result<QDesc, Fail> {
+        let newfd = self.file_table.alloc(u32::from(QType::TcpSocket));
+
+        self.ipv4.tcp.migrate_in_tcp_connection(state, newfd)?;
+        Ok(newfd)
+    }
+
+    pub fn tcp_migrate_out_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+        // Clean up file_table
+        if let None = self.file_table.free(fd) {
+            // Connection not in file table.
+            return Err(Fail::new(libc::EBADF, "no such connection"));
+        }
+
+        let state = self.tcp_get_state(fd)?;
+        self.ipv4.tcp.migrate_out_tcp_connection(fd)?;
+
+        Ok(state)
+    }
+
+    pub fn tcp_get_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+        self.ipv4.tcp.get_tcp_state(fd)
     }
 }

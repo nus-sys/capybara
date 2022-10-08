@@ -27,6 +27,7 @@ use crate::{
         QDesc,
         QToken,
     },
+    inetstack::protocols::tcp::peer::TcpState,
 };
 use ::std::{
     env,
@@ -220,6 +221,18 @@ impl LibOS {
     pub fn sgafree(&self, sga: demi_sgarray_t) -> Result<(), Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.sgafree(sga),
+        }
+    }
+
+    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.migrate_out_tcp_connection(fd),
+        }
+    }
+
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> Result<QDesc, Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.migrate_in_tcp_connection(state),
         }
     }
 }

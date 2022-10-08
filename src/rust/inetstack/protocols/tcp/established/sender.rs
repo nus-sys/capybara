@@ -38,10 +38,22 @@ use ::std::{
 // ToDo: We currently allocate these on the fly when we add a buffer to the queue.  Would be more efficient to have a
 // buffer structure that held everything we need directly, thus avoiding this extra wrapper.
 //
+#[derive(Debug, Clone)]
 pub struct UnackedSegment {
     pub bytes: Buffer,
     // Set to `None` on retransmission to implement Karn's algorithm.
     pub initial_tx: Option<Instant>,
+}
+
+impl PartialEq for UnackedSegment {
+    fn eq(&self, other: &Self) -> bool {
+        use std::ops::Deref;
+
+        for (b1, b2) in std::iter::zip(self.bytes.deref(), other.bytes.deref()) {
+            if b1 != b2 { return false; }
+        }
+        self.initial_tx == other.initial_tx
+    }
 }
 
 /// Hard limit for unsent queue.
@@ -124,12 +136,47 @@ impl Sender {
         }
     }
 
+    pub fn migrated_in(
+        seq_no: SeqNumber,
+        send_next: SeqNumber,
+        send_window: u32,
+        send_window_last_update_seq: SeqNumber,
+        send_window_last_update_ack: SeqNumber,
+        window_scale: u8,
+        mss: usize,
+        unacked_queue: VecDeque<UnackedSegment>,
+        unsent_queue: VecDeque<Buffer>,
+    ) -> Self {
+        Self {
+            send_unacked: WatchedValue::new(seq_no),
+            unacked_queue: RefCell::new(unacked_queue),
+            send_next: WatchedValue::new(send_next),
+            unsent_queue: RefCell::new(unsent_queue),
+            unsent_seq_no: WatchedValue::new(seq_no),
+
+            send_window: WatchedValue::new(send_window),
+            send_window_last_update_seq: Cell::new(send_window_last_update_seq),
+            send_window_last_update_ack: Cell::new(send_window_last_update_ack),
+
+            window_scale,
+            mss,
+        }
+    }
+
     pub fn get_mss(&self) -> usize {
         self.mss
     }
 
     pub fn get_send_window(&self) -> (u32, WatchFuture<u32>) {
         self.send_window.watch()
+    }
+
+    pub fn get_send_window_last_update_seq(&self) -> SeqNumber {
+        self.send_window_last_update_seq.get()
+    }
+
+    pub fn get_send_window_last_update_ack(&self) -> SeqNumber {
+        self.send_window_last_update_ack.get()
     }
 
     pub fn get_send_unacked(&self) -> (SeqNumber, WatchFuture<SeqNumber>) {
@@ -375,5 +422,21 @@ impl Sender {
 
     pub fn remote_mss(&self) -> usize {
         self.mss
+    }
+
+    pub fn get_window_scale(&self) -> u8 {
+        self.window_scale
+    }
+
+    pub fn take_unsent_queue(&self) -> VecDeque<Buffer> {
+        let mut temp = VecDeque::<Buffer>::with_capacity(0);
+        std::mem::swap(&mut temp, &mut *self.unsent_queue.borrow_mut());
+        temp
+    }
+
+    pub fn take_unacked_queue(&self) -> VecDeque<UnackedSegment> {
+        let mut temp = VecDeque::<UnackedSegment>::with_capacity(0);
+        std::mem::swap(&mut temp, &mut *self.unacked_queue.borrow_mut());
+        temp
     }
 }
