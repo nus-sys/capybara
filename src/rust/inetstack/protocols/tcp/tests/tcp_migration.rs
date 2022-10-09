@@ -4,7 +4,7 @@ use crate::{
             ip,
             tcp::{
                 SeqNumber,
-                peer::Socket,
+                peer::{Socket, TcpState},
                 tests::{
                     extract_headers,
                     setup::{
@@ -31,13 +31,13 @@ use crate::{
         queue::QDesc,
     },
 };
+use futures::task::noop_waker_ref;
 use std::{
     convert::TryFrom,
     task::Context,
     time::Instant,
     net::SocketAddrV4,
 };
-use futures::task::noop_waker_ref;
 
 /// Tests a established connection being migrated out of the server. If the client continues
 /// to send a message the server should send a RST, since the connection no longer exists.
@@ -345,7 +345,10 @@ pub fn migrate_connection() {
     state.local = SocketAddrV4::new(test_helpers::JUAN_IPV4, listen_port);
 
     // try to serialize just to test
-    //let serialized = serde_json::to_vec(&state).unwrap();
+    let serialized = state.serialize();
+    let deserialized = TcpState::deserialize(&serialized).expect("Faulty serialization of `TcpState`");
+    assert_eq!(&state, &deserialized);
+
     debug!("Migrating in connection");
     let server2_fd = server2.tcp_migrate_in_connection(state.clone()).unwrap();
 

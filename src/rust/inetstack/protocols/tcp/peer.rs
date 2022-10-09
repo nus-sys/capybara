@@ -929,4 +929,148 @@ impl TcpState {
             receiver_window_scale,
         }
     }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend(self.local.serialize());
+        bytes.extend(self.remote.serialize());
+
+        bytes.extend(self.reader_next.serialize());
+        bytes.extend(self.receive_next.serialize());
+        // Receive queue
+
+        bytes.extend(self.seq_no.serialize());
+        bytes.extend(self.send_next.serialize());
+        bytes.extend(self.send_window.serialize());
+        bytes.extend(self.send_window_last_update_seq.serialize());
+        bytes.extend(self.send_window_last_update_ack.serialize());
+        bytes.push(self.window_scale);
+        bytes.extend(self.mss.serialize());
+        // Unacked and unsent queues
+        
+        bytes.extend(self.receiver_window_size.serialize());
+        bytes.extend(self.receiver_window_scale.serialize());
+
+        bytes
+    }
+
+    pub fn deserialize(bytes: &[u8]) -> Option<TcpState> {
+        Some(TcpState::new(
+            SocketAddrV4::deserialize(&bytes[0..6])?,
+            SocketAddrV4::deserialize(&bytes[6..12])?,
+
+            SeqNumber::deserialize(&bytes[12..16])?,
+            SeqNumber::deserialize(&bytes[16..20])?,
+            VecDeque::new(), // TEMP
+
+            SeqNumber::deserialize(&bytes[20..24])?,
+            SeqNumber::deserialize(&bytes[24..28])?,
+            u32::deserialize(&bytes[28..32])?,
+            SeqNumber::deserialize(&bytes[32..36])?,
+            SeqNumber::deserialize(&bytes[36..40])?,
+            bytes[40],
+            usize::deserialize(&bytes[41..49])?,
+            VecDeque::new(),
+            VecDeque::new(),
+
+            u32::deserialize(&bytes[49..53])?,
+            u32::deserialize(&bytes[53..57])?,
+        ))
+    }
+}
+
+// ========================================================
+// Serialization and Deserialization
+
+trait Serialize {
+    fn serialize(&self) -> Vec<u8>;
+    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized;
+}
+
+impl Serialize for u32 {
+    fn serialize(&self) -> Vec<u8> {
+        self.to_be_bytes().to_vec()
+    }
+
+    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
+        match bytes.try_into() {
+            Ok(bytes) => Some(u32::from_be_bytes(bytes)),
+            Err(_) => None,
+        }
+    }
+}
+
+impl Serialize for usize {
+    fn serialize(&self) -> Vec<u8> {
+        self.to_be_bytes().to_vec()
+    }
+
+    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
+        match bytes.try_into() {
+            Ok(bytes) => Some(usize::from_be_bytes(bytes)),
+            Err(_) => None,
+        }
+    }
+}
+
+impl Serialize for SocketAddrV4 {
+    fn serialize(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&self.ip().octets());
+        bytes.extend_from_slice(&self.port().to_be_bytes());
+        bytes
+    }
+
+    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
+        if bytes.len() == 6 {
+            Some(SocketAddrV4::new(
+                Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]),
+                u16::from_be_bytes([bytes[4], bytes[5]])
+            ))
+        }
+        else { None }
+    }
+}
+
+impl Serialize for SeqNumber {
+    fn serialize(&self) -> Vec<u8> {
+        u32::from(*self).serialize()
+    }
+
+    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
+        if bytes.len() == 4 {
+            Some(Self::from(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])))
+        }
+        else { None }
+    }
+}
+
+impl Serialize for Buffer {
+    fn serialize(&self) -> Vec<u8> {
+        todo!()
+    }
+
+    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
+        todo!()
+    }
+}
+
+impl Serialize for UnackedSegment {
+    fn serialize(&self) -> Vec<u8> {
+        todo!()
+    }
+
+    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
+        todo!()
+    }
+}
+
+impl<T: Serialize> Serialize for VecDeque<T> {
+    fn serialize(&self) -> Vec<u8> {
+        todo!()
+    }
+
+    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
+        todo!()
+    }
 }
