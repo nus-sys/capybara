@@ -164,7 +164,7 @@ fn migration_in_out_send_data_compare_state() {
     );
 
     // Grab a copy of the server_s TCP state.
-    let state = server.tcp_get_state(server_fd).unwrap();
+    let state = server.tcp_take_state(server_fd).unwrap();
 
     // Server sends message.
     let bufsize: u32 = 64;
@@ -183,7 +183,7 @@ fn migration_in_out_send_data_compare_state() {
     );
 
     // Get a new copy of the state. It should not be equal anymore.
-    let state_second_time = server.tcp_get_state(server_fd).unwrap();
+    let state_second_time = server.tcp_take_state(server_fd).unwrap();
     // Unacked queue should be filled.
     assert_ne!(state.unacked_queue, state_second_time.unacked_queue);
 }
@@ -214,7 +214,7 @@ pub fn test_send_recv_round_loop() {
         listen_addr,
     );
 
-    let state = server.tcp_get_state(server_fd).unwrap();
+    let state = server.tcp_take_state(server_fd).unwrap();
 
     let bufsize: u32 = 64;
     let buf = cook_buffer(bufsize as usize, None);
@@ -235,7 +235,7 @@ pub fn test_send_recv_round_loop() {
     // Up to here, the server hasn't heard back from client. So server holds onto some unacked queue
     // messages.
 
-    let state_second_time = server.tcp_get_state(server_fd).unwrap();
+    let state_second_time = server.tcp_take_state(server_fd).unwrap();
     assert_ne!(state.unacked_queue, state_second_time.unacked_queue);
     assert_ne!(state.receive_next, state_second_time.receive_next);
     assert_ne!(state.send_next, state_second_time.send_next);

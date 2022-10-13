@@ -79,6 +79,7 @@ use ::rand::{
     Rng,
     SeedableRng,
 };
+use std::mem::size_of;
 use ::std::{
     cell::{
         RefCell,
@@ -93,7 +94,6 @@ use ::std::{
         Ipv4Addr,
         SocketAddrV4,
     },
-    ops::Deref,
     rc::Rc,
     task::{
         Context,
@@ -151,6 +151,7 @@ pub struct TcpPeer {
 }
 
 /// State needed for TCP Migration
+/// TODO: methods to send TCP state as: serialized state, then send queue elements as distinct Buffers to avoid deserialization
 #[derive(Debug, Clone)]
 pub struct TcpState {
     pub local: SocketAddrV4,
@@ -158,6 +159,7 @@ pub struct TcpState {
 
     pub reader_next: SeqNumber,
     pub receive_next: SeqNumber,
+
     pub recv_queue: VecDeque<Buffer>,
 
     pub seq_no: SeqNumber,
@@ -529,7 +531,7 @@ impl TcpPeer {
         }
     }
 
-    pub fn get_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+    pub fn take_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
         info!("Retrieving TCP State for {:?}!", fd);
         let details =  "We can only migrate out established connections.";
         
@@ -559,7 +561,7 @@ impl TcpPeer {
 
                             reader_next,
                             receive_next,
-                            cb.take_receive_queue(), // CHANGE THIS
+                            cb.take_receive_queue(),
 
                             send_unacked,
                             send_next,
@@ -942,7 +944,9 @@ impl TcpState {
 
         bytes.extend(self.reader_next.serialize());
         bytes.extend(self.receive_next.serialize());
+
         // Receive queue
+        bytes.extend(self.recv_queue.len().serialize());
 
         bytes.extend(self.seq_no.serialize());
         bytes.extend(self.send_next.serialize());
@@ -951,7 +955,10 @@ impl TcpState {
         bytes.extend(self.send_window_last_update_ack.serialize());
         bytes.push(self.window_scale);
         bytes.extend(self.mss.serialize());
+
         // Unacked and unsent queues
+        bytes.extend(self.unacked_queue.len().serialize());
+        bytes.extend(self.unsent_queue.len().serialize());
         
         bytes.extend(self.receiver_window_size.serialize());
         bytes.extend(self.receiver_window_scale.serialize());
@@ -960,26 +967,50 @@ impl TcpState {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Option<TcpState> {
+        let (local, bytes) = SocketAddrV4::deserialize(bytes)?;
+        let (remote, bytes) = SocketAddrV4::deserialize(bytes)?;
+
+        let (reader_next, bytes) = SeqNumber::deserialize(bytes)?;
+        let (receive_next, bytes) = SeqNumber::deserialize(bytes)?;
+
+        let (recv_queue_len, bytes) = usize::deserialize(bytes)?;
+
+        let (seq_no, bytes) = SeqNumber::deserialize(bytes)?;
+        let (send_next, bytes) = SeqNumber::deserialize(bytes)?;
+        let (send_window, bytes) = u32::deserialize(bytes)?;
+        let (send_window_last_update_seq, bytes) = SeqNumber::deserialize(bytes)?;
+        let (send_window_last_update_ack, bytes) = SeqNumber::deserialize(bytes)?;
+        let (window_scale, bytes) = u8::deserialize(bytes)?;
+        let (mss, bytes) = usize::deserialize(bytes)?;
+
+        let (unacked_queue_len, bytes) = usize::deserialize(bytes)?;
+        let (unsent_queue_len, bytes) = usize::deserialize(bytes)?;
+
+        let (receiver_window_size, bytes) = u32::deserialize(bytes)?;
+        let (receiver_window_scale, bytes) = u32::deserialize(bytes)?;
+        
+        assert_eq!(bytes.len(), 0);
+
         Some(TcpState::new(
-            SocketAddrV4::deserialize(&bytes[0..6])?,
-            SocketAddrV4::deserialize(&bytes[6..12])?,
+            local,
+            remote,
 
-            SeqNumber::deserialize(&bytes[12..16])?,
-            SeqNumber::deserialize(&bytes[16..20])?,
-            VecDeque::new(), // TEMP
+            reader_next,
+            receive_next,
+            VecDeque::new(),
 
-            SeqNumber::deserialize(&bytes[20..24])?,
-            SeqNumber::deserialize(&bytes[24..28])?,
-            u32::deserialize(&bytes[28..32])?,
-            SeqNumber::deserialize(&bytes[32..36])?,
-            SeqNumber::deserialize(&bytes[36..40])?,
-            bytes[40],
-            usize::deserialize(&bytes[41..49])?,
+            seq_no,
+            send_next,
+            send_window,
+            send_window_last_update_seq,
+            send_window_last_update_ack,
+            window_scale,
+            mss,
             VecDeque::new(),
             VecDeque::new(),
 
-            u32::deserialize(&bytes[49..53])?,
-            u32::deserialize(&bytes[53..57])?,
+            receiver_window_size,
+            receiver_window_scale,
         ))
     }
 }
@@ -989,7 +1020,21 @@ impl TcpState {
 
 trait Serialize {
     fn serialize(&self) -> Vec<u8>;
-    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized;
+    /// Also returns remaining slice
+    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized;
+}
+
+impl Serialize for u8 {
+    fn serialize(&self) -> Vec<u8> {
+        vec![*self]
+    }
+
+    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized {
+        if bytes.len() >= 1 {
+            Some((bytes[0], &bytes[1..]))
+        }
+        else { None }
+    }
 }
 
 impl Serialize for u32 {
@@ -997,9 +1042,11 @@ impl Serialize for u32 {
         self.to_be_bytes().to_vec()
     }
 
-    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
-        match bytes.try_into() {
-            Ok(bytes) => Some(u32::from_be_bytes(bytes)),
+    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized {
+        match bytes[0..4].try_into() {
+            Ok(byte_arr) => {
+                Some((u32::from_be_bytes(byte_arr), &bytes[4..]))
+            },
             Err(_) => None,
         }
     }
@@ -1010,9 +1057,11 @@ impl Serialize for usize {
         self.to_be_bytes().to_vec()
     }
 
-    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
-        match bytes.try_into() {
-            Ok(bytes) => Some(usize::from_be_bytes(bytes)),
+    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized {
+        match bytes[0..size_of::<usize>()].try_into() {
+            Ok(byte_arr) => {
+                Some((usize::from_be_bytes(byte_arr), &bytes[size_of::<usize>()..]))
+            },
             Err(_) => None,
         }
     }
@@ -1026,12 +1075,12 @@ impl Serialize for SocketAddrV4 {
         bytes
     }
 
-    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
-        if bytes.len() == 6 {
-            Some(SocketAddrV4::new(
+    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized {
+        if bytes.len() >= 6 {
+            Some((SocketAddrV4::new(
                 Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]),
                 u16::from_be_bytes([bytes[4], bytes[5]])
-            ))
+            ), &bytes[6..]))
         }
         else { None }
     }
@@ -1042,40 +1091,10 @@ impl Serialize for SeqNumber {
         u32::from(*self).serialize()
     }
 
-    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
-        if bytes.len() == 4 {
-            Some(Self::from(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])))
+    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized {
+        if bytes.len() >= 4 {
+            Some((Self::from(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])), &bytes[4..]))
         }
         else { None }
-    }
-}
-
-impl Serialize for Buffer {
-    fn serialize(&self) -> Vec<u8> {
-        todo!()
-    }
-
-    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
-        todo!()
-    }
-}
-
-impl Serialize for UnackedSegment {
-    fn serialize(&self) -> Vec<u8> {
-        todo!()
-    }
-
-    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
-        todo!()
-    }
-}
-
-impl<T: Serialize> Serialize for VecDeque<T> {
-    fn serialize(&self) -> Vec<u8> {
-        todo!()
-    }
-
-    fn deserialize(bytes: &[u8]) -> Option<Self> where Self: Sized {
-        todo!()
     }
 }

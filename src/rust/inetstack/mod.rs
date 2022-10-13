@@ -658,12 +658,12 @@ impl InetStack {
         self.ts_iters = (self.ts_iters + 1) % TIMER_RESOLUTION;
     }
 
-    pub fn get_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+    pub fn take_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
         match self.file_table.get(fd) {
             Some(qtype) => {
                 match QType::try_from(qtype) {
                     Ok(QType::TcpSocket) => {
-                        self.ipv4.tcp.get_tcp_state(fd)
+                        self.ipv4.tcp.take_tcp_state(fd)
                     }
                     _ => {
                         info!("Found unsupported socket type: {}", qtype);
@@ -682,7 +682,7 @@ impl InetStack {
             Some(qtype) => {
                 match QType::try_from(qtype) {
                     Ok(QType::TcpSocket) => {
-                        let state = self.ipv4.tcp.get_tcp_state(fd)?;
+                        let state = self.ipv4.tcp.take_tcp_state(fd)?;
                         self.ipv4.tcp.migrate_out_tcp_connection(fd)?;
                         self.file_table.free(fd);
                         Ok(state)

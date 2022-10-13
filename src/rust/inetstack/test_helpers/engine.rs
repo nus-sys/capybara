@@ -199,13 +199,13 @@ impl Engine {
             return Err(Fail::new(libc::EBADF, "no such connection"));
         }
 
-        let state = self.tcp_get_state(fd)?;
+        let state = self.tcp_take_state(fd)?;
         self.ipv4.tcp.migrate_out_tcp_connection(fd)?;
 
         Ok(state)
     }
 
-    pub fn tcp_get_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
-        self.ipv4.tcp.get_tcp_state(fd)
+    pub fn tcp_take_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+        self.ipv4.tcp.take_tcp_state(fd)
     }
 }
