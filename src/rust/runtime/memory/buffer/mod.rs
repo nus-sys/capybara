@@ -85,3 +85,38 @@ impl DerefMut for Buffer {
         }
     }
 }
+
+impl PartialEq for Buffer {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl Eq for Buffer {}
+
+//==============================================================================
+// Crate Serde Trait Implementations
+//==============================================================================
+
+impl serde::Serialize for Buffer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> 
+    where S: 
+        serde::Serializer,
+    {
+        match self {
+            Buffer::Heap(dbuf) => dbuf.serialize(serializer),
+            #[cfg(feature = "libdpdk")]
+            Buffer::DPDK(mbuf) => DataBuffer::from_slice(&mbuf).serialize(serializer),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Buffer {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D:
+        serde::Deserializer<'de>,
+    {
+        // DPDKBuffers are never serialized as DPDKBuffers.
+        Ok(Self::Heap(DataBuffer::deserialize(deserializer)?))
+    }
+}

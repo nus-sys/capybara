@@ -79,7 +79,6 @@ use ::rand::{
     Rng,
     SeedableRng,
 };
-use std::mem::size_of;
 use ::std::{
     cell::{
         RefCell,
@@ -152,7 +151,7 @@ pub struct TcpPeer {
 
 /// State needed for TCP Migration
 /// TODO: methods to send TCP state as: serialized state, then send queue elements as distinct Buffers to avoid deserialization
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TcpState {
     pub local: SocketAddrV4,
     pub remote: SocketAddrV4,
@@ -841,57 +840,6 @@ impl Inner {
     }
 }
 
-impl PartialEq<Self> for TcpState {
-    fn eq(&self, other: &Self) -> bool {
-        if !(
-            (self.remote == other.remote) &&
-            (self.local == other.local) &&
-            (self.reader_next == self.reader_next) &&
-            (self.receive_next == other.receive_next) &&
-
-            (self.seq_no == other.seq_no) &&
-            (self.send_next == other.send_next) &&
-            (self.send_window == other.send_window) &&
-            (self.send_window_last_update_seq == other.send_window_last_update_seq) &&
-            (self.send_window_last_update_ack == other.send_window_last_update_ack) &&
-            (self.window_scale == other.window_scale) &&
-            (self.mss == other.mss) &&
-
-            (self.receiver_window_size == other.receiver_window_size) &&
-            (self.receiver_window_scale == other.receiver_window_scale)
-        ) {
-            return false;
-        }
-
-        // CHECK QUEUES AFTER IMPLEMENTING QUEUE SERIALIZATION
-
-        /* if self.recv_queue.len() != other.recv_queue.len() { return false; }
-        for (buf1, buf2) in std::iter::zip(&self.recv_queue, &other.recv_queue) {
-            for (byte1, byte2) in std::iter::zip(buf1.deref(), buf2.deref()) {
-                if byte1 != byte2 { return false; }
-            }
-        }
-
-        if self.unsent_queue.len() != other.unsent_queue.len() { return false; }
-        for (buf1, buf2) in std::iter::zip(&self.unsent_queue, &other.unsent_queue) {
-            for (byte1, byte2) in std::iter::zip(buf1.deref(), buf2.deref()) {
-                if byte1 != byte2 { return false; }
-            }
-        }
-
-        if self.unacked_queue.len() != other.unacked_queue.len() { return false; }
-        for (UnackedSegment{bytes: buf1, ..}, UnackedSegment{bytes: buf2, ..}) in std::iter::zip(&self.unacked_queue, &other.unacked_queue) {
-            for (byte1, byte2) in std::iter::zip(buf1.deref(), buf2.deref()) {
-                if byte1 != byte2 { return false; }
-            }
-        } */
-
-        true
-    }
-} 
-
-impl Eq for TcpState { }
-
 impl TcpState {
     pub fn new(
         local: SocketAddrV4,
@@ -937,164 +885,12 @@ impl TcpState {
         }
     }
 
-    pub fn serialize(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend(self.local.serialize());
-        bytes.extend(self.remote.serialize());
-
-        bytes.extend(self.reader_next.serialize());
-        bytes.extend(self.receive_next.serialize());
-
-        // Receive queue
-        bytes.extend(self.recv_queue.len().serialize());
-
-        bytes.extend(self.seq_no.serialize());
-        bytes.extend(self.send_next.serialize());
-        bytes.extend(self.send_window.serialize());
-        bytes.extend(self.send_window_last_update_seq.serialize());
-        bytes.extend(self.send_window_last_update_ack.serialize());
-        bytes.push(self.window_scale);
-        bytes.extend(self.mss.serialize());
-
-        // Unacked and unsent queues
-        bytes.extend(self.unacked_queue.len().serialize());
-        bytes.extend(self.unsent_queue.len().serialize());
-        
-        bytes.extend(self.receiver_window_size.serialize());
-        bytes.extend(self.receiver_window_scale.serialize());
-
-        bytes
+    pub fn serialize(&self) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(serde_json::to_string_pretty(self)?.as_bytes().to_vec())
     }
 
-    pub fn deserialize(bytes: &[u8]) -> Option<TcpState> {
-        let (local, bytes) = SocketAddrV4::deserialize(bytes)?;
-        let (remote, bytes) = SocketAddrV4::deserialize(bytes)?;
-
-        let (reader_next, bytes) = SeqNumber::deserialize(bytes)?;
-        let (receive_next, bytes) = SeqNumber::deserialize(bytes)?;
-
-        let (recv_queue_len, bytes) = usize::deserialize(bytes)?;
-
-        let (seq_no, bytes) = SeqNumber::deserialize(bytes)?;
-        let (send_next, bytes) = SeqNumber::deserialize(bytes)?;
-        let (send_window, bytes) = u32::deserialize(bytes)?;
-        let (send_window_last_update_seq, bytes) = SeqNumber::deserialize(bytes)?;
-        let (send_window_last_update_ack, bytes) = SeqNumber::deserialize(bytes)?;
-        let (window_scale, bytes) = u8::deserialize(bytes)?;
-        let (mss, bytes) = usize::deserialize(bytes)?;
-
-        let (unacked_queue_len, bytes) = usize::deserialize(bytes)?;
-        let (unsent_queue_len, bytes) = usize::deserialize(bytes)?;
-
-        let (receiver_window_size, bytes) = u32::deserialize(bytes)?;
-        let (receiver_window_scale, bytes) = u32::deserialize(bytes)?;
-        
-        assert_eq!(bytes.len(), 0);
-
-        Some(TcpState::new(
-            local,
-            remote,
-
-            reader_next,
-            receive_next,
-            VecDeque::new(),
-
-            seq_no,
-            send_next,
-            send_window,
-            send_window_last_update_seq,
-            send_window_last_update_ack,
-            window_scale,
-            mss,
-            VecDeque::new(),
-            VecDeque::new(),
-
-            receiver_window_size,
-            receiver_window_scale,
-        ))
-    }
-}
-
-// ========================================================
-// Serialization and Deserialization
-
-trait Serialize {
-    fn serialize(&self) -> Vec<u8>;
-    /// Also returns remaining slice
-    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized;
-}
-
-impl Serialize for u8 {
-    fn serialize(&self) -> Vec<u8> {
-        vec![*self]
-    }
-
-    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized {
-        if bytes.len() >= 1 {
-            Some((bytes[0], &bytes[1..]))
-        }
-        else { None }
-    }
-}
-
-impl Serialize for u32 {
-    fn serialize(&self) -> Vec<u8> {
-        self.to_be_bytes().to_vec()
-    }
-
-    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized {
-        match bytes[0..4].try_into() {
-            Ok(byte_arr) => {
-                Some((u32::from_be_bytes(byte_arr), &bytes[4..]))
-            },
-            Err(_) => None,
-        }
-    }
-}
-
-impl Serialize for usize {
-    fn serialize(&self) -> Vec<u8> {
-        self.to_be_bytes().to_vec()
-    }
-
-    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized {
-        match bytes[0..size_of::<usize>()].try_into() {
-            Ok(byte_arr) => {
-                Some((usize::from_be_bytes(byte_arr), &bytes[size_of::<usize>()..]))
-            },
-            Err(_) => None,
-        }
-    }
-}
-
-impl Serialize for SocketAddrV4 {
-    fn serialize(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&self.ip().octets());
-        bytes.extend_from_slice(&self.port().to_be_bytes());
-        bytes
-    }
-
-    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized {
-        if bytes.len() >= 6 {
-            Some((SocketAddrV4::new(
-                Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]),
-                u16::from_be_bytes([bytes[4], bytes[5]])
-            ), &bytes[6..]))
-        }
-        else { None }
-    }
-}
-
-impl Serialize for SeqNumber {
-    fn serialize(&self) -> Vec<u8> {
-        u32::from(*self).serialize()
-    }
-
-    fn deserialize(bytes: &[u8]) -> Option<(Self, &[u8])> where Self: Sized {
-        if bytes.len() >= 4 {
-            Some((Self::from(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])), &bytes[4..]))
-        }
-        else { None }
+    pub fn deserialize(serialized: &[u8]) -> Result<Self, serde_json::Error> {
+        // TODO: Check if having all `UnackedSegment` timestamps as `None` affects anything.
+        serde_json::from_slice::<TcpState>(serialized)
     }
 }

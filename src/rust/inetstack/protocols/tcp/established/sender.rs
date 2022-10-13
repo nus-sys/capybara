@@ -38,21 +38,17 @@ use ::std::{
 // ToDo: We currently allocate these on the fly when we add a buffer to the queue.  Would be more efficient to have a
 // buffer structure that held everything we need directly, thus avoiding this extra wrapper.
 //
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UnackedSegment {
     pub bytes: Buffer,
     // Set to `None` on retransmission to implement Karn's algorithm.
+    #[serde(skip)] // [Instant]s can't be serialized/deserialized
     pub initial_tx: Option<Instant>,
 }
 
 impl PartialEq for UnackedSegment {
     fn eq(&self, other: &Self) -> bool {
-        use std::ops::Deref;
-
-        for (b1, b2) in std::iter::zip(self.bytes.deref(), other.bytes.deref()) {
-            if b1 != b2 { return false; }
-        }
-        self.initial_tx == other.initial_tx
+        self.bytes == other.bytes
     }
 }
 

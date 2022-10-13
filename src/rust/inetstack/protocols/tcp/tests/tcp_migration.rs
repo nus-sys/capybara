@@ -345,8 +345,8 @@ pub fn migrate_connection() {
     state.local = SocketAddrV4::new(test_helpers::JUAN_IPV4, listen_port);
 
     // try to serialize just to test
-    let serialized = state.serialize();
-    let deserialized = TcpState::deserialize(&serialized).expect("Faulty serialization of `TcpState`");
+    let serialized = state.serialize().unwrap();
+    let deserialized = TcpState::deserialize(&serialized).unwrap();
     assert_eq!(&state, &deserialized);
 
     debug!("Migrating in connection");
