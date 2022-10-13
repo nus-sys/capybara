@@ -861,23 +861,28 @@ impl PartialEq<Self> for TcpState {
             return false;
         }
 
+        // CHECK QUEUES AFTER IMPLEMENTING QUEUE SERIALIZATION
+
+        /* if self.recv_queue.len() != other.recv_queue.len() { return false; }
         for (buf1, buf2) in std::iter::zip(&self.recv_queue, &other.recv_queue) {
             for (byte1, byte2) in std::iter::zip(buf1.deref(), buf2.deref()) {
                 if byte1 != byte2 { return false; }
             }
         }
 
+        if self.unsent_queue.len() != other.unsent_queue.len() { return false; }
         for (buf1, buf2) in std::iter::zip(&self.unsent_queue, &other.unsent_queue) {
             for (byte1, byte2) in std::iter::zip(buf1.deref(), buf2.deref()) {
                 if byte1 != byte2 { return false; }
             }
         }
 
+        if self.unacked_queue.len() != other.unacked_queue.len() { return false; }
         for (UnackedSegment{bytes: buf1, ..}, UnackedSegment{bytes: buf2, ..}) in std::iter::zip(&self.unacked_queue, &other.unacked_queue) {
             for (byte1, byte2) in std::iter::zip(buf1.deref(), buf2.deref()) {
                 if byte1 != byte2 { return false; }
             }
-        }
+        } */
 
         true
     }
