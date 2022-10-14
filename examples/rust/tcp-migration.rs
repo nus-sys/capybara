@@ -134,12 +134,12 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     thread::sleep(Duration::from_millis(10000));
     println!("Resume!");
 
-    
+
     let state = libos.migrate_out_tcp_connection(qd_connection_in)?; // fd: queue descriptor of the connection to be migrated
-    let serialized = state.serialize();
+    let serialized = state.serialize().unwrap();
 
     // Push TcpState.
-    println!("Push TcpState");
+    println!("Push TcpState (len: {})", serialized.len());
     let qt_push_tcpstate: QToken = match libos.push2(qd_migration_out, &&serialized[..]) {
         Ok(qt) => qt,
         Err(e) => panic!("push failed: {:?}", e.cause),
