@@ -5,7 +5,7 @@ use crate::{
             tcp::{
                 SeqNumber,
                 peer::Socket,
-                migration::{TcpState, TcpMigrationHeader},
+                migration::{TcpState, TcpMigrationHeader, TcpMigrationSegment},
                 tests::{
                     extract_headers,
                     setup::{
@@ -130,9 +130,9 @@ fn migration_in_out_compare_state() {
     );
 
     // Migrate connection out and back in, comparing the states both times!
-    let state = server.tcp_migrate_out_connection(server_fd).unwrap();
+    let state = server.tcp_migrate_out_connection(server_fd, None).unwrap();
     let new_fd = server.tcp_migrate_in_connection(state.clone()).unwrap();
-    let state_second_time = server.tcp_migrate_out_connection(new_fd).unwrap();
+    let state_second_time = server.tcp_migrate_out_connection(new_fd, None).unwrap();
 
     assert_eq!(state, state_second_time);
 }
@@ -340,28 +340,25 @@ pub fn migrate_connection() {
         );
     }
 
+    let dest = SocketAddrV4::new(test_helpers::JUAN_IPV4, listen_port);
+
     debug!("Migrated out connection");
-    let mut state = server.tcp_migrate_out_connection(server_fd).unwrap();
-    // update state, so the local address is correct
-    state.local = SocketAddrV4::new(test_helpers::JUAN_IPV4, listen_port);
+    let conn = server.tcp_migrate_out_connection(server_fd, Some(dest)).unwrap();
+
+    let state_clone = conn.clone();
 
     // try to serialize just to test
-    let serialized = state.serialize().unwrap();
-    let deserialized = TcpState::deserialize(&serialized).unwrap();
-    assert_eq!(&state, &deserialized);
-
-    let migration_header = TcpMigrationHeader{ origin: SocketAddrV4::from_str("127.0.0.1:4566").unwrap(), dest: SocketAddrV4::from_str("253.235.64.3:8895").unwrap() };
-    let serialized_migration_header = migration_header.serialize();
-    assert_eq!(&serialized_migration_header[0..4], b"MIGR");
-    assert_eq!(serialized_migration_header[4..].iter().fold(0, |sum, e| sum + e), 0);
+    let serialized_migration_seg = conn.serialize().unwrap();
+    let deserialized_migration_seg = TcpMigrationSegment::deserialize(&serialized_migration_seg).unwrap();
+    assert_eq!(conn, deserialized_migration_seg);
 
     debug!("Migrating in connection");
-    let server2_fd = server2.tcp_migrate_in_connection(state.clone()).unwrap();
+    let server2_fd = server2.tcp_migrate_in_connection(state_clone).unwrap();
 
     // make sure to update alice
     debug!("Get Alice's state");
-    let mut alice_state = client.tcp_migrate_out_connection(client_fd).unwrap();
-    alice_state.remote = SocketAddrV4::new(test_helpers::JUAN_IPV4, listen_port);
+    let mut alice_state = client.tcp_migrate_out_connection(client_fd, None).unwrap();
+    alice_state.state.remote = dest;
     let new_alice = client.tcp_migrate_in_connection(alice_state.clone()).unwrap();
 
     {

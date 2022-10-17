@@ -12,7 +12,12 @@ use super::{
         State,
     },
     isn_generator::IsnGenerator,
-    passive_open::PassiveSocket, migration::TcpState,
+    passive_open::PassiveSocket,
+    migration::{
+        TcpState,
+        TcpMigrationSegment,
+        TcpMigrationHeader,
+    },
 };
 use crate::{
     inetstack::protocols::{
@@ -141,6 +146,9 @@ pub struct Inner {
     rng: Rc<RefCell<SmallRng>>,
 
     dead_socket_tx: mpsc::UnboundedSender<QDesc>,
+
+    /// (local, remote) -> origin
+    migrated_in_origins: HashMap<(SocketAddrV4, SocketAddrV4), SocketAddrV4>,
 }
 
 pub struct TcpPeer {
@@ -562,7 +570,10 @@ impl TcpPeer {
     /// 1) Change status of our socket to MigratedOut
     /// 2) Change status of ControlBlock state to Migrated out.
     /// 3) Remove socket from Established hashmap.
-    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<(), Fail> {
+    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc, dest: Option<SocketAddrV4>) -> Result<TcpMigrationSegment, Fail> {
+        let mut state = self.take_tcp_state(fd)?;
+        if let Some(dest) = dest { state.local = dest; }
+
         let mut inner = self.inner.borrow_mut();
         let socket = inner.sockets.get_mut(&fd);
 
@@ -604,12 +615,20 @@ impl TcpPeer {
             panic!("Established socket somehow missing.");
         }
 
-        Ok(())
+        let migration_hdr = match inner.migrated_in_origins.get(&key) {
+            Some(origin) => TcpMigrationHeader::new(*origin, dest.unwrap_or(*origin)),
+            None => TcpMigrationHeader::new(key.0, dest.unwrap_or(key.0)),
+        };
+
+        inner.migrated_in_origins.remove(&key);
+
+        Ok(TcpMigrationSegment::new(migration_hdr, state))
 
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, state: TcpState, qd: QDesc) -> Result<(), Fail> {
+    pub fn migrate_in_tcp_connection(&mut self, conn: TcpMigrationSegment, qd: QDesc) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
+        let TcpMigrationSegment { header, state } = conn;
 
         // Check if keys already exist first. This way we don't have to undo changes we make to
         // the state.
@@ -682,8 +701,10 @@ impl TcpPeer {
             unreachable!();
         }
 
-        // This IP might have already been migrated in. That's okay.
-        //inner.migrated_in_connections.insert(state.local.get_address());
+        // If this was the original origin, do not insert.
+        if state.local != header.origin {
+            inner.migrated_in_origins.insert((state.local, state.remote), header.origin);
+        }
 
         Ok(())
     }
@@ -721,6 +742,7 @@ impl Inner {
             arp,
             rng: Rc::new(RefCell::new(rng)),
             dead_socket_tx,
+            migrated_in_origins: HashMap::new(),
         }
     }
 

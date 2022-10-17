@@ -27,7 +27,7 @@ use crate::{
         QDesc,
         QToken,
     },
-    inetstack::protocols::tcp::migration::TcpState,
+    inetstack::protocols::tcp::migration::TcpMigrationSegment,
 };
 use ::std::{
     env,
@@ -224,13 +224,14 @@ impl LibOS {
         }
     }
 
-    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+    /// dest: Optionally set the address of the destination the state will be sent to. If `None` is passed, `dest` is the same as `origin`.
+    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc, dest: Option<SocketAddrV4>) -> Result<TcpMigrationSegment, Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.migrate_out_tcp_connection(fd),
+            LibOS::NetworkLibOS(libos) => libos.migrate_out_tcp_connection(fd, dest),
         }
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> Result<QDesc, Fail> {
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpMigrationSegment) -> Result<QDesc, Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.migrate_in_tcp_connection(state),
         }

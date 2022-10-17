@@ -17,7 +17,7 @@ use crate::{
             },
             tcp::{
                 operations::ConnectFuture,
-                migration::TcpState,
+                migration::TcpMigrationSegment,
             },
             udp::UdpOperation,
             Peer,
@@ -72,6 +72,8 @@ use ::std::{
 
 #[cfg(feature = "profiler")]
 use crate::timer;
+
+use self::protocols::tcp::migration::TcpState;
 
 //==============================================================================
 // Exports
@@ -677,15 +679,14 @@ impl InetStack {
         }
     }
 
-    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc, dest: Option<SocketAddrV4>) -> Result<TcpMigrationSegment, Fail> {
         match self.file_table.get(fd) {
             Some(qtype) => {
                 match QType::try_from(qtype) {
                     Ok(QType::TcpSocket) => {
-                        let state = self.ipv4.tcp.take_tcp_state(fd)?;
-                        self.ipv4.tcp.migrate_out_tcp_connection(fd)?;
+                        let conn = self.ipv4.tcp.migrate_out_tcp_connection(fd, dest)?;
                         self.file_table.free(fd);
-                        Ok(state)
+                        Ok(conn)
                     }
                     _ => {
                         info!("Found unsupported socket type: {}", qtype);
@@ -699,9 +700,9 @@ impl InetStack {
         }
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> Result<QDesc, Fail> {
+    pub fn migrate_in_tcp_connection(&mut self, conn: TcpMigrationSegment) -> Result<QDesc, Fail> {
         let qd = self.file_table.alloc(u32::from(QType::TcpSocket));
-        self.ipv4.tcp.migrate_in_tcp_connection(state, qd)?;
+        self.ipv4.tcp.migrate_in_tcp_connection(conn, qd)?;
         Ok(qd)
     }
 }

@@ -15,7 +15,7 @@ use crate::{
         QDesc,
         QToken,
     },
-    inetstack::protocols::tcp::migration::TcpState,
+    inetstack::protocols::tcp::migration::TcpMigrationSegment,
 };
 use ::std::{
     net::SocketAddrV4,
@@ -317,7 +317,7 @@ impl NetworkLibOS {
         }
     }
 
-    pub fn migrate_out_tcp_connection(&mut self, _fd: QDesc) -> Result<TcpState, Fail> {
+    pub fn migrate_out_tcp_connection(&mut self, _fd: QDesc, _dest: Option<SocketAddrV4>) -> Result<TcpMigrationSegment, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
@@ -326,11 +326,11 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(_libos) => _libos.migrate_out_tcp_connection(_fd),
+            NetworkLibOS::Catnip(_libos) => _libos.migrate_out_tcp_connection(_fd, _dest),
         }
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, _state: TcpState) -> Result<QDesc, Fail> {
+    pub fn migrate_in_tcp_connection(&mut self, _conn: TcpMigrationSegment) -> Result<QDesc, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
@@ -339,7 +339,7 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(_libos) => _libos.migrate_in_tcp_connection(_state),
+            NetworkLibOS::Catnip(_libos) => _libos.migrate_in_tcp_connection(_conn),
         }
     }
 }

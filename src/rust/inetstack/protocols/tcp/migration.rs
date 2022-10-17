@@ -8,6 +8,7 @@ use crate::{
     runtime::memory::Buffer,
 };
 use byteorder::{NetworkEndian, ByteOrder};
+use std::net::Ipv4Addr;
 use ::std::{
     collections::VecDeque,
     net::SocketAddrV4,
@@ -42,9 +43,16 @@ pub struct TcpState {
     pub receiver_window_scale: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcpMigrationHeader {
     pub origin: SocketAddrV4,
     pub dest: SocketAddrV4,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TcpMigrationSegment {
+    pub header: TcpMigrationHeader,
+    pub state: TcpState,
 }
 
 //==============================================================================
@@ -107,15 +115,61 @@ impl TcpState {
 }
 
 impl TcpMigrationHeader {
-    pub fn serialize(&self) -> [u8; 17] {
-        let mut bytes = [0; 17];
-        bytes[0..4].copy_from_slice(b"MIGR");
+    /// TcpMigrationHeader size in bytes.
+    const SIZE: usize = 20;
+
+    pub fn new(origin: SocketAddrV4, dest: SocketAddrV4) -> Self {
+        Self { origin, dest }
+    }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut bytes = [0; Self::SIZE];
+        NetworkEndian::write_u32(&mut bytes[0..4], 0xCAFEDEAD);
         bytes[4..8].copy_from_slice(&self.origin.ip().octets());
         NetworkEndian::write_u16(&mut bytes[8..10], self.origin.port());
         bytes[10..14].copy_from_slice(&self.dest.ip().octets());
         NetworkEndian::write_u16(&mut bytes[14..16], self.dest.port());
         bytes[16] = bytes[4..].iter().fold(0, |sum, e| sum + e).wrapping_neg();
 
-        bytes
+        assert_eq!(bytes[4..].iter().fold(0, |sum, e| sum + e), 0);
+
+        bytes.to_vec()
+    }
+
+    /// Panics if slice is not long enough, or if the header is not in the right format.
+    pub fn deserialize(serialized: &[u8]) -> Self {
+        if serialized.len() < Self::SIZE { panic!("Serialized TcpMigrationHeader not long enough.") }
+        assert_eq!(NetworkEndian::read_u32(serialized), 0xCAFEDEAD);
+        assert_eq!(serialized[4..Self::SIZE].iter().fold(0, |sum, e| sum + e), 0);
+
+        Self {
+            origin: SocketAddrV4::new(
+                Ipv4Addr::new(serialized[4], serialized[5], serialized[6], serialized[7]),
+                NetworkEndian::read_u16(&serialized[8..10]),
+            ),
+            dest: SocketAddrV4::new(
+                Ipv4Addr::new(serialized[10], serialized[11], serialized[12], serialized[13]),
+                NetworkEndian::read_u16(&serialized[14..16]),
+            ),
+        }
+    }
+}
+
+impl TcpMigrationSegment {
+    pub fn new(header: TcpMigrationHeader, state: TcpState) -> Self {
+        Self { header, state }
+    }
+
+    pub fn serialize(&self) -> Result<Vec<u8>, serde_json::Error> {
+        let mut bytes = self.header.serialize();
+        bytes.extend_from_slice(&self.state.serialize()?);
+        Ok(bytes)
+    }
+
+    pub fn deserialize(serialized: &[u8]) -> Result<Self, serde_json::Error> {
+        Ok(Self{
+            header: TcpMigrationHeader::deserialize(serialized),
+            state: TcpState::deserialize(&serialized[TcpMigrationHeader::SIZE..])?,
+        })
     }
 }

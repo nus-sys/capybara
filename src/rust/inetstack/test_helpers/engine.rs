@@ -15,7 +15,7 @@ use crate::{
                 PopFuture,
                 PushFuture,
             },
-            migration::TcpState,
+            migration::{TcpMigrationSegment, TcpState},
         },
         udp::UdpPopFuture,
         Peer,
@@ -185,24 +185,21 @@ impl Engine {
         self.arp.export_cache()
     }
 
-    pub fn tcp_migrate_in_connection(&mut self, state: TcpState) -> Result<QDesc, Fail> {
+    pub fn tcp_migrate_in_connection(&mut self, conn: TcpMigrationSegment) -> Result<QDesc, Fail> {
         let newfd = self.file_table.alloc(u32::from(QType::TcpSocket));
 
-        self.ipv4.tcp.migrate_in_tcp_connection(state, newfd)?;
+        self.ipv4.tcp.migrate_in_tcp_connection(conn, newfd)?;
         Ok(newfd)
     }
 
-    pub fn tcp_migrate_out_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+    pub fn tcp_migrate_out_connection(&mut self, fd: QDesc, dest: Option<SocketAddrV4>) -> Result<TcpMigrationSegment, Fail> {
         // Clean up file_table
         if let None = self.file_table.free(fd) {
             // Connection not in file table.
             return Err(Fail::new(libc::EBADF, "no such connection"));
         }
 
-        let state = self.tcp_take_state(fd)?;
-        self.ipv4.tcp.migrate_out_tcp_connection(fd)?;
-
-        Ok(state)
+        self.ipv4.tcp.migrate_out_tcp_connection(fd, dest)
     }
 
     pub fn tcp_take_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
