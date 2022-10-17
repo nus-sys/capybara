@@ -17,7 +17,7 @@ use crate::{
             },
             tcp::{
                 operations::ConnectFuture,
-                peer::TcpState,
+                migration::TcpState,
             },
             udp::UdpOperation,
             Peer,

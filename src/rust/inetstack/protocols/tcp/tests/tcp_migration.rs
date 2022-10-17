@@ -4,7 +4,8 @@ use crate::{
             ip,
             tcp::{
                 SeqNumber,
-                peer::{Socket, TcpState},
+                peer::Socket,
+                migration::{TcpState, TcpMigrationHeader},
                 tests::{
                     extract_headers,
                     setup::{
@@ -36,7 +37,7 @@ use std::{
     convert::TryFrom,
     task::Context,
     time::Instant,
-    net::SocketAddrV4,
+    net::SocketAddrV4, str::FromStr,
 };
 
 /// Tests a established connection being migrated out of the server. If the client continues
@@ -348,6 +349,11 @@ pub fn migrate_connection() {
     let serialized = state.serialize().unwrap();
     let deserialized = TcpState::deserialize(&serialized).unwrap();
     assert_eq!(&state, &deserialized);
+
+    let migration_header = TcpMigrationHeader{ origin: SocketAddrV4::from_str("127.0.0.1:4566").unwrap(), dest: SocketAddrV4::from_str("253.235.64.3:8895").unwrap() };
+    let serialized_migration_header = migration_header.serialize();
+    assert_eq!(&serialized_migration_header[0..4], b"MIGR");
+    assert_eq!(serialized_migration_header[4..].iter().fold(0, |sum, e| sum + e), 0);
 
     debug!("Migrating in connection");
     let server2_fd = server2.tcp_migrate_in_connection(state.clone()).unwrap();
