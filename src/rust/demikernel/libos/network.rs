@@ -326,7 +326,7 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(_libos) => libos.migrate_out_tcp_connection(_fd),
+            NetworkLibOS::Catnip(_libos) => _libos.migrate_out_tcp_connection(_fd),
         }
     }
 
@@ -339,7 +339,7 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(_libos) => libos.migrate_in_tcp_connection(_state),
+            NetworkLibOS::Catnip(_libos) => _libos.migrate_in_tcp_connection(_state),
         }
     }
 }
