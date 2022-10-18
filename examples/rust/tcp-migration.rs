@@ -4,7 +4,7 @@
 //======================================================================================================================
 // Imports
 //======================================================================================================================
-use std::io;
+use std::{io, str::from_utf8};
 use std::io::prelude::*;
 
 use ::anyhow::Result;
@@ -14,6 +14,16 @@ use ::demikernel::{
     OperationResult,
     QDesc,
     QToken,
+    inetstack::{
+        protocols::{
+            ip,
+            tcp::{
+                SeqNumber,
+                peer::Socket,
+                migration::{TcpState, TcpMigrationHeader, TcpMigrationSegment}
+            },
+        }
+    }
 };
 use ::std::{
     env,
@@ -102,11 +112,34 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
         Err(e) => panic!("operation failed: {:?}", e.cause),
         _ => unreachable!(),
     };
-    println!("TCP connection (with client) establisehd");
+    println!("TCP Connection established with client");
 
-    println!("Sleep 10s...");
-    thread::sleep(Duration::from_millis(10000));
-    println!("Resume!");
+    // Process client messages (before migration).
+    let mut cnt: i32 = 0;
+    while true {
+        cnt+=1;
+        
+        let qtoken: QToken = match libos.pop(qd_connection_in) {
+            Ok(qt) => qt,
+            Err(e) => panic!("pop failed: {:?}", e.cause),
+        };
+        // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
+        let recvbuf = match libos.wait2(qtoken) {
+            Ok((_, OperationResult::Pop(_, buf))) => buf,
+            Err(e) => panic!("operation failed: {:?}", e.cause),
+            _ => unreachable!(),
+        };
+
+        // i += recvbuf.len();
+        let msg = from_utf8(&recvbuf).unwrap();
+        println!("pop: {}", msg);
+
+
+        thread::sleep(Duration::from_millis(1000));
+        if cnt == 5{
+            break;
+        }
+    }
 
     // Connect to migration destination.
     println!("Connect to migration destination");
@@ -128,19 +161,25 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
         Err(e) => panic!("operation failed: {:?}", e.cause),
         _ => unreachable!(),
     };
-    println!("Connection established with dest");    
+    println!("TCP Connection established with dest");   
 
-    println!("Sleep 10s...");
-    thread::sleep(Duration::from_millis(10000));
+
+
+    // println!("Sleep 10s...");
+    // thread::sleep(Duration::from_millis(10000));
+    // println!("Resume!");
+ 
+
+    println!("Sleep 5s...");
+    thread::sleep(Duration::from_millis(5000));
     println!("Resume!");
 
 
-    let state = libos.migrate_out_tcp_connection(qd_connection_in)?; // fd: queue descriptor of the connection to be migrated
+    let state = libos.migrate_out_tcp_connection(qd_connection_in, Some(dest))?; // fd: queue descriptor of the connection to be migrated
     let serialized = state.serialize().unwrap();
-
+    
     // Push TcpState.
-    println!("Push TcpState (len: {})", serialized.len());
-    let qt_push_tcpstate: QToken = match libos.push2(qd_migration_out, &&serialized[..]) {
+    let qt_push_tcpstate: QToken = match libos.push2(qd_migration_out, &serialized[..]) {
         Ok(qt) => qt,
         Err(e) => panic!("push failed: {:?}", e.cause),
     };
@@ -149,7 +188,10 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
         Err(e) => panic!("operation failed: {:?}", e.cause),
         _ => unreachable!(),
     };
-
+    println!("Push TcpState (len: {})", serialized.len());
+    println!("header: {:?}", state.header);
+    println!("TcpState: {}", serde_json::to_string_pretty(&state.state)?);
+    
     
 
     #[cfg(feature = "profiler")]
@@ -202,8 +244,29 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
         Err(e) => panic!("operation failed: {:?}", e.cause),
         _ => unreachable!(),
     };
+    println!("TCP Connection established with origin");   
+    
 
-    pause();
+    let qtoken: QToken = match libos.pop(qd) {
+        Ok(qt) => qt,
+        Err(e) => panic!("pop failed: {:?}", e.cause),
+    };
+    // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
+    let recvbuf = match libos.wait2(qtoken) {
+        Ok((_, OperationResult::Pop(_, buf))) => buf,
+        Err(e) => panic!("operation failed: {:?}", e.cause),
+        _ => unreachable!(),
+    };
+
+    // let msg = &recvbuf;
+    // println!("pop: {}", msg);
+    let deserialized = TcpMigrationSegment::deserialize(&recvbuf).unwrap();
+    println!("header: {:?}", deserialized.header);
+    println!("TcpState: {}", serde_json::to_string_pretty(&deserialized.state)?);
+    
+    println!("Migrating in connection");
+    let dest_fd = libos.migrate_in_tcp_connection(deserialized.clone()).unwrap();
+
 
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
@@ -235,7 +298,6 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         Err(e) => panic!("failed to create socket: {:?}", e.cause),
     };
 
-    // let sendbuf: Vec<u8> = mkbuf(BUFFER_SIZE, fill_char);
     let qt: QToken = match libos.connect(sockqd, remote) {
         Ok(qt) => qt,
         Err(e) => panic!("connect failed: {:?}", e.cause),
@@ -246,8 +308,29 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         _ => unreachable!(),
     };
 
-    pause();
-
+    // pause();    
+    let mut cnt: i32 = 0;
+    while true {
+        cnt+=1;
+        
+        let mut msg = String::from("Hello ");
+        msg.push_str(&cnt.to_string());
+        
+        let qt: QToken = match libos.push2(sockqd, msg.as_bytes()) {
+            Ok(qt) => qt,
+            Err(e) => panic!("push failed: {:?}", e.cause),
+        };
+        match libos.wait2(qt) {
+            Ok((_, OperationResult::Push)) => (),
+            Err(e) => panic!("operation failed: {:?}", e.cause),
+            _ => unreachable!(),
+        };
+        println!("push: {}", msg);
+        thread::sleep(Duration::from_millis(1000));
+        if cnt == 5{
+            break;
+        }
+    }
 
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
