@@ -137,12 +137,12 @@ impl TcpMigrationHeader {
     }
 
     /// Panics if slice is not long enough, or if the header is not in the right format.
-    pub fn deserialize(serialized: &[u8]) -> Self {
+    pub fn deserialize(serialized: &[u8]) -> Result<Self, &str> {
         if serialized.len() < Self::SIZE { panic!("Serialized TcpMigrationHeader not long enough.") }
-        assert_eq!(NetworkEndian::read_u32(serialized), 0xCAFEDEAD);
-        assert_eq!(serialized[4..Self::SIZE].iter().fold(0, |sum, e| sum + e), 0);
 
-        Self {
+        if NetworkEndian::read_u32(serialized) != 0xCAFEDEAD { Err("Magic number (0xCAFEDEAD) not found") }
+        else if serialized[4..Self::SIZE].iter().fold(0, |sum, e| sum + e) != 0 { Err("Invalid checksum") }
+        else { Ok(Self {
             origin: SocketAddrV4::new(
                 Ipv4Addr::new(serialized[4], serialized[5], serialized[6], serialized[7]),
                 NetworkEndian::read_u16(&serialized[8..10]),
@@ -151,7 +151,7 @@ impl TcpMigrationHeader {
                 Ipv4Addr::new(serialized[10], serialized[11], serialized[12], serialized[13]),
                 NetworkEndian::read_u16(&serialized[14..16]),
             ),
-        }
+        })}
     }
 }
 
@@ -160,15 +160,15 @@ impl TcpMigrationSegment {
         Self { header, state }
     }
 
-    pub fn serialize(&self) -> Result<Vec<u8>, serde_json::Error> {
+    pub fn serialize(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let mut bytes = self.header.serialize();
         bytes.extend_from_slice(&self.state.serialize()?);
         Ok(bytes)
     }
 
-    pub fn deserialize(serialized: &[u8]) -> Result<Self, serde_json::Error> {
+    pub fn deserialize(serialized: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self{
-            header: TcpMigrationHeader::deserialize(serialized),
+            header: TcpMigrationHeader::deserialize(serialized)?,
             state: TcpState::deserialize(&serialized[TcpMigrationHeader::SIZE..])?,
         })
     }
