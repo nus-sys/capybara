@@ -1,33 +1,10 @@
 /* -*- P4_16 -*- */
 
+#include "./capybara_header.h"
+
 #include <core.p4>
 #include <tna.p4>
 
-#define ETHERTYPE_TPID    0x8100
-
-const int MAC_TABLE_SIZE        = 65536;
-const bit<3> L2_LEARN_DIGEST = 1;
-
-/*************************************************************************
- ***********************  H E A D E R S  *********************************
- *************************************************************************/
-
-/*  Define all the headers the program will recognize             */
-/*  The actual sets of headers processed by each gress can differ */
-
-/* Standard ethernet header */
-header ethernet_h {
-    bit<48>   dst_addr;
-    bit<48>   src_addr;
-    bit<16>   ether_type;
-}
-
-header vlan_tag_h {
-    bit<16>  tpid;
-    bit<3>   pcp;
-    bit<1>   dei;
-    bit<12>  vid;
-}
 
 /******  G L O B A L   I N G R E S S   M E T A D A T A  *********/
 
@@ -67,7 +44,7 @@ parser IngressParser(
 
     state parse_ethernet {
         pkt.extract(hdr.ethernet);
-	    transition accept;
+        transition accept;
     }
 
 }
@@ -170,10 +147,10 @@ control Ingress(
 
         switch (dmac.apply().action_run) {
             dmac_unicast: { /* Unicast source pruning */
-	        if (ig_intr_md.ingress_port == ig_tm_md.ucast_egress_port) {
-	            drop();
-	        }
-	    }
+            if (ig_intr_md.ingress_port == ig_tm_md.ucast_egress_port) {
+                drop();
+            }
+        }
         }
     }
 
@@ -255,7 +232,7 @@ parser EgressParser(packet_in        pkt,
 
     state parse_vlan_tag {
         pkt.extract(hdr.vlan_tag);
-	transition accept;
+    transition accept;
     }
 }
 
