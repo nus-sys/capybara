@@ -13,7 +13,6 @@ class capybara():
     def devport_to_mcport(self, dp):
         return self.mcport(*self.pipeport(dp))
 
-
     # This is a useful bfrt_python function that should potentially allow one
     # to quickly clear all the logical tables (including the fixed ones) in
     #  their data plane program.
@@ -22,18 +21,18 @@ class capybara():
     # (once proper BfRt support is added). As of SDE-9.2.0 the support is mixed.
     # As a result the function contains some workarounds.
     def clear_all(self, verbose=True, batching=True, clear_ports=False):
-        return;
+    
         table_list = bfrt.info(return_info=True, print_info=False)
 
         # Remove port tables from the list
         port_types = ['PORT_CFG',      'PORT_FRONT_PANEL_IDX_INFO',
                       'PORT_HDL_INFO', 'PORT_STR_INFO']
-
+    
         if not clear_ports:
             for table in list(table_list):
                 if table['type'] in port_types:
                     table_list.remove(table)
-
+                    
                     # The order is important. We do want to clear from the top,
                     # i.e. delete objects that use other objects. For example,
                     # table entries use selector groups and selector groups
@@ -47,8 +46,8 @@ class capybara():
                             ['ACTION_PROFILE'],
                             ['PRE_MGID'],
                             ['PRE_ECMP'],
-                            ['PRE_NODE'],
-                            []):         # This is catch-all
+                            ['PRE_NODE']):
+                            #[]):         # This is catch-all
             for table in list(table_list):
                 if table['type'] in table_types or len(table_types) == 0:
                     try:
@@ -70,7 +69,7 @@ class capybara():
                         try:
                             if batching:
                                 bfrt.batch_begin()
-
+                                
                             # This line can result in an exception,
                             # since # not all tables support get()
                             entry_list = table['node'].get(regex=True,
@@ -81,7 +80,7 @@ class capybara():
                             # For those tables we'll try to push in an
                             # entry with everything being zeroed out
                             has_delete = hasattr(table['node'], 'delete')
-
+                            
                             if entry_list != -1:
                                 if has_delete:
                                     for entry in entry_list:
@@ -99,11 +98,11 @@ class capybara():
                             else:
                                 print('Empty')
                             table_list.remove(table)
-
+                        
                         except BfRtTableError as e:
                             print('Empty')
                             table_list.remove(table)
-
+                        
                         except Exception as e:
                             # We can have in a number of ways: no get(),
                             # no add() etc. Another reason is that the
