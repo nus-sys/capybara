@@ -46,8 +46,8 @@ class capybara():
                             ['ACTION_PROFILE'],
                             ['PRE_MGID'],
                             ['PRE_ECMP'],
-                            ['PRE_NODE']):
-                            #[]):         # This is catch-all
+                            ['PRE_NODE'],
+                            []):         # This is catch-all
             for table in list(table_list):
                 if table['type'] in table_types or len(table_types) == 0:
                     try:
@@ -135,6 +135,14 @@ class capybara():
         self.p4.IngressDeparser.l2_digest.callback_register(self.learning_cb)
         print("Done")
 
+        # Enable migration learning
+        print("Initializing learning on TCP migration ... ", end='', flush=True)
+        try:
+            self.p4.IngressDeparser.migration_digest.callback_deregister()
+        except:
+            pass
+        self.p4.IngressDeparser.migration_digest.callback_register(self.learning_migration)
+        print("Done")
         # Enable aging on SMAC
         print("Inializing Aging on SMAC ... ", end='', flush=True)
         self.p4.Ingress.smac.idle_table_set_notify(enable=False,
@@ -152,13 +160,13 @@ class capybara():
         smac = bfrt.capybara.pipe.Ingress.smac
         dmac = bfrt.capybara.pipe.Ingress.dmac
 
-        mac_addr = entry.key[b'hdr.ethernet.src_addr']
+        mac_addr = entry.key[b'hdr.ethernet.src_mac']
 
         print("Aging out: MAC: {}".format(mac(mac_addr)))
 
         entry.remove() # from smac
         try:
-            dmac.delete(dst_addr=mac_addr)
+            dmac.delete(dst_mac=mac_addr)
         except:
             print("WARNING: Could not find the matching DMAC entry")
 
@@ -175,7 +183,7 @@ class capybara():
             old_port = port ^ mac_move # Because mac_move = ingress_port ^ port
 
             print("MAC: {},  Port={}".format(
-                mac(mac_addr), port), end="")
+                mac(mac_addr), port), end="", flush=True)
 
             if mac_move != 0:
                 print("(Move from port={})".format(old_port))
@@ -184,18 +192,45 @@ class capybara():
 
             # Since we do not have access to self, we have to use
             # the hardcoded value for the TTL :(
-            smac.entry_with_smac_hit(src_addr=mac_addr,
+            smac.entry_with_smac_hit(src_mac=mac_addr,
                                      port=port,
                                      is_static=False,
                                      ENTRY_TTL=60000).push()
-            dmac.entry_with_dmac_unicast(dst_addr=mac_addr,
+            dmac.entry_with_dmac_unicast(dst_mac=mac_addr,
                                          port=port).push()
+        return 0
+
+    @staticmethod
+    def learning_migration(dev_id, pipe_id, direction, parser_id, session, msg):
+        migrate_request = bfrt.capybara.pipe.Ingress.migrate_request
+        migrate_reply = bfrt.capybara.pipe.Ingress.migrate_reply
+        
+        for digest in msg:
+            origin_mac      =   digest["origin_mac"]
+            origin_ip       =   digest["origin_ip"]
+            origin_port     =   digest["origin_port"]
+
+            dst_mac         =   digest["dst_mac"]
+            dst_ip          =   digest["dst_ip"]
+            dst_port        =   digest["dst_port"]
+
+
+            print("\nMIGRATION: {}:{}:{} => {}:{}:{}\n".format(
+                mac(origin_mac), ip(origin_ip), origin_port, mac(dst_mac), ip(dst_ip), dst_port), end="", flush=True)
+
+
+            # Since we do not have access to self, we have to use
+            # the hardcoded value for the TTL :(
+            migrate_request.entry_with_migrate_request_hit(dst_mac=origin_mac, dst_ip=origin_ip, dst_port=origin_port,
+                                                            migrate_mac=dst_mac, migrate_ip=dst_ip, migrate_port=dst_port).push()
+            migrate_reply.entry_with_migrate_reply_hit(src_mac=dst_mac, src_ip=dst_ip, src_port=dst_port,
+                                                            migrate_mac=origin_mac, migrate_ip=origin_ip, migrate_port=origin_port).push()
         return 0
 
     def l2_add_smac_drop(self, vid, mac_addr):
         mac_addr = mac(mac_addr)
         self.p4.Ingress.smac.entry_with_smac_drop(
-            src_addr=mac_addr).push()
+            src_mac=mac_addr).push()
 
 def set_bcast(ports):
     # Broadcast

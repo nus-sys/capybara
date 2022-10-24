@@ -168,11 +168,6 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     // println!("Sleep 10s...");
     // thread::sleep(Duration::from_millis(10000));
     // println!("Resume!");
- 
-
-    println!("Sleep 5s...");
-    thread::sleep(Duration::from_millis(5000));
-    println!("Resume!");
 
 
     let state = libos.migrate_out_tcp_connection(qd_connection_in, Some(dest))?; // fd: queue descriptor of the connection to be migrated
@@ -193,6 +188,9 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     println!("TcpState: {}", serde_json::to_string_pretty(&state.state)?);
     
     
+    println!("Sleep 10s...");
+    thread::sleep(Duration::from_millis(10000));
+    // println!("Resume!");
 
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
@@ -268,6 +266,36 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
     let dest_fd = libos.migrate_in_tcp_connection(deserialized.clone()).unwrap();
 
 
+    // Process client messages (before migration).
+    let mut cnt: i32 = 0;
+    while true {
+        cnt+=1;
+        
+        let qtoken: QToken = match libos.pop(dest_fd) {
+            Ok(qt) => qt,
+            Err(e) => panic!("pop failed: {:?}", e.cause),
+        };
+        // println!("Waiting pop...");
+        // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
+        let recvbuf = match libos.wait2(qtoken) {
+            Ok((_, OperationResult::Pop(_, buf))) => buf,
+            Err(e) => panic!("operation failed: {:?}", e.cause),
+            _ => unreachable!(),
+        };
+
+        // i += recvbuf.len();
+        let msg = from_utf8(&recvbuf).unwrap();
+        println!("pop: {}", msg);
+
+
+        thread::sleep(Duration::from_millis(1000));
+        if cnt == 15{
+            break;
+        }
+    }
+
+
+
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
 
@@ -327,7 +355,7 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         };
         println!("push: {}", msg);
         thread::sleep(Duration::from_millis(1000));
-        if cnt == 5{
+        if cnt == 15{
             break;
         }
     }

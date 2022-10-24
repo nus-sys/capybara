@@ -1,9 +1,6 @@
 #include <core.p4>
 #include <tna.p4>
 
-typedef bit<48> mac_addr_t;
-typedef bit<32> ipv4_addr_t;
-
 #define ETHERTYPE_TPID    0x8100
 #define ETHERTYPE_IPV4  0x0800
 #define ETHERTYPE_ARP   0x0806
@@ -13,8 +10,11 @@ typedef bit<32> ipv4_addr_t;
 
 #define IPV4_HOST_SIZE 1024
 
+#define TCP_MIGRATION_FLAG 0xCAFEDEAD
+
 const int MAC_TABLE_SIZE        = 65536;
 const bit<3> L2_LEARN_DIGEST = 1;
+const bit<3> TCP_MIGRATION_DIGEST = 2;
 
 /*************************************************************************
  ***********************  H E A D E R S  *********************************
@@ -25,13 +25,13 @@ const bit<3> L2_LEARN_DIGEST = 1;
 
 /* Standard ethernet header */
 header ethernet_h {
-    bit<48>   dst_addr;
-    bit<48>   src_addr;
+    bit<48>   dst_mac;
+    bit<48>   src_mac;
     bit<16>   ether_type;
 }
 
 header remaining_ethernet_h {
-    bit<48> src_addr;
+    bit<48> src_mac;
     bit<16> ether_type;
 }
 
@@ -65,8 +65,8 @@ header ipv4_h {
     bit<8>   ttl;
     bit<8>   protocol;
     bit<16>  hdr_checksum;
-    bit<32>  src_addr;
-    bit<32>  dst_addr;
+    bit<32>  src_ip;
+    bit<32>  dst_ip;
 }
 
 header tcp_h {
@@ -87,4 +87,13 @@ header udp_h {
     bit<16>  dst_port;
     bit<16>  len;
     bit<16>  checksum;
+}
+
+
+header tcp_migration_header_h {
+    bit<32>  flags;
+    bit<32>  origin_ip;
+    bit<16>  origin_port;
+    bit<32>  dst_ip;
+    bit<16>  dst_port;
 }
