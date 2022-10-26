@@ -233,7 +233,7 @@ fn benchmark(instants: &[(Duration, Duration)]) {
             index += 1;
         }
         throughputs.push(index);
-        last_index = index + 1;
+        last_index = last_index + index;
     }
 
     println!("Latency: {}", latency);
