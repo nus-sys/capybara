@@ -160,11 +160,8 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         _ => unreachable!(),
     };
 
-    let mut latencies = Vec::with_capacity(nrounds);
-    let mut throughput = 0u64;
-    const THROUGHPUT_DURATION_MS: u64 = 5;
+    let mut instants = Vec::with_capacity(nrounds);
 
-    let absolute_start = Instant::now();
     // Issue n sends.
     for i in 0..nrounds {
         let begin = Instant::now();
@@ -192,10 +189,7 @@ fn client(remote: SocketAddrV4) -> Result<()> {
             _ => unreachable!(),
         };
 
-        latencies.push(Instant::now() - begin);
-        if Instant::now() - absolute_start < Duration::from_millis(THROUGHPUT_DURATION_MS) {
-            throughput += 1;
-        }
+        instants.push((begin, Instant::now()));
 
         // Sanity check received data.
         assert_eq!(expectbuf[..], recvbuf[..], "server expectbuf != recvbuf");
@@ -206,11 +200,45 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
     }
 
-    println!("Average Latency = {:?}", latencies.iter().fold(Duration::ZERO, |sum, e| sum + *e).as_secs_f64() / (nrounds as f64));
-    println!("Throughput = {:?}/s", 1000 / THROUGHPUT_DURATION_MS * throughput);
+    let instants = instants.iter()
+        .map(|e| (e.0 - instants[0].0, e.1 - instants[0].1))
+        .collect::<Vec<(Duration, Duration)>>();
+    benchmark(&instants);
 
     // TODO: close socket when we get close working properly in catnip.
     Ok(())
+}
+
+//======================================================================================================================
+// benchmark()
+//======================================================================================================================
+
+fn benchmark(instants: &[(Duration, Duration)]) {
+    const THROUGHPUT_DURATION_MS: u128 = 5;
+
+    let latency = instants.iter()
+    .map(|e| e.1 - e.0)
+    .fold(Duration::ZERO, |sum, e| sum + e).as_secs_f64() / (instants.len() as f64);
+    
+    let end = instants[instants.len() - 1].1.as_millis();
+    let mut throughputs = Vec::new();
+
+    let mut last_index = 0;
+    for i in 0..(end / THROUGHPUT_DURATION_MS) {
+        let begin = i * THROUGHPUT_DURATION_MS;
+        let end = begin + THROUGHPUT_DURATION_MS;
+        
+        let mut index = 0;
+        while instants[last_index + index].1.as_millis() < end {
+            index += 1;
+        }
+        throughputs.push(index);
+        last_index = index + 1;
+    }
+
+    println!("Latency: {}", latency);
+    println!("Throughputs: {:?}", throughputs);
+    println!("Avg throughput: {}/5ms", throughputs.iter().fold(0, |sum, e| sum + e) as f64 / throughputs.len() as f64);
 }
 
 //======================================================================================================================
