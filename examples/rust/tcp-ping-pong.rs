@@ -13,6 +13,7 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
+use std::time::{Instant, Duration};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -159,8 +160,15 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         _ => unreachable!(),
     };
 
+    let mut latencies = Vec::with_capacity(nrounds);
+    let mut throughput = 0u64;
+    const THROUGHPUT_DURATION_MS: u64 = 5;
+
+    let absolute_start = Instant::now();
     // Issue n sends.
     for i in 0..nrounds {
+        let begin = Instant::now();
+
         // Push data.
         let qt: QToken = match libos.push2(sockqd, &sendbuf[..]) {
             Ok(qt) => qt,
@@ -184,6 +192,11 @@ fn client(remote: SocketAddrV4) -> Result<()> {
             _ => unreachable!(),
         };
 
+        latencies.push(Instant::now() - begin);
+        if Instant::now() - absolute_start < Duration::from_millis(THROUGHPUT_DURATION_MS) {
+            throughput += 1;
+        }
+
         // Sanity check received data.
         assert_eq!(expectbuf[..], recvbuf[..], "server expectbuf != recvbuf");
 
@@ -192,6 +205,9 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         #[cfg(feature = "profiler")]
         profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
     }
+
+    println!("Average Latency = {:?}", latencies.iter().fold(Duration::ZERO, |sum, e| sum + *e).as_secs_f64() / (nrounds as f64));
+    println!("Throughput = {:?}/s", 1000 / THROUGHPUT_DURATION_MS * throughput);
 
     // TODO: close socket when we get close working properly in catnip.
     Ok(())
