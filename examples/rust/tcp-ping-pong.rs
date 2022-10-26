@@ -201,7 +201,7 @@ fn client(remote: SocketAddrV4) -> Result<()> {
     }
 
     let instants = instants.iter()
-        .map(|e| (e.0 - instants[0].0, e.1 - instants[0].1))
+        .map(|e| (e.0 - instants[0].0, e.1 - instants[0].0))
         .collect::<Vec<(Duration, Duration)>>();
     benchmark(&instants);
 
