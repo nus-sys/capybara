@@ -135,10 +135,11 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
         println!("pop: {}", msg);
 
 
-        thread::sleep(Duration::from_millis(1000));
+        
         if cnt == 5{
             break;
         }
+        thread::sleep(Duration::from_millis(1000));
     }
 
     // Connect to migration destination.
