@@ -121,6 +121,10 @@ path = "examples/rust/tcp-ping-pong.rs"
 name = "tcp-migration"
 path = "examples/rust/tcp-migration.rs"
 
+[[example]]
+name = "tcp-migration-ping-pong"
+path = "examples/rust/tcp-migration-ping-pong.rs"
+
 #=======================================================================================================================
 # Features
 #=======================================================================================================================
