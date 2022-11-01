@@ -107,6 +107,13 @@ impl LibOS {
         }
     }
 
+    /// Waits for an I/O operation to complete or a timeout to expire.
+    pub fn timedwait2(&mut self, qt: QToken, abstime: Option<SystemTime>) -> Result<(QDesc, OperationResult), Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.timedwait2(qt, abstime),
+        }
+    }
+
     /// Creates a socket.
     pub fn socket(
         &mut self,

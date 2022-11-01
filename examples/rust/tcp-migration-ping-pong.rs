@@ -5,6 +5,7 @@
 // Imports
 //======================================================================================================================
 use std::{io, str::from_utf8};
+use std::time::SystemTime;
 use std::io::prelude::*;
 
 use ::anyhow::Result;
@@ -363,6 +364,7 @@ fn client(remote: SocketAddrV4) -> Result<()> {
 
     // pause();    
     let mut cnt: i32 = 0;
+    let mut retransmissions = 0;
     while true {
         cnt+=1;
         
@@ -381,16 +383,31 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         println!("ping: {}", msg);
         
         // Pop data.
-        let qtoken: QToken = match libos.pop(sockqd) {
+        let qt: QToken = match libos.pop(sockqd) {
             Ok(qt) => qt,
             Err(e) => panic!("pop failed: {:?}", e.cause),
         };
         // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
-        let recvbuf = match libos.wait2(qtoken) {
+        let recvbuf = match libos.timedwait2(qt, Some(SystemTime::now() + Duration::from_millis(1))) {
             Ok((_, OperationResult::Pop(_, buf))) => buf,
-            Err(e) => panic!("operation failed: {:?}", e.cause),
+            Err(e) => {
+                if e.errno == libc::ETIMEDOUT {
+                    if retransmissions == 5 {
+                        panic!("Exceeded 5 timeout retransmissions");
+                    }
+
+                    eprintln!("TIMEOUT: pong {}", cnt);
+                    cnt -= 1;
+                    retransmissions += 1;
+                    continue;
+                }
+                panic!("operation failed: {:?}", e.cause)
+            },
             _ => unreachable!(),
         };
+
+        retransmissions = 0;
+
         let msg = from_utf8(&recvbuf).unwrap();
         println!("pong: {}", msg);
         
