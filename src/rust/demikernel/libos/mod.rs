@@ -27,7 +27,7 @@ use crate::{
         QDesc,
         QToken,
     },
-    inetstack::protocols::tcp::migration::TcpMigrationSegment,
+    inetstack::protocols::tcp::migration::{TcpMigrationSegment, TcpMigrationHeader, TcpState},
 };
 use ::std::{
     env,
@@ -231,16 +231,148 @@ impl LibOS {
         }
     }
 
-    /// dest: Optionally set the address of the destination the state will be sent to. If `None` is passed, `dest` is the same as `origin`.
-    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc, dest: Option<SocketAddrV4>) -> Result<TcpMigrationSegment, Fail> {
+    /// Returns the state along with the actual origin of the connection.
+    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<(TcpState, SocketAddrV4), Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.migrate_out_tcp_connection(fd, dest),
+            LibOS::NetworkLibOS(libos) => libos.migrate_out_tcp_connection(fd),
         }
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, state: TcpMigrationSegment) -> Result<QDesc, Fail> {
+    pub fn prepare_migrating_in(&mut self, local: SocketAddrV4, remote: SocketAddrV4) -> Result<(), Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.migrate_in_tcp_connection(state),
+            LibOS::NetworkLibOS(libos) => libos.prepare_migrating_in(local, remote),
         }
+    }
+
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState, origin: SocketAddrV4) -> Result<QDesc, Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.migrate_in_tcp_connection(state, origin),
+        }
+    }
+
+    /// Performs the complete process (synchronously, through TCP communication) to migrate out a tcp connection,
+    /// provided the descriptor of a connection to the destination server.
+    /// 
+    /// `origin`: Listening address for connection on origin server.
+    /// 
+    /// `dest`: Listening address for connection on destination server.
+    /// 
+    /// `remote`: Connection's remote address.
+    /// 
+    pub fn perform_tcp_migration_out_sync(
+        &mut self,
+        server_dest_fd: QDesc,
+        conn_fd: QDesc,
+        origin: SocketAddrV4,
+        dest: SocketAddrV4,
+        remote: SocketAddrV4,
+    ) -> Result<(), Fail> {
+        // PREPARE_MIGRATION
+
+        let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, dest, remote), Vec::new());
+        seg.header.flag_prepare_migration = true;
+        let qt = self.push2(server_dest_fd, &seg.serialize())?;
+        self.wait2(qt)?;
+
+
+        // PREPARE_MIGRATION_ACK
+
+        let qt = self.pop(server_dest_fd)?;
+        let seg = match self.wait2(qt) {
+            Ok((_, OperationResult::Pop(_, buf))) => {
+                let seg = TcpMigrationSegment::deserialize(&buf);
+                match seg {
+                    Ok(seg) => seg,
+                    Err(msg) => return Err(Fail::new(libc::EINVAL, msg)),
+                }
+            },
+            Err(e) => return Err(e),
+            _ => unreachable!(),
+        };
+
+        // Should have been ACKed and switch should have started redirecting packets to server_dest.
+        if !seg.header.flag_prepare_migration_ack || !seg.header.flag_load {
+            return Err(Fail::new(libc::EINVAL, "improper response from server_dest"));
+        }
+
+
+        // PAYLOAD_STATE
+
+        let (state, origin) = self.migrate_out_tcp_connection(conn_fd)?;
+        let mut seg = TcpMigrationSegment::new(
+            TcpMigrationHeader::new(origin, dest, remote),
+            state.serialize().expect("TcpState serialization failed")
+        );
+        seg.header.flag_payload_state = true;
+        seg.header.origin = origin;
+        let qt = self.push2(server_dest_fd, &seg.serialize())?;
+        self.wait2(qt)?;
+
+        // Maybe get another ACK from dest?
+
+        Ok(())
+    }
+
+    /// Performs the complete process (synchronously, through TCP communication) to migrate in a tcp connection,
+    /// provided the descriptor of a connection to the origin server.
+    pub fn perform_tcp_migration_in_sync(&mut self, server_origin_fd: QDesc) -> Result<QDesc, Fail> {
+        // PREPARE_MIGRATION
+
+        let qt = self.pop(server_origin_fd)?;
+        let seg = match self.wait2(qt) {
+            Ok((_, OperationResult::Pop(_, buf))) => {
+                let seg = TcpMigrationSegment::deserialize(&buf);
+                match seg {
+                    Ok(seg) => seg,
+                    Err(msg) => return Err(Fail::new(libc::EINVAL, msg)),
+                }
+            },
+            Err(e) => return Err(e),
+            _ => unreachable!(),
+        };
+
+        // Should have been ACKed and switch should have started redirecting packets to server_dest.
+        if !seg.header.flag_prepare_migration {
+            return Err(Fail::new(libc::EINVAL, "improper request from server_origin"));
+        }
+
+        let TcpMigrationHeader { origin, dest, remote, .. } = seg.header;
+
+
+        // PREPARE_MIGRATION_ACK
+
+        self.prepare_migrating_in(dest, remote)?;
+        
+        let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, dest, remote), Vec::new());
+        seg.header.flag_prepare_migration_ack = true;
+        seg.header.flag_load = true;
+        let qt = self.push2(server_origin_fd, &seg.serialize())?;
+        self.wait2(qt)?;
+
+
+        // PAYLOAD_STATE
+
+        let qt = self.pop(server_origin_fd)?;
+        let seg = match self.wait2(qt) {
+            Ok((_, OperationResult::Pop(_, buf))) => {
+                let seg = TcpMigrationSegment::deserialize(&buf);
+                match seg {
+                    Ok(seg) => seg,
+                    Err(msg) => return Err(Fail::new(libc::EINVAL, msg)),
+                }
+            },
+            Err(e) => return Err(e),
+            _ => unreachable!(),
+        };
+
+        // Should have been ACKed and switch should have started redirecting packets to server_dest.
+        if !seg.header.flag_payload_state {
+            return Err(Fail::new(libc::EINVAL, "improper state payload response from server_origin"));
+        }
+
+        let mut state = TcpState::deserialize(&seg.payload).expect("TcpState deserialization failed");
+        state.local = dest;
+
+        self.migrate_in_tcp_connection(state, origin)
     }
 }

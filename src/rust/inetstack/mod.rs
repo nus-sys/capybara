@@ -17,7 +17,7 @@ use crate::{
             },
             tcp::{
                 operations::ConnectFuture,
-                migration::TcpMigrationSegment,
+                migration::TcpState,
             },
             udp::UdpOperation,
             Peer,
@@ -72,8 +72,6 @@ use ::std::{
 
 #[cfg(feature = "profiler")]
 use crate::timer;
-
-use self::protocols::tcp::migration::TcpState;
 
 //==============================================================================
 // Exports
@@ -679,12 +677,12 @@ impl InetStack {
         }
     }
 
-    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc, dest: Option<SocketAddrV4>) -> Result<TcpMigrationSegment, Fail> {
+    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<(TcpState, SocketAddrV4), Fail> {
         match self.file_table.get(fd) {
             Some(qtype) => {
                 match QType::try_from(qtype) {
                     Ok(QType::TcpSocket) => {
-                        let conn = self.ipv4.tcp.migrate_out_tcp_connection(fd, dest)?;
+                        let conn = self.ipv4.tcp.migrate_out_tcp_connection(fd)?;
                         self.file_table.free(fd);
                         Ok(conn)
                     }
@@ -700,9 +698,13 @@ impl InetStack {
         }
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, conn: TcpMigrationSegment) -> Result<QDesc, Fail> {
+    pub fn prepare_migrating_in(&mut self, local: SocketAddrV4, remote: SocketAddrV4) -> Result<(), Fail> {
+        self.ipv4.tcp.prepare_migrating_in(local, remote)
+    }
+
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState, origin: SocketAddrV4) -> Result<QDesc, Fail> {
         let qd = self.file_table.alloc(u32::from(QType::TcpSocket));
-        self.ipv4.tcp.migrate_in_tcp_connection(conn, qd)?;
+        self.ipv4.tcp.migrate_in_tcp_connection(qd, state, origin)?;
         Ok(qd)
     }
 }

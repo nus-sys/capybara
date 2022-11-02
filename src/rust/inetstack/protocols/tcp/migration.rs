@@ -72,7 +72,7 @@ pub struct TcpState {
 // The flags are listed in decreasing priority.
 //  
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TcpMigrationHeader {
     pub origin: SocketAddrV4,
     pub dest: SocketAddrV4,
@@ -231,13 +231,13 @@ impl TcpMigrationSegment {
         Self { header, payload }
     }
 
-    pub fn serialize(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    pub fn serialize(&self) -> Vec<u8> {
         let mut bytes = self.header.serialize();
         bytes.extend(self.payload.iter());
-        Ok(bytes)
+        bytes
     }
 
-    pub fn deserialize(serialized: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn deserialize(serialized: &[u8]) -> Result<Self, &str> {
         Ok(Self{
             header: TcpMigrationHeader::deserialize(serialized)?,
             payload: serialized[TcpMigrationHeader::SIZE..].to_vec(),

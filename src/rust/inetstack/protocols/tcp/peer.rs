@@ -83,6 +83,7 @@ use ::rand::{
     Rng,
     SeedableRng,
 };
+use std::collections::VecDeque;
 use ::std::{
     cell::{
         RefCell,
@@ -149,6 +150,7 @@ pub struct Inner {
 
     /// (local, remote) -> origin
     migrated_in_origins: HashMap<(SocketAddrV4, SocketAddrV4), SocketAddrV4>,
+    migrating_recv_queues: HashMap<(SocketAddrV4, SocketAddrV4), VecDeque<Buffer>>,
 }
 
 pub struct TcpPeer {
@@ -570,9 +572,11 @@ impl TcpPeer {
     /// 1) Change status of our socket to MigratedOut
     /// 2) Change status of ControlBlock state to Migrated out.
     /// 3) Remove socket from Established hashmap.
-    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc, dest: Option<SocketAddrV4>) -> Result<TcpMigrationSegment, Fail> {
+    /// 
+    /// Returns the state along with the actual origin of the connection.
+    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<(TcpState, SocketAddrV4), Fail> {
         let mut state = self.take_tcp_state(fd)?;
-        if let Some(dest) = dest { state.local = dest; }
+        //if let Some(dest) = dest { state.local = dest; }
 
         let mut inner = self.inner.borrow_mut();
         let socket = inner.sockets.get_mut(&fd);
@@ -615,21 +619,31 @@ impl TcpPeer {
             panic!("Established socket somehow missing.");
         }
 
-        let migration_hdr = match inner.migrated_in_origins.get(&key) {
+        /* let migration_hdr = match inner.migrated_in_origins.get(&key) {
             Some(origin) => TcpMigrationHeader::new(*origin, dest.unwrap_or(*origin), remote),
             None => TcpMigrationHeader::new(key.0, dest.unwrap_or(key.0), remote),
-        };
+        }; */
 
-        inner.migrated_in_origins.remove(&key);
+        let origin = inner.migrated_in_origins.remove(&key).unwrap_or(local);
 
-        Ok(TcpMigrationSegment::new(migration_hdr, state.serialize().expect("TcpState serialization failed")))
+        Ok((state, origin))
 
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, conn: TcpMigrationSegment, qd: QDesc) -> Result<(), Fail> {
+    pub fn prepare_migrating_in(&mut self, local: SocketAddrV4, remote: SocketAddrV4) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
-        let TcpMigrationSegment { header, payload } = conn;
-        let state = TcpState::deserialize(&payload).expect("TcpState deserialization failed");
+        if inner.migrating_recv_queues.contains_key(&(local, remote)) {
+            Err(Fail::new(EBUSY, "connection already prepared for migrating in"))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn migrate_in_tcp_connection(&mut self, qd: QDesc, state: TcpState, origin: SocketAddrV4) -> Result<(), Fail> {
+        let mut inner = self.inner.borrow_mut();
+        let mut state = state;
+        /* let TcpMigrationSegment { header, payload } = conn;
+        let mut state = TcpState::deserialize(&payload).expect("TcpState deserialization failed"); */
 
         // Check if keys already exist first. This way we don't have to undo changes we make to
         // the state.
@@ -657,6 +671,12 @@ impl TcpPeer {
                 let socket = Socket::Established { local: state.local, remote: state.remote };
                 v.insert(socket);
             }
+        }
+
+        // Check if migrating queue exists and add all its elements to state's recv_queue. Remove migrating queue.
+        match inner.migrating_recv_queues.remove(&(state.local, state.remote)) {
+            Some(queue) => state.recv_queue.extend(queue),
+            None => return Err(Fail::new(EINVAL, "unprepared for migration")),
         }
 
         let receiver = Receiver::migrated_in(
@@ -703,8 +723,8 @@ impl TcpPeer {
         }
 
         // If this was the original origin, do not insert.
-        if state.local != header.origin {
-            inner.migrated_in_origins.insert((state.local, state.remote), header.origin);
+        if state.local != origin {
+            inner.migrated_in_origins.insert((state.local, state.remote), origin);
         }
 
         Ok(())
@@ -744,6 +764,7 @@ impl Inner {
             rng: Rc::new(RefCell::new(rng)),
             dead_socket_tx,
             migrated_in_origins: HashMap::new(),
+            migrating_recv_queues: HashMap::new(),
         }
     }
 
@@ -772,6 +793,12 @@ impl Inner {
         if let Some(s) = self.passive.get_mut(&local) {
             debug!("Routing to passive connection: {:?}", local);
             return s.receive(ip_hdr, &tcp_hdr);
+        }
+
+        // Check if migrating queue exists. If yes, push buffer to queue.
+        if let Some(queue) = self.migrating_recv_queues.get_mut(&key) {
+            queue.push_back(data);
+            return Ok(());
         }
 
         // The packet isn't for an open port; send a RST segment.
