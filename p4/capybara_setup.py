@@ -127,13 +127,13 @@ class capybara():
         self.__init__()
 
         # Enable learning on SMAC
-        print("Initializing learning on SMAC ... ", end='', flush=True)
-        try:
-            self.p4.IngressDeparser.l2_digest.callback_deregister()
-        except:
-            pass
-        self.p4.IngressDeparser.l2_digest.callback_register(self.learning_cb)
-        print("Done")
+        # print("Initializing learning on SMAC ... ", end='', flush=True)
+        # try:
+        #     self.p4.IngressDeparser.l2_digest.callback_deregister()
+        # except:
+        #     pass
+        # self.p4.IngressDeparser.l2_digest.callback_register(self.learning_cb)
+        # print("Done")
 
         # Enable migration learning
         print("Initializing learning on TCP migration ... ", end='', flush=True)
@@ -143,17 +143,19 @@ class capybara():
             pass
         self.p4.IngressDeparser.migration_digest.callback_register(self.learning_migration)
         print("Done")
-        # Enable aging on SMAC
-        print("Inializing Aging on SMAC ... ", end='', flush=True)
-        self.p4.Ingress.smac.idle_table_set_notify(enable=False,
-                                                   callback=None)
+        
 
-        self.p4.Ingress.smac.idle_table_set_notify(enable=True,
-                                                   callback=self.aging_cb,
-                                                   interval = 10000,
-                                                   min_ttl  = 10000,
-                                                   max_ttl  = 60000)
-        print("Done")
+        # Enable aging on SMAC
+        # print("Inializing Aging on SMAC ... ", end='', flush=True)
+        # self.p4.Ingress.smac.idle_table_set_notify(enable=False,
+        #                                            callback=None)
+
+        # self.p4.Ingress.smac.idle_table_set_notify(enable=True,
+        #                                            callback=self.aging_cb,
+        #                                            interval = 10000,
+        #                                            min_ttl  = 10000,
+        #                                            max_ttl  = 60000)
+        # print("Done")
 
     @staticmethod
     def aging_cb(dev_id, pipe_id, direction, parser_id, entry):
@@ -214,15 +216,17 @@ class capybara():
             dst_ip          =   digest["dst_ip"]
             dst_port        =   digest["dst_port"]
 
+            egress_port     =   digest["egress_port"]
 
-            print("\nMIGRATION: {}:{}:{} => {}:{}:{}\n".format(
-                mac(origin_mac), ip(origin_ip), origin_port, mac(dst_mac), ip(dst_ip), dst_port), end="", flush=True)
+
+            print("\nMIGRATION: {}:{}:{} => {}:{}:{} (dev_port: {})\n".format(
+                mac(origin_mac), ip(origin_ip), origin_port, mac(dst_mac), ip(dst_ip), dst_port, egress_port), end="", flush=True)
 
 
             # Since we do not have access to self, we have to use
             # the hardcoded value for the TTL :(
             migrate_request.entry_with_migrate_request_hit(dst_mac=origin_mac, dst_ip=origin_ip, dst_port=origin_port,
-                                                            migrate_mac=dst_mac, migrate_ip=dst_ip, migrate_port=dst_port).push()
+                                                            migrate_mac=dst_mac, migrate_ip=dst_ip, migrate_port=dst_port, migrate_egress_port=egress_port).push()
             migrate_reply.entry_with_migrate_reply_hit(src_mac=dst_mac, src_ip=dst_ip, src_port=dst_port,
                                                             migrate_mac=origin_mac, migrate_ip=origin_ip, migrate_port=origin_port).push()
         return 0
@@ -244,5 +248,5 @@ def set_bcast(ports):
 ### Setup L2 learning
 sl2 = capybara(default_ttl=10000)
 sl2.setup()
-set_bcast([0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52])
+set_bcast([24, 32, 36])
 bfrt.complete_operations()
