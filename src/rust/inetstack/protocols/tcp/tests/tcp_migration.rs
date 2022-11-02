@@ -358,7 +358,9 @@ pub fn migrate_connection() {
     // make sure to update alice
     debug!("Get Alice's state");
     let mut alice_state = client.tcp_migrate_out_connection(client_fd, None).unwrap();
-    alice_state.state.remote = dest;
+    let mut state = TcpState::deserialize(&alice_state.payload).unwrap();
+    state.remote = dest;
+    alice_state.payload = state.serialize().unwrap();
     let new_alice = client.tcp_migrate_in_connection(alice_state.clone()).unwrap();
 
     {

@@ -43,16 +43,51 @@ pub struct TcpState {
     pub receiver_window_scale: u32,
 }
 
+//
+//  Header format:
+//  
+//  Offset  Size    Data
+//  0       4       Signature (0xCAFEDEAD)
+//  4       4       Origin IP
+//  8       2       Origin Port
+//  10      4       Dest IP
+//  14      2       Dest Port
+//  16      4       Remote IP
+//  20      2       Remote Port
+//  22      1       Flags
+//  23      1       Byte Checksum
+//  24      8       Unused
+//
+//  TOTAL 32
+//
+//
+//  Flags format:
+//  Bit number      Flag
+//  0               LOAD - Instructs the switch to load the entry into the migration tables.
+//  1               PREPARE_MIGRATION - Instructs `server_dest` to prepare itself to receive a migrated connection.
+//  2               PREPARE_MIGRATION_ACK - Notifies `server_origin` that its `PREPARE_MIGRATION` signal has been acknowledged and completed.
+//  3               PAYLOAD_STATE - The payload of this segment contains the TCP state.
+//  4-7             Unused
+//
+// The flags are listed in decreasing priority.
+//  
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcpMigrationHeader {
     pub origin: SocketAddrV4,
     pub dest: SocketAddrV4,
+    pub remote: SocketAddrV4,
+
+    pub flag_load: bool,
+    pub flag_prepare_migration: bool,
+    pub flag_prepare_migration_ack: bool,
+    pub flag_payload_state: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcpMigrationSegment {
     pub header: TcpMigrationHeader,
-    pub state: TcpState,
+    pub payload: Vec<u8>,
 }
 
 //==============================================================================
@@ -116,10 +151,22 @@ impl TcpState {
 
 impl TcpMigrationHeader {
     /// TcpMigrationHeader size in bytes.
-    const SIZE: usize = 20;
+    const SIZE: usize = 32;
+    const FLAG_LOAD: u8 = 0;
+    const FLAG_PREPARE_MIGRATION: u8 = 1;
+    const FLAG_PREPARE_MIGRATION_ACK: u8 = 2;
+    const FLAG_PAYLOAD_STATE: u8 = 3;
 
-    pub fn new(origin: SocketAddrV4, dest: SocketAddrV4) -> Self {
-        Self { origin, dest }
+    pub fn new(origin: SocketAddrV4, dest: SocketAddrV4, remote: SocketAddrV4) -> Self {
+        Self {
+            origin,
+            dest,
+            remote,
+            flag_load: false,
+            flag_prepare_migration: false,
+            flag_prepare_migration_ack: false,
+            flag_payload_state: false,
+        }
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -129,11 +176,22 @@ impl TcpMigrationHeader {
         NetworkEndian::write_u16(&mut bytes[8..10], self.origin.port());
         bytes[10..14].copy_from_slice(&self.dest.ip().octets());
         NetworkEndian::write_u16(&mut bytes[14..16], self.dest.port());
-        bytes[16] = bytes[4..].iter().fold(0, |sum, e| sum + e).wrapping_neg();
+        bytes[16..20].copy_from_slice(&self.remote.ip().octets());
+        NetworkEndian::write_u16(&mut bytes[20..22], self.remote.port());
+
+        bytes[22] = self.serialize_flags();
+        bytes[23] = bytes[4..].iter().fold(0, |sum, e| sum + e).wrapping_neg();
 
         assert_eq!(bytes[4..].iter().fold(0, |sum, e| sum + e), 0);
 
         bytes.to_vec()
+    }
+
+    fn serialize_flags(&self) -> u8 {
+        ((self.flag_load as u8) << Self::FLAG_LOAD)
+        | ((self.flag_prepare_migration as u8) << Self::FLAG_PREPARE_MIGRATION)
+        | ((self.flag_prepare_migration_ack as u8) << Self::FLAG_PREPARE_MIGRATION_ACK)
+        | ((self.flag_payload_state as u8) << Self::FLAG_PAYLOAD_STATE)
     }
 
     /// Panics if slice is not long enough, or if the header is not in the right format.
@@ -142,34 +200,47 @@ impl TcpMigrationHeader {
 
         if NetworkEndian::read_u32(serialized) != 0xCAFEDEAD { Err("Magic number (0xCAFEDEAD) not found") }
         else if serialized[4..Self::SIZE].iter().fold(0, |sum, e| sum + e) != 0 { Err("Invalid checksum") }
-        else { Ok(Self {
-            origin: SocketAddrV4::new(
-                Ipv4Addr::new(serialized[4], serialized[5], serialized[6], serialized[7]),
-                NetworkEndian::read_u16(&serialized[8..10]),
-            ),
-            dest: SocketAddrV4::new(
-                Ipv4Addr::new(serialized[10], serialized[11], serialized[12], serialized[13]),
-                NetworkEndian::read_u16(&serialized[14..16]),
-            ),
-        })}
+        else { 
+            let flags = serialized[22];
+
+            Ok(Self {
+                origin: SocketAddrV4::new(
+                    Ipv4Addr::new(serialized[4], serialized[5], serialized[6], serialized[7]),
+                    NetworkEndian::read_u16(&serialized[8..10]),
+                ),
+                dest: SocketAddrV4::new(
+                    Ipv4Addr::new(serialized[10], serialized[11], serialized[12], serialized[13]),
+                    NetworkEndian::read_u16(&serialized[14..16]),
+                ),
+                remote: SocketAddrV4::new(
+                    Ipv4Addr::new(serialized[16], serialized[17], serialized[18], serialized[19]),
+                    NetworkEndian::read_u16(&serialized[20..22]),
+                ),
+
+                flag_load: (flags & (1 << Self::FLAG_LOAD)) != 0,
+                flag_prepare_migration: (flags & (1 << Self::FLAG_PREPARE_MIGRATION)) != 0,
+                flag_prepare_migration_ack: (flags & (1 << Self::FLAG_PREPARE_MIGRATION_ACK)) != 0,
+                flag_payload_state: (flags & (1 << Self::FLAG_PAYLOAD_STATE)) != 0,
+            }
+        )}
     }
 }
 
 impl TcpMigrationSegment {
-    pub fn new(header: TcpMigrationHeader, state: TcpState) -> Self {
-        Self { header, state }
+    pub fn new(header: TcpMigrationHeader, payload: Vec<u8>) -> Self {
+        Self { header, payload }
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let mut bytes = self.header.serialize();
-        bytes.extend_from_slice(&self.state.serialize()?);
+        bytes.extend(self.payload.iter());
         Ok(bytes)
     }
 
     pub fn deserialize(serialized: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self{
             header: TcpMigrationHeader::deserialize(serialized)?,
-            state: TcpState::deserialize(&serialized[TcpMigrationHeader::SIZE..])?,
+            payload: serialized[TcpMigrationHeader::SIZE..].to_vec(),
         })
     }
 }

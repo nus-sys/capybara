@@ -616,19 +616,20 @@ impl TcpPeer {
         }
 
         let migration_hdr = match inner.migrated_in_origins.get(&key) {
-            Some(origin) => TcpMigrationHeader::new(*origin, dest.unwrap_or(*origin)),
-            None => TcpMigrationHeader::new(key.0, dest.unwrap_or(key.0)),
+            Some(origin) => TcpMigrationHeader::new(*origin, dest.unwrap_or(*origin), remote),
+            None => TcpMigrationHeader::new(key.0, dest.unwrap_or(key.0), remote),
         };
 
         inner.migrated_in_origins.remove(&key);
 
-        Ok(TcpMigrationSegment::new(migration_hdr, state))
+        Ok(TcpMigrationSegment::new(migration_hdr, state.serialize().expect("TcpState serialization failed")))
 
     }
 
     pub fn migrate_in_tcp_connection(&mut self, conn: TcpMigrationSegment, qd: QDesc) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
-        let TcpMigrationSegment { header, state } = conn;
+        let TcpMigrationSegment { header, payload } = conn;
+        let state = TcpState::deserialize(&payload).expect("TcpState deserialization failed");
 
         // Check if keys already exist first. This way we don't have to undo changes we make to
         // the state.

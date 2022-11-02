@@ -197,7 +197,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     };
     println!("Push TcpState (len: {})", serialized.len());
     println!("header: {:?}", state.header);
-    println!("TcpState: {}", serde_json::to_string_pretty(&state.state)?);
+    println!("TcpState: {}", from_utf8(&state.payload)?);
     
     
     println!("Sleep 10s...");
@@ -272,7 +272,7 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
     // println!("pop: {}", msg);
     let deserialized = TcpMigrationSegment::deserialize(&recvbuf).unwrap();
     println!("header: {:?}", deserialized.header);
-    println!("TcpState: {}", serde_json::to_string_pretty(&deserialized.state)?);
+    println!("TcpState: {}", from_utf8(&deserialized.payload)?);
     
     println!("Sleep 1s...");
     thread::sleep(Duration::from_millis(1000));
