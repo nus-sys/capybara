@@ -1,7 +1,6 @@
 /* -*- P4_16 -*- */
 
 #include "./capybara_header.h"
-
 #include <core.p4>
 #include <tna.p4>
 
@@ -16,10 +15,8 @@ struct my_ingress_headers_t {
 }
 
 struct my_ingress_metadata_t {
-    bit<9> mac_move;
-    bit<1> is_static;
-    bit<1> smac_hit;
     PortId_t ingress_port;
+    PortId_t egress_port;
     bit<32> origin_ip;
     bit<16> l4_payload_checksum;
 }
@@ -42,10 +39,8 @@ parser IngressParser(
     }
 
     state meta_init {
-        meta.mac_move = 0;
-        meta.is_static = 0;
-        meta.smac_hit = 0;
         meta.ingress_port = ig_intr_md.ingress_port;
+        meta.egress_port = 0;
         meta.origin_ip = 0;
         meta.l4_payload_checksum  = 0;
         transition parse_ethernet;
@@ -117,6 +112,7 @@ control Ingress(
     inout ingress_intrinsic_metadata_for_tm_t        ig_tm_md)
 {
     action send(PortId_t port) {
+        meta.egress_port = port;
         ig_tm_md.ucast_egress_port = port;
     }
 
@@ -124,76 +120,7 @@ control Ingress(
         ig_dprsr_md.drop_ctl = 1;
     }
 
-    action smac_hit(PortId_t port, bit<1> is_static) {
-        meta.mac_move  = ig_intr_md.ingress_port ^ port;
-        meta.smac_hit  = 1;
-        meta.is_static = is_static;
-    }
-
-    action smac_miss() { }
-
-    action smac_drop() {
-        drop(); exit;
-    }
-
-    @idletime_precision(3)
-    table smac {
-        key = {
-            hdr.ethernet.src_mac : exact;
-        }
-        actions = {
-            smac_hit; smac_miss; smac_drop;
-        }
-        size                 = MAC_TABLE_SIZE;
-        const default_action = smac_miss();
-        idle_timeout         = true;
-    }
-
-    action mac_learn_notify() {
-        ig_dprsr_md.digest_type = L2_LEARN_DIGEST;
-    }
-
-    table smac_results {
-        key = {
-            meta.mac_move  : ternary;
-            meta.is_static : ternary;
-            meta.smac_hit  : ternary;
-        }
-        actions = {
-            mac_learn_notify; NoAction; smac_drop;
-        }
-        const entries = {
-            ( _, _, 0) : mac_learn_notify();
-            ( 0, _, 1) : NoAction();
-            ( _, 0, 1) : mac_learn_notify();
-            ( _, 1, 1) : smac_drop();
-        }
-    }
-
-    action dmac_unicast(PortId_t port) {
-        send(port);
-    }
-
-    action dmac_miss() {
-        ig_tm_md.mcast_grp_a = 1;
-    }
-
-    action dmac_drop() {
-        drop();
-        exit;
-    }
-
-    table dmac {
-        key = {
-            hdr.ethernet.dst_mac : exact;
-        }
-        actions = {
-            dmac_unicast; dmac_miss; dmac_drop;
-        }
-        size           = MAC_TABLE_SIZE;
-        default_action = dmac_miss();
-    }
-
+    
     Register< bit<32>, bit<8> >(1, 0) reg_ip;  // value, key
     RegisterAction< bit<32>, bit<8>, bit<32> >(reg_ip)
     reg_write_ip = {
@@ -216,11 +143,11 @@ control Ingress(
 
 
 
-    action migrate_request_hit(bit<48> migrate_mac, bit<32> migrate_ip, bit<16> migrate_port) {
+    action migrate_request_hit(bit<48> migrate_mac, bit<32> migrate_ip, bit<16> migrate_port, PortId_t migrate_egress_port) {
         hdr.ethernet.dst_mac = migrate_mac;
         hdr.ipv4.dst_ip = migrate_ip;
         hdr.tcp.dst_port = migrate_port;
-        ig_tm_md.ucast_egress_port = 24;
+        ig_tm_md.ucast_egress_port = migrate_egress_port;
     }
 
     table migrate_request {
@@ -254,31 +181,50 @@ control Ingress(
         size           = 65536;
         default_action = NoAction();
     }
+    action broadcast() {
+        ig_tm_md.mcast_grp_a       = 1;
+        ig_tm_md.level2_exclusion_id = ig_intr_md.ingress_port;
+    }
 
+    // action l2_forward(PortId_t port) {
+    //     ig_tm_md.ucast_egress_port=port;
+    // }
+
+    table l2_forwarding {
+        key = {
+            hdr.ethernet.dst_mac : exact;
+        }
+        actions = {
+            send;
+            drop;
+            broadcast;
+            // l2_forward;
+        }
+        const entries = {
+            0x08c0ebb6cd5d : send(32);
+            0x08c0ebb6e805 : send(36);
+            0x08c0ebb6c5ad : send(24);
+            0xffffffffffff : broadcast();
+        }
+        default_action = drop();
+        size = 128;
+    }
     apply {
         // hdr.ipv4.hdr_checksum = 0;
         // hdr.tcp.checksum = 0;
         ig_tm_md.bypass_egress = 1w1;
 
-        smac.apply();
-        smac_results.apply();
+        l2_forwarding.apply();
 
-        switch (dmac.apply().action_run) {
-            dmac_unicast: { /* Unicast source pruning */
-                if (ig_intr_md.ingress_port == ig_tm_md.ucast_egress_port) {
-                    drop();
-                }
-            }
-        }
-
-        if(hdr.tcp.isValid()){
-            migrate_reply.apply();
-            migrate_request.apply();
-        }
+        
         if(hdr.tcp_migration_header.isValid()){
             ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
             counter_update.execute(0);
             exec_write_ip();
+        }
+        else if(hdr.tcp.isValid()){
+            migrate_reply.apply();
+            migrate_request.apply();
         }
 
     }
@@ -288,13 +234,6 @@ control Ingress(
 /*********************  D E P A R S E R  ************************/
 
 /* This struct is needed for proper digest receive API generation */
-struct l2_digest_t {
-    bit<48> src_mac;
-    bit<9>  ingress_port;
-    bit<9>  mac_move;
-    bit<1>  is_static;
-    bit<1>  smac_hit;
-}
 struct migration_digest_t {
     bit<48>  origin_mac;
     bit<32>  origin_ip;
@@ -303,6 +242,8 @@ struct migration_digest_t {
     bit<48>  dst_mac;
     bit<32>  dst_ip;
     bit<16>  dst_port;
+
+    bit<9> egress_port;
 }
 
 control IngressDeparser(packet_out pkt,
@@ -312,20 +253,12 @@ control IngressDeparser(packet_out pkt,
     /* Intrinsic */
     in    ingress_intrinsic_metadata_for_deparser_t  ig_dprsr_md)
 {
-    Digest <l2_digest_t>() l2_digest;
     Digest <migration_digest_t>() migration_digest;
 
     Checksum()  ipv4_checksum;
     Checksum()  tcp_checksum;
     apply {
-        if (ig_dprsr_md.digest_type == L2_LEARN_DIGEST) {
-            l2_digest.pack({
-                    hdr.ethernet.src_mac,
-                    meta.ingress_port,
-                    meta.mac_move,
-                    meta.is_static,
-                    meta.smac_hit });
-        }else if (ig_dprsr_md.digest_type == TCP_MIGRATION_DIGEST) {
+        if (ig_dprsr_md.digest_type == TCP_MIGRATION_DIGEST) {
             migration_digest.pack({
                     hdr.ethernet.src_mac,
                     hdr.ipv4.src_ip,
@@ -333,7 +266,9 @@ control IngressDeparser(packet_out pkt,
                     
                     hdr.ethernet.dst_mac,
                     hdr.ipv4.dst_ip,
-                    hdr.tcp_migration_header.dst_port });
+                    hdr.tcp_migration_header.dst_port,
+
+                    meta.egress_port });
         }
 
 
