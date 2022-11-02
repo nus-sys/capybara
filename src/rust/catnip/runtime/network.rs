@@ -50,6 +50,16 @@ impl NetworkRuntime for DPDKRuntime {
         //   2) Not managed => alloc body
         // Chain body buffer.
 
+        /* FOR DEBUGGING PACKETS */
+        use crate::inetstack::protocols::{ipv4::Ipv4Header, ethernet2::Ethernet2Header, tcp::segment::TcpHeader};
+        let mut tmpbuf = Buffer::Heap(crate::runtime::memory::DataBuffer::new(buf.header_size()).unwrap());
+        buf.write_header(&mut tmpbuf);
+        let (eth, tmpbuf) = Ethernet2Header::parse(tmpbuf).unwrap();
+        let (ip, tmpbuf) = Ipv4Header::parse(tmpbuf).unwrap();
+        let (tcp, tmpbuf) = TcpHeader::parse(&ip, tmpbuf, false).unwrap();
+        eprintln!("Eth: {:#?}\nIP: {:#?}\nTCP: {:#?}", eth, ip, tcp);
+        /* FOR DEBUGGING PACKETS */
+
         // First, allocate a header mbuf and write the header into it.
         let mut header_mbuf = match self.mm.alloc_header_mbuf() {
             Ok(mbuf) => mbuf,
@@ -147,6 +157,16 @@ impl NetworkRuntime for DPDKRuntime {
             for &packet in &packets[..nb_rx as usize] {
                 let mbuf: DPDKBuffer = DPDKBuffer::new(packet);
                 let buf: Buffer = Buffer::DPDK(mbuf);
+
+                /* FOR DEBUGGING PACKETS */
+                use crate::inetstack::protocols::{ipv4::Ipv4Header, ethernet2::Ethernet2Header, tcp::segment::TcpHeader};
+                let mut tmpbuf = buf.clone();
+                let (eth, tmpbuf) = Ethernet2Header::parse(tmpbuf).unwrap();
+                let (ip, tmpbuf) = Ipv4Header::parse(tmpbuf).unwrap();
+                let (tcp, tmpbuf) = TcpHeader::parse(&ip, tmpbuf, false).unwrap();
+                eprintln!("Eth: {:#?}\nIP: {:#?}\nTCP: {:#?}", eth, ip, tcp);
+                /* FOR DEBUGGING PACKETS */
+
                 out.push(buf);
             }
         }
