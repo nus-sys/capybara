@@ -186,7 +186,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     };
     println!("Push TcpState (len: {})", serialized.len());
     println!("header: {:?}", state.header);
-    println!("TcpState: {}", serde_json::to_string_pretty(&state.state)?);
+    println!("TcpState: {}", serde_json::to_string_pretty(&state.payload)?);
     
     
     println!("Sleep 10s...");
@@ -261,7 +261,7 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
     // println!("pop: {}", msg);
     let deserialized = TcpMigrationSegment::deserialize(&recvbuf).unwrap();
     println!("header: {:?}", deserialized.header);
-    println!("TcpState: {}", serde_json::to_string_pretty(&deserialized.state)?);
+    println!("TcpState: {}", serde_json::to_string_pretty(&deserialized.payload)?);
     
     println!("Migrating in connection");
     let dest_fd = libos.migrate_in_tcp_connection(deserialized.clone()).unwrap();

@@ -388,7 +388,7 @@ fn client(remote: SocketAddrV4) -> Result<()> {
             Err(e) => panic!("pop failed: {:?}", e.cause),
         };
         // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
-        let recvbuf = match libos.timedwait2(qt, Some(SystemTime::now() + Duration::from_millis(1))) {
+        let recvbuf = match libos.timedwait2(qt, Some(SystemTime::now() + Duration::from_millis(2000))) {
             Ok((_, OperationResult::Pop(_, buf))) => buf,
             Err(e) => {
                 if e.errno == libc::ETIMEDOUT {

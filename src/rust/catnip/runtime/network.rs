@@ -7,7 +7,7 @@
 
 use super::DPDKRuntime;
 use crate::{
-    inetstack::protocols::ethernet2::MIN_PAYLOAD_SIZE,
+    inetstack::protocols::{ethernet2::MIN_PAYLOAD_SIZE, tcp::segment::TcpSegment},
     runtime::{
         libdpdk::{
             rte_eth_rx_burst,
@@ -51,13 +51,26 @@ impl NetworkRuntime for DPDKRuntime {
         // Chain body buffer.
 
         /* FOR DEBUGGING PACKETS */
+        /* 
+        fn copy_body(src: &[u8], dst: &mut [u8]) {
+            for i in 0..src.len() { dst[i] = src[i]; }
+        }
+
         use crate::inetstack::protocols::{ipv4::Ipv4Header, ethernet2::Ethernet2Header, tcp::segment::TcpHeader};
-        let mut tmpbuf = Buffer::Heap(crate::runtime::memory::DataBuffer::new(buf.header_size()).unwrap());
+        let mut tmpbuf = Buffer::Heap(crate::runtime::memory::DataBuffer::new(buf.header_size() + buf.body_size()).unwrap());
         buf.write_header(&mut tmpbuf);
+        let body = buf.take_body();
+        match body {
+            Some(body) => {
+                copy_body(&body, &mut (&mut tmpbuf)[buf.header_size()..]);
+            }
+            None => (),
+        }
         let (eth, tmpbuf) = Ethernet2Header::parse(tmpbuf).unwrap();
         let (ip, tmpbuf) = Ipv4Header::parse(tmpbuf).unwrap();
         let (tcp, tmpbuf) = TcpHeader::parse(&ip, tmpbuf, false).unwrap();
         eprintln!("Eth: {:#?}\nIP: {:#?}\nTCP: {:#?}", eth, ip, tcp);
+        */
         /* FOR DEBUGGING PACKETS */
 
         // First, allocate a header mbuf and write the header into it.
@@ -159,12 +172,14 @@ impl NetworkRuntime for DPDKRuntime {
                 let buf: Buffer = Buffer::DPDK(mbuf);
 
                 /* FOR DEBUGGING PACKETS */
+                /*
                 use crate::inetstack::protocols::{ipv4::Ipv4Header, ethernet2::Ethernet2Header, tcp::segment::TcpHeader};
                 let mut tmpbuf = buf.clone();
                 let (eth, tmpbuf) = Ethernet2Header::parse(tmpbuf).unwrap();
                 let (ip, tmpbuf) = Ipv4Header::parse(tmpbuf).unwrap();
                 let (tcp, tmpbuf) = TcpHeader::parse(&ip, tmpbuf, false).unwrap();
                 eprintln!("Eth: {:#?}\nIP: {:#?}\nTCP: {:#?}", eth, ip, tcp);
+                */
                 /* FOR DEBUGGING PACKETS */
 
                 out.push(buf);
