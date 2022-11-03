@@ -232,7 +232,7 @@ impl LibOS {
     }
 
     /// Returns the state along with the actual origin of the connection.
-    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<(TcpState, SocketAddrV4), Fail> {
+    /* pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<(TcpState, SocketAddrV4), Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.migrate_out_tcp_connection(fd),
         }
@@ -248,7 +248,7 @@ impl LibOS {
         match self {
             LibOS::NetworkLibOS(libos) => libos.migrate_in_tcp_connection(state, origin),
         }
-    }
+    } */
 
     /// Performs the complete process (synchronously, through TCP communication) to migrate out a tcp connection,
     /// provided the descriptor of a connection to the destination server.
@@ -263,11 +263,11 @@ impl LibOS {
         &mut self,
         server_dest_fd: QDesc,
         conn_fd: QDesc,
-        origin: SocketAddrV4,
-        dest: SocketAddrV4,
+        server_origin_listen: SocketAddrV4,
+        server_dest_listen: SocketAddrV4,
     ) -> Result<(), Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.perform_tcp_migration_out_sync(server_dest_fd, conn_fd, origin, dest),
+            LibOS::NetworkLibOS(libos) => libos.perform_tcp_migration_out_sync(server_dest_fd, conn_fd, server_origin_listen, server_dest_listen),
         }
     }
 

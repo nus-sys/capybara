@@ -660,7 +660,7 @@ impl InetStack {
         self.ts_iters = (self.ts_iters + 1) % TIMER_RESOLUTION;
     }
 
-    pub fn take_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
+    fn take_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
         match self.file_table.get(fd) {
             Some(qtype) => {
                 match QType::try_from(qtype) {
@@ -679,7 +679,26 @@ impl InetStack {
         }
     }
 
-    pub fn get_remote(&self, fd: QDesc) -> Result<SocketAddrV4, Fail> {
+    fn get_origin(&self, fd: QDesc) -> Result<Option<SocketAddrV4>, Fail> {
+        match self.file_table.get(fd) {
+            Some(qtype) => {
+                match QType::try_from(qtype) {
+                    Ok(QType::TcpSocket) => {
+                        self.ipv4.tcp.get_origin(fd)
+                    }
+                    _ => {
+                        info!("Found unsupported socket type: {}", qtype);
+                        Err(Fail::new(EINVAL, "invalid queue type"))
+                    }
+                }
+            },
+            None => {
+                panic!("No such socket found on file table..");
+            }
+        }
+    }
+
+    fn get_remote(&self, fd: QDesc) -> Result<SocketAddrV4, Fail> {
         match self.file_table.get(fd) {
             Some(qtype) => {
                 match QType::try_from(qtype) {
@@ -698,7 +717,7 @@ impl InetStack {
         }
     }
 
-    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<(TcpState, SocketAddrV4), Fail> {
+    fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
         match self.file_table.get(fd) {
             Some(qtype) => {
                 match QType::try_from(qtype) {
@@ -719,13 +738,13 @@ impl InetStack {
         }
     }
 
-    pub fn prepare_migrating_in(&mut self, local: SocketAddrV4, remote: SocketAddrV4) -> Result<(), Fail> {
-        self.ipv4.tcp.prepare_migrating_in(local, remote)
+    fn prepare_migrating_in(&mut self, remote: SocketAddrV4) -> Result<(), Fail> {
+        self.ipv4.tcp.prepare_migrating_in(remote)
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, state: TcpState, origin: SocketAddrV4) -> Result<QDesc, Fail> {
+    fn migrate_in_tcp_connection(&mut self, state: TcpState, remote: SocketAddrV4, origin: SocketAddrV4) -> Result<QDesc, Fail> {
         let qd = self.file_table.alloc(u32::from(QType::TcpSocket));
-        self.ipv4.tcp.migrate_in_tcp_connection(qd, state, origin)?;
+        self.ipv4.tcp.migrate_in_tcp_connection(qd, state, remote, origin)?;
         Ok(qd)
     }
 
@@ -745,9 +764,11 @@ impl InetStack {
         &mut self,
         server_dest_fd: QDesc,
         conn_fd: QDesc,
-        origin: SocketAddrV4,
-        dest: SocketAddrV4,
+        server_origin_listen: SocketAddrV4,
+        server_dest_listen: SocketAddrV4,
     ) -> Result<(), Fail> {
+        let origin = self.get_origin(conn_fd)?.unwrap_or(server_origin_listen);
+        let dest = server_dest_listen;
         let remote = self.get_remote(conn_fd)?;
 
         // PREPARE_MIGRATION
@@ -781,7 +802,7 @@ impl InetStack {
 
         // PAYLOAD_STATE
 
-        let (state, origin) = self.migrate_out_tcp_connection(conn_fd)?;
+        let state = self.migrate_out_tcp_connection(conn_fd)?;
         let mut seg = TcpMigrationSegment::new(
             TcpMigrationHeader::new(origin, dest, remote),
             state.serialize().expect("TcpState serialization failed")
@@ -828,7 +849,7 @@ impl InetStack {
 
         // PREPARE_MIGRATION_ACK
 
-        self.prepare_migrating_in(dest, remote)?;
+        self.prepare_migrating_in(remote)?;
         
         let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, dest, remote), Vec::new());
         seg.header.flag_prepare_migration_ack = true;
@@ -858,8 +879,7 @@ impl InetStack {
         }
 
         let mut state = TcpState::deserialize(&seg.payload).expect("TcpState deserialization failed");
-        state.local = dest;
 
-        self.migrate_in_tcp_connection(state, origin)
+        self.migrate_in_tcp_connection(state, remote, origin)
     }
 }

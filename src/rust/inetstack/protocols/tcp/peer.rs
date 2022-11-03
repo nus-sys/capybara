@@ -148,9 +148,15 @@ pub struct Inner {
 
     dead_socket_tx: mpsc::UnboundedSender<QDesc>,
 
+    /// For established migrated connections.
+    /// 
     /// (local, remote) -> origin
     migrated_in_origins: HashMap<(SocketAddrV4, SocketAddrV4), SocketAddrV4>,
-    migrating_recv_queues: HashMap<(SocketAddrV4, SocketAddrV4), VecDeque<Buffer>>,
+
+    /// For not yet migrated in connections.
+    /// 
+    /// remote -> queue
+    migrating_recv_queues: HashMap<SocketAddrV4, VecDeque<Buffer>>,
 }
 
 pub struct TcpPeer {
@@ -537,8 +543,8 @@ impl TcpPeer {
                         //let receive_seq_no = receive_next + SeqNumber::from(cb.get_receive_window_size());
 
                         Ok(TcpState::new(
-                            *local,
-                            *remote,
+                            //*local,
+                            //*remote,
 
                             reader_next,
                             receive_next,
@@ -569,6 +575,21 @@ impl TcpPeer {
         }
     }
 
+    /// Returns None if this is connection has not been migrated in.
+    pub fn get_origin(&self, fd: QDesc) -> Result<Option<SocketAddrV4>, Fail> {
+        let inner = self.inner.borrow();
+
+        match inner.sockets.get(&fd) {
+            Some(Socket::Established { local, remote }) => {
+                match inner.migrated_in_origins.get(&(*local, *remote)) {
+                    Some(origin) => Ok(Some(*origin)),
+                    None => Ok(None)
+                }
+            },
+            _ => Err(Fail::new(EINVAL, "no such established connection")),
+        }
+    }
+
     pub fn get_remote(&self, fd: QDesc) -> Result<SocketAddrV4, Fail> {
         let inner = self.inner.borrow();
 
@@ -581,9 +602,7 @@ impl TcpPeer {
     /// 1) Change status of our socket to MigratedOut
     /// 2) Change status of ControlBlock state to Migrated out.
     /// 3) Remove socket from Established hashmap.
-    /// 
-    /// Returns the state along with the actual origin of the connection.
-    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<(TcpState, SocketAddrV4), Fail> {
+    pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
         let mut state = self.take_tcp_state(fd)?;
         //if let Some(dest) = dest { state.local = dest; }
 
@@ -633,30 +652,33 @@ impl TcpPeer {
             None => TcpMigrationHeader::new(key.0, dest.unwrap_or(key.0), remote),
         }; */
 
-        let origin = inner.migrated_in_origins.remove(&key).unwrap_or(local);
+        inner.migrated_in_origins.remove(&key);
 
-        Ok((state, origin))
+        Ok(state)
 
     }
 
-    pub fn prepare_migrating_in(&mut self, local: SocketAddrV4, remote: SocketAddrV4) -> Result<(), Fail> {
+    pub fn prepare_migrating_in(&mut self, remote: SocketAddrV4) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
-        if inner.migrating_recv_queues.contains_key(&(local, remote)) {
+        if inner.migrating_recv_queues.contains_key(&remote) {
             Err(Fail::new(EBUSY, "connection already prepared for migrating in"))
         } else {
+            inner.migrating_recv_queues.insert(remote, VecDeque::new());
             Ok(())
         }
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, qd: QDesc, state: TcpState, origin: SocketAddrV4) -> Result<(), Fail> {
+    pub fn migrate_in_tcp_connection(&mut self, qd: QDesc, state: TcpState, remote: SocketAddrV4, origin: SocketAddrV4) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
         let mut state = state;
+        let local_port = inner.ephemeral_ports.alloc_any()?;
+        let local = SocketAddrV4::new(inner.local_ipv4_addr, local_port);
         /* let TcpMigrationSegment { header, payload } = conn;
         let mut state = TcpState::deserialize(&payload).expect("TcpState deserialization failed"); */
 
         // Check if keys already exist first. This way we don't have to undo changes we make to
         // the state.
-        if inner.established.contains_key(&(state.local, state.remote)) {
+        if inner.established.contains_key(&(local, remote)) {
             debug!("Key already exists in established hashmap.");
             // TODO: Not sure if there is a better error to use here.
             return Err(Fail::new(EBUSY, "This connection already exists."))
@@ -668,7 +690,7 @@ impl TcpPeer {
             Entry::Occupied(mut e) => {
                 match e.get_mut() {
                     e@Socket::MigratedOut { .. } => {
-                        *e = Socket::Established { local: state.local, remote: state.remote };
+                        *e = Socket::Established { local, remote };
                     },
                     _ => {
                         debug!("Key already exists in sockets hashmap.");
@@ -677,13 +699,13 @@ impl TcpPeer {
                 }
             },
             Entry::Vacant(v) => {
-                let socket = Socket::Established { local: state.local, remote: state.remote };
+                let socket = Socket::Established { local, remote };
                 v.insert(socket);
             }
         }
 
         // Check if migrating queue exists and add all its elements to state's recv_queue. Remove migrating queue.
-        match inner.migrating_recv_queues.remove(&(state.local, state.remote)) {
+        match inner.migrating_recv_queues.remove(&remote) {
             Some(queue) => state.recv_queue.extend(queue),
             None => return Err(Fail::new(EINVAL, "unprepared for migration")),
         }
@@ -707,8 +729,8 @@ impl TcpPeer {
         );
 
         let cb = ControlBlock::migrated_in(
-            state.local,
-            state.remote,
+            local,
+            remote,
             inner.rt.clone(),
             inner.scheduler.clone(),
             inner.clock.clone(),
@@ -726,15 +748,16 @@ impl TcpPeer {
 
         let established = EstablishedSocket::new(cb, qd, inner.dead_socket_tx.clone());
 
-        if let Some(_) = inner.established.insert((state.local, state.remote), established) {
+        if let Some(_) = inner.established.insert((local, remote), established) {
             // This condition should have been checked for at the beginning of this function.
             unreachable!();
         }
 
         // If this was the original origin, do not insert.
-        if state.local != origin {
+        /* if state.local != origin {
             inner.migrated_in_origins.insert((state.local, state.remote), origin);
-        }
+        } */
+        inner.migrated_in_origins.insert((local, remote), origin);
 
         Ok(())
     }
@@ -805,7 +828,7 @@ impl Inner {
         }
 
         // Check if migrating queue exists. If yes, push buffer to queue.
-        if let Some(queue) = self.migrating_recv_queues.get_mut(&key) {
+        if let Some(queue) = self.migrating_recv_queues.get_mut(&remote) {
             queue.push_back(data);
             return Ok(());
         }

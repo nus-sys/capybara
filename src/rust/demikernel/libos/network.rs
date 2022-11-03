@@ -331,7 +331,7 @@ impl NetworkLibOS {
         }
     }
 
-    pub fn migrate_out_tcp_connection(&mut self, _fd: QDesc) -> Result<(TcpState, SocketAddrV4), Fail> {
+    /* pub fn migrate_out_tcp_connection(&mut self, _fd: QDesc) -> Result<(TcpState, SocketAddrV4), Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
@@ -368,14 +368,14 @@ impl NetworkLibOS {
             #[cfg(feature = "catnip-libos")]
             NetworkLibOS::Catnip(libos) => libos.migrate_in_tcp_connection(_state, _origin),
         }
-    }
+    } */
 
     pub fn perform_tcp_migration_out_sync(
         &mut self,
         server_dest_fd: QDesc,
         conn_fd: QDesc,
-        origin: SocketAddrV4,
-        dest: SocketAddrV4,
+        server_origin_listen: SocketAddrV4,
+        server_dest_listen: SocketAddrV4,
     ) -> Result<(), Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
@@ -385,7 +385,7 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.perform_tcp_migration_out_sync(server_dest_fd, conn_fd, origin, dest),
+            NetworkLibOS::Catnip(libos) => libos.perform_tcp_migration_out_sync(server_dest_fd, conn_fd, server_origin_listen, server_dest_listen),
         }
     }
 

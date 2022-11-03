@@ -181,7 +181,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     // thread::sleep(Duration::from_millis(10000));
     // println!("Resume!");
 
-    libos.perform_tcp_migration_out_sync(qd_migration_out, qd_connection_in, local, SocketAddrV4::from_str("").unwrap()).unwrap();
+    libos.perform_tcp_migration_out_sync(qd_migration_out, qd_connection_in, local, dest).unwrap();
 
     /* let state = libos.migrate_out_tcp_connection(qd_connection_in, Some(dest))?; // fd: queue descriptor of the connection to be migrated
     let serialized = state.serialize().unwrap();
