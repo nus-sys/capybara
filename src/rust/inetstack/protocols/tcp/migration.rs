@@ -21,8 +21,8 @@ use ::std::{
 /// State needed for TCP Migration.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TcpState {
-    //pub local: SocketAddrV4,
-    //pub remote: SocketAddrV4,
+    pub local: SocketAddrV4,
+    pub remote: SocketAddrV4,
 
     pub reader_next: SeqNumber,
     pub receive_next: SeqNumber,
@@ -95,8 +95,8 @@ pub struct TcpMigrationSegment {
 
 impl TcpState {
     pub fn new(
-        //local: SocketAddrV4,
-        //remote: SocketAddrV4,
+        local: SocketAddrV4,
+        remote: SocketAddrV4,
 
         reader_next: SeqNumber,
         receive_next: SeqNumber,
@@ -116,8 +116,8 @@ impl TcpState {
         receiver_window_scale: u32,
     ) -> Self {
         Self {
-            //local,
-            //remote,
+            local,
+            remote,
 
             reader_next,
             receive_next,

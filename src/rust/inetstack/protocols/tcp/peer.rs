@@ -543,8 +543,8 @@ impl TcpPeer {
                         //let receive_seq_no = receive_next + SeqNumber::from(cb.get_receive_window_size());
 
                         Ok(TcpState::new(
-                            //*local,
-                            //*remote,
+                            *local,
+                            *remote,
 
                             reader_next,
                             receive_next,
@@ -668,11 +668,11 @@ impl TcpPeer {
         }
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, qd: QDesc, state: TcpState, remote: SocketAddrV4, origin: SocketAddrV4) -> Result<(), Fail> {
+    pub fn migrate_in_tcp_connection(&mut self, qd: QDesc, state: TcpState, origin: SocketAddrV4) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
         let mut state = state;
-        let local_port = inner.ephemeral_ports.alloc_any()?;
-        let local = SocketAddrV4::new(inner.local_ipv4_addr, local_port);
+        let local = state.local;
+        let remote = state.remote;
         /* let TcpMigrationSegment { header, payload } = conn;
         let mut state = TcpState::deserialize(&payload).expect("TcpState deserialization failed"); */
 

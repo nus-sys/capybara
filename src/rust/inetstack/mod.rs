@@ -742,9 +742,9 @@ impl InetStack {
         self.ipv4.tcp.prepare_migrating_in(remote)
     }
 
-    fn migrate_in_tcp_connection(&mut self, state: TcpState, remote: SocketAddrV4, origin: SocketAddrV4) -> Result<QDesc, Fail> {
+    fn migrate_in_tcp_connection(&mut self, state: TcpState, origin: SocketAddrV4) -> Result<QDesc, Fail> {
         let qd = self.file_table.alloc(u32::from(QType::TcpSocket));
-        self.ipv4.tcp.migrate_in_tcp_connection(qd, state, remote, origin)?;
+        self.ipv4.tcp.migrate_in_tcp_connection(qd, state, origin)?;
         Ok(qd)
     }
 
@@ -752,11 +752,9 @@ impl InetStack {
     /// Performs the complete process (synchronously, through TCP communication) to migrate out a tcp connection,
     /// provided the descriptor of a connection to the destination server.
     /// 
-    /// `origin`: Listening address for connection on origin server.
+    /// `server_origin_listen`: Listening address for connection on origin server.
     /// 
-    /// `dest`: Listening address for connection on destination server.
-    /// 
-    /// `remote`: Connection's remote address.
+    /// `server_dest_listen`: Listening address for connection on destination server.
     /// 
     /// TODO: Incorporate all parameters into the process and make this a parameterless method.
     /// 
@@ -807,7 +805,9 @@ impl InetStack {
 
         // PAYLOAD_STATE
 
-        let state = self.migrate_out_tcp_connection(conn_fd)?;
+        let mut state = self.migrate_out_tcp_connection(conn_fd)?;
+        state.local = dest;
+
         let mut seg = TcpMigrationSegment::new(
             TcpMigrationHeader::new(origin, dest, remote),
             state.serialize().expect("TcpState serialization failed")
@@ -895,6 +895,6 @@ impl InetStack {
 
         eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
 
-        self.migrate_in_tcp_connection(state, remote, origin)
+        self.migrate_in_tcp_connection(state, origin)
     }
 }
