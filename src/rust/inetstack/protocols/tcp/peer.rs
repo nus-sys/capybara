@@ -607,6 +607,7 @@ impl TcpPeer {
         //if let Some(dest) = dest { state.local = dest; }
 
         let mut inner = self.inner.borrow_mut();
+        dbg!(inner.established.keys().collect::<Vec<&(SocketAddrV4, SocketAddrV4)>>());
         let socket = inner.sockets.get_mut(&fd);
 
         let (local, remote) = match socket {

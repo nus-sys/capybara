@@ -774,10 +774,12 @@ impl InetStack {
         let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, dest, remote), Vec::new());
         seg.header.flag_prepare_migration = true;
 
-        eprintln!("Header: {:#?}", seg.header);
+        
 
         let qt = self.push2(server_dest_fd, &seg.serialize())?;
         self.wait2(qt)?;
+
+        eprintln!("Header: {:#?}", seg.header);
 
 
         // PREPARE_MIGRATION_ACK
@@ -815,10 +817,11 @@ impl InetStack {
         seg.header.flag_payload_state = true;
         seg.header.origin = origin;
 
-        eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
-
+        
         let qt = self.push2(server_dest_fd, &seg.serialize())?;
         self.wait2(qt)?;
+
+        eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
 
         // Maybe get another ACK from dest?
 
@@ -865,12 +868,12 @@ impl InetStack {
         seg.header.flag_prepare_migration_ack = true;
         seg.header.flag_load = true;
 
-        eprintln!("Header: {:#?}", seg.header);
+        
 
         let qt = self.push2(server_origin_fd, &seg.serialize())?;
         self.wait2(qt)?;
 
-
+        eprintln!("Header: {:#?}", seg.header);
         // PAYLOAD_STATE
 
         let qt = self.pop(server_origin_fd)?;
