@@ -257,9 +257,13 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
     };
     println!("TCP Connection established with origin");
 
+    
+    println!("Migrating in connection");
     let dest_fd = libos.perform_tcp_migration_in_sync(qd).unwrap();
     
-
+    println!("Sleep 1s...");
+    thread::sleep(Duration::from_millis(1000));
+    println!("Resume!");
     /* let qtoken: QToken = match libos.pop(qd) {
         Ok(qt) => qt,
         Err(e) => panic!("pop failed: {:?}", e.cause),
