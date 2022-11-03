@@ -880,6 +880,8 @@ impl InetStack {
 
         let mut state = TcpState::deserialize(&seg.payload).expect("TcpState deserialization failed");
 
+        eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
+
         self.migrate_in_tcp_connection(state, remote, origin)
     }
 }

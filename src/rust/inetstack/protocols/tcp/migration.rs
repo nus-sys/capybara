@@ -56,9 +56,8 @@ pub struct TcpState {
 //  20      2       Remote Port
 //  22      1       Flags
 //  23      1       Byte Checksum
-//  24      8       Unused
 //
-//  TOTAL 32
+//  TOTAL 24
 //
 //
 //  Flags format:
@@ -151,7 +150,7 @@ impl TcpState {
 
 impl TcpMigrationHeader {
     /// TcpMigrationHeader size in bytes.
-    const SIZE: usize = 32;
+    const SIZE: usize = 24;
     const FLAG_LOAD: u8 = 0;
     const FLAG_PREPARE_MIGRATION: u8 = 1;
     const FLAG_PREPARE_MIGRATION_ACK: u8 = 2;
@@ -180,9 +179,9 @@ impl TcpMigrationHeader {
         NetworkEndian::write_u16(&mut bytes[20..22], self.remote.port());
 
         bytes[22] = self.serialize_flags();
-        bytes[23] = bytes[4..].iter().fold(0, |sum, e| sum + e).wrapping_neg();
+        bytes[23] = bytes.iter().fold(0, |sum, e| sum + e).wrapping_neg();
 
-        assert_eq!(bytes[4..].iter().fold(0, |sum, e| sum + e), 0);
+        assert_eq!(bytes.iter().fold(0, |sum, e| sum + e), 0);
 
         bytes.to_vec()
     }
@@ -199,7 +198,7 @@ impl TcpMigrationHeader {
         if serialized.len() < Self::SIZE { panic!("Serialized TcpMigrationHeader not long enough.") }
 
         if NetworkEndian::read_u32(serialized) != 0xCAFEDEAD { Err("Magic number (0xCAFEDEAD) not found") }
-        else if serialized[4..Self::SIZE].iter().fold(0, |sum, e| sum + e) != 0 { Err("Invalid checksum") }
+        else if serialized[..Self::SIZE].iter().fold(0, |sum, e| sum + e) != 0 { Err("Invalid checksum") }
         else { 
             let flags = serialized[22];
 
