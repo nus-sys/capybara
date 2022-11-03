@@ -569,6 +569,15 @@ impl TcpPeer {
         }
     }
 
+    pub fn get_remote(&self, fd: QDesc) -> Result<SocketAddrV4, Fail> {
+        let inner = self.inner.borrow();
+
+        match inner.sockets.get(&fd) {
+            Some(Socket::Established { remote, .. }) => Ok(*remote),
+            _ => Err(Fail::new(EINVAL, "no such established connection")),
+        }
+    }
+
     /// 1) Change status of our socket to MigratedOut
     /// 2) Change status of ControlBlock state to Migrated out.
     /// 3) Remove socket from Established hashmap.

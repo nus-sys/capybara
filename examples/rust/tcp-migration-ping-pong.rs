@@ -181,8 +181,9 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     // thread::sleep(Duration::from_millis(10000));
     // println!("Resume!");
 
+    libos.perform_tcp_migration_out_sync(qd_migration_out, qd_connection_in, local, SocketAddrV4::from_str("").unwrap()).unwrap();
 
-    let state = libos.migrate_out_tcp_connection(qd_connection_in, Some(dest))?; // fd: queue descriptor of the connection to be migrated
+    /* let state = libos.migrate_out_tcp_connection(qd_connection_in, Some(dest))?; // fd: queue descriptor of the connection to be migrated
     let serialized = state.serialize().unwrap();
     
     // Push TcpState.
@@ -197,7 +198,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     };
     println!("Push TcpState (len: {})", serialized.len());
     println!("header: {:?}", state.header);
-    println!("TcpState: {}", from_utf8(&state.payload)?);
+    println!("TcpState: {}", from_utf8(&state.payload)?); */
     
     
     println!("Sleep 10s...");
@@ -254,10 +255,12 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
         Err(e) => panic!("operation failed: {:?}", e.cause),
         _ => unreachable!(),
     };
-    println!("TCP Connection established with origin");   
+    println!("TCP Connection established with origin");
+
+    let dest_fd = libos.perform_tcp_migration_in_sync(qd).unwrap();
     
 
-    let qtoken: QToken = match libos.pop(qd) {
+    /* let qtoken: QToken = match libos.pop(qd) {
         Ok(qt) => qt,
         Err(e) => panic!("pop failed: {:?}", e.cause),
     };
@@ -278,7 +281,7 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
     thread::sleep(Duration::from_millis(1000));
     println!("Resume!");
     println!("Migrating in connection");
-    let dest_fd = libos.migrate_in_tcp_connection(deserialized.clone()).unwrap();
+    let dest_fd = libos.migrate_in_tcp_connection(deserialized.clone()).unwrap(); */
 
 
     // Process client messages (before migration).
