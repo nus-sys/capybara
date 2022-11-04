@@ -960,6 +960,8 @@ impl InetStack {
         }
 
         eprintln!("Header: {:#?}", seg.header);
+
+        std::thread::sleep(std::time::Duration::from_millis(1000));
             
         Ok(MigrationHandle{
             server_dest_migration_fd: server_dest_fd,

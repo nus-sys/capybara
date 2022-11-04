@@ -270,9 +270,11 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
     eprintln!("Migrating in connection");
     let dest_fd = libos.perform_tcp_migration_in_sync(qd).unwrap();
     
-    // eprintln!("Sleep 1s...");
-    // thread::sleep(Duration::from_millis(1000));
-    // eprintln!("Resume!");
+    eprintln!("Sleep 1s...");
+    thread::sleep(Duration::from_millis(1000));
+    eprintln!("Resume!");
+
+    
     /* let qtoken: QToken = match libos.pop(qd) {
         Ok(qt) => qt,
         Err(e) => panic!("pop failed: {:?}", e.cause),
