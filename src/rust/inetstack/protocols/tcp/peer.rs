@@ -13,11 +13,7 @@ use super::{
     },
     isn_generator::IsnGenerator,
     passive_open::PassiveSocket,
-    migration::{
-        TcpState,
-        TcpMigrationSegment,
-        TcpMigrationHeader,
-    },
+    migration::TcpState,
 };
 use crate::{
     inetstack::protocols::{
@@ -156,6 +152,8 @@ pub struct Inner {
     /// For not yet migrated in connections.
     /// 
     /// remote -> queue
+    /// 
+    /// TODO: (local, remote) -> queue
     migrating_recv_queues: HashMap<SocketAddrV4, VecDeque<Buffer>>,
 }
 
@@ -603,7 +601,7 @@ impl TcpPeer {
     /// 2) Change status of ControlBlock state to Migrated out.
     /// 3) Remove socket from Established hashmap.
     pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
-        let mut state = self.take_tcp_state(fd)?;
+        let state = self.take_tcp_state(fd)?;
         //if let Some(dest) = dest { state.local = dest; }
 
         let mut inner = self.inner.borrow_mut();
