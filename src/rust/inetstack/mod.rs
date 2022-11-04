@@ -659,7 +659,21 @@ impl InetStack {
         }
         self.ts_iters = (self.ts_iters + 1) % TIMER_RESOLUTION;
     }
+}
 
+//==============================================================================
+// TCP Migration
+//==============================================================================
+
+pub struct MigrationHandle {
+    server_dest_migration_fd: QDesc,
+    conn_fd: QDesc,
+    origin: SocketAddrV4,
+    dest: SocketAddrV4,
+    remote: SocketAddrV4,
+}
+
+impl InetStack {
     fn take_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
         match self.file_table.get(fd) {
             Some(qtype) => {
@@ -758,7 +772,7 @@ impl InetStack {
     /// 
     /// TODO: Incorporate all parameters into the process and make this a parameterless method.
     /// 
-    pub fn perform_tcp_migration_out_sync(
+    /* pub fn perform_tcp_migration_out_sync(
         &mut self,
         server_dest_fd: QDesc,
         conn_fd: QDesc,
@@ -826,7 +840,7 @@ impl InetStack {
         // Maybe get another ACK from dest?
 
         Ok(())
-    }
+    } */
 
     /// 
     /// Performs the complete process (synchronously, through TCP communication) to migrate in a tcp connection,
@@ -894,10 +908,97 @@ impl InetStack {
             return Err(Fail::new(libc::EINVAL, "improper state payload response from server_origin"));
         }
 
-        let mut state = TcpState::deserialize(&seg.payload).expect("TcpState deserialization failed");
+        let state = TcpState::deserialize(&seg.payload).expect("TcpState deserialization failed");
 
         eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
 
         self.migrate_in_tcp_connection(state, origin)
+    }
+
+    pub fn initiate_tcp_migration_out_sync(
+        &mut self,
+        server_dest_fd: QDesc, // TODO: create migration connection here instead
+        conn_fd: QDesc,
+        server_origin_listen: SocketAddrV4,
+        server_dest_listen: SocketAddrV4,
+    ) -> Result<MigrationHandle, Fail> {
+        let origin = self.get_origin(conn_fd)?.unwrap_or(server_origin_listen);
+        let dest = server_dest_listen;
+        let remote = self.get_remote(conn_fd)?;
+
+        // PREPARE_MIGRATION
+
+        let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, dest, remote), Vec::new());
+        seg.header.flag_prepare_migration = true;
+
+        
+
+        let qt = self.push2(server_dest_fd, &seg.serialize())?;
+        self.wait2(qt)?;
+
+        eprintln!("Header: {:#?}", seg.header);
+
+
+        // PREPARE_MIGRATION_ACK
+
+        let qt = self.pop(server_dest_fd)?;
+        let seg = match self.wait2(qt) {
+            Ok((_, OperationResult::Pop(_, buf))) => {
+                let seg = TcpMigrationSegment::deserialize(&buf);
+                match seg {
+                    Ok(seg) => seg,
+                    Err(msg) => return Err(Fail::new(libc::EINVAL, msg)),
+                }
+            },
+            Err(e) => return Err(e),
+            _ => unreachable!(),
+        };
+
+        // Should have been ACKed and switch should have started redirecting packets to server_dest.
+        if !seg.header.flag_prepare_migration_ack || !seg.header.flag_load {
+            return Err(Fail::new(libc::EINVAL, "improper response from server_dest"));
+        }
+
+        eprintln!("Header: {:#?}", seg.header);
+            
+        Ok(MigrationHandle{
+            server_dest_migration_fd: server_dest_fd,
+            conn_fd,
+            origin,
+            dest,
+            remote,
+        })
+    }
+
+    pub fn complete_tcp_migration_out_sync(&mut self, handle: MigrationHandle) -> Result<(), Fail> {
+        let MigrationHandle {
+            server_dest_migration_fd,
+            conn_fd,
+            origin,
+            dest,
+            remote,
+        } = handle;
+
+        // PAYLOAD_STATE
+
+        let mut state = self.migrate_out_tcp_connection(conn_fd)?;
+        state.local = dest;
+
+        let mut seg = TcpMigrationSegment::new(
+            TcpMigrationHeader::new(origin, dest, remote),
+            state.serialize().expect("TcpState serialization failed")
+        );
+        seg.header.flag_payload_state = true;
+        seg.header.origin = origin;
+
+        
+        let qt = self.push2(server_dest_migration_fd, &seg.serialize())?;
+        self.wait2(qt)?;
+
+        eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
+
+        // Maybe get another ACK from dest?
+
+        Ok(())
     }
 }

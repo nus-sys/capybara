@@ -15,7 +15,7 @@ use crate::{
         QDesc,
         QToken,
     },
-    inetstack::protocols::tcp::migration::TcpState,
+    inetstack::{protocols::tcp::migration::TcpState, MigrationHandle},
 };
 use ::std::{
     net::SocketAddrV4,
@@ -370,13 +370,13 @@ impl NetworkLibOS {
         }
     } */
 
-    pub fn perform_tcp_migration_out_sync(
+    pub fn initiate_tcp_migration_out_sync(
         &mut self,
         server_dest_fd: QDesc,
         conn_fd: QDesc,
         server_origin_listen: SocketAddrV4,
         server_dest_listen: SocketAddrV4,
-    ) -> Result<(), Fail> {
+    ) -> Result<MigrationHandle, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
@@ -385,7 +385,20 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.perform_tcp_migration_out_sync(server_dest_fd, conn_fd, server_origin_listen, server_dest_listen),
+            NetworkLibOS::Catnip(libos) => libos.initiate_tcp_migration_out_sync(server_dest_fd, conn_fd, server_origin_listen, server_dest_listen),
+        }
+    }
+
+    pub fn complete_tcp_migration_out_sync(&mut self, handle: MigrationHandle) -> Result<(), Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.complete_tcp_migration_out_sync(handle),
         }
     }
 

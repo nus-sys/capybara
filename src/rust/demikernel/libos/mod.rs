@@ -27,7 +27,7 @@ use crate::{
         QDesc,
         QToken,
     },
-    inetstack::protocols::tcp::migration::{TcpMigrationSegment, TcpMigrationHeader, TcpState},
+    inetstack::{protocols::tcp::migration::{TcpMigrationSegment, TcpMigrationHeader, TcpState}, MigrationHandle},
 };
 use ::std::{
     env,
@@ -259,15 +259,21 @@ impl LibOS {
     /// 
     /// `remote`: Connection's remote address.
     /// 
-    pub fn perform_tcp_migration_out_sync(
+    pub fn initiate_tcp_migration_out_sync(
         &mut self,
         server_dest_fd: QDesc,
         conn_fd: QDesc,
         server_origin_listen: SocketAddrV4,
         server_dest_listen: SocketAddrV4,
-    ) -> Result<(), Fail> {
+    ) -> Result<MigrationHandle, Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.perform_tcp_migration_out_sync(server_dest_fd, conn_fd, server_origin_listen, server_dest_listen),
+            LibOS::NetworkLibOS(libos) => libos.initiate_tcp_migration_out_sync(server_dest_fd, conn_fd, server_origin_listen, server_dest_listen),
+        }
+    }
+
+    pub fn complete_tcp_migration_out_sync(&mut self, handle: MigrationHandle) -> Result<(), Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.complete_tcp_migration_out_sync(handle),
         }
     }
 
