@@ -10,7 +10,7 @@
 
 #define IPV4_HOST_SIZE 1024
 
-#define TCP_MIGRATION_FLAG 0xCAFEDEAD
+#define MIGRATION_SIGNATURE 0xCAFEDEAD
 
 const int MAC_TABLE_SIZE        = 65536;
 const bit<3> L2_LEARN_DIGEST = 1;
@@ -67,7 +67,7 @@ header ipv4_h {
     bit<16>  hdr_checksum;
     bit<32>  src_ip;
     bit<32>  dst_ip;
-}
+} // 20
 
 header tcp_h {
     bit<16>  src_port;
@@ -80,7 +80,7 @@ header tcp_h {
     bit<16>  window;
     bit<16>  checksum;
     bit<16>  urgent_ptr;
-}
+} // 20
 
 header udp_h {
     bit<16>  src_port;
@@ -91,9 +91,17 @@ header udp_h {
 
 
 header tcp_migration_header_h {
-    bit<32>  flags;
+    bit<32>  signature;
+
     bit<32>  origin_ip;
     bit<16>  origin_port;
+    
     bit<32>  dst_ip;
     bit<16>  dst_port;
+    
+    bit<32>  client_ip;
+    bit<16>  client_port;
+    
+    bit<8>  flag;
+    bit<8> checksum;
 }
