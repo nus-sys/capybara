@@ -75,7 +75,7 @@ fn mkbuf(buffer_size: usize, fill_char: u8) -> Vec<u8> {
 //======================================================================================================================
 
 fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) -> Result<()> {
-    println!("Setup libos");
+    eprintln!("Setup libos");
     let libos_name: LibOSName = match LibOSName::from_env() {
         Ok(libos_name) => libos_name.into(),
         Err(e) => panic!("{:?}", e),
@@ -86,7 +86,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     };
    
     // Setup local socket.
-    println!("Setup local socket");
+    eprintln!("Setup local socket");
     let sockqd: QDesc = match libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0) {
         Ok(qd) => qd,
         Err(e) => panic!("failed to create socket: {:?}", e.cause),
@@ -103,7 +103,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     };
 
     // Accept incoming connections.
-    println!("Accept incoming connections.");
+    eprintln!("Accept incoming connections.");
     let qt_connection_in: QToken = match libos.accept(sockqd) {
         Ok(qt) => qt,
         Err(e) => panic!("accept failed: {:?}", e.cause),
@@ -113,7 +113,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
         Err(e) => panic!("operation failed: {:?}", e.cause),
         _ => unreachable!(),
     };
-    println!("TCP Connection established with client");
+    eprintln!("TCP Connection established with client");
 
     // Process client messages (before migration).
     let mut cnt: i32 = 0;
@@ -133,7 +133,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
 
         // i += recvbuf.len();
         let msg = from_utf8(&recvbuf).unwrap();
-        println!("ping: {}", msg);
+        eprintln!("ping: {}", msg);
 
         
         let qt: QToken = match libos.push2(qd_connection_in, &recvbuf[..]) {
@@ -145,7 +145,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
             Err(e) => panic!("operation failed: {:?}", e.cause),
             _ => unreachable!(),
         };
-        println!("pong: {}", msg);
+        eprintln!("pong: {}", msg);
         
         // thread::sleep(Duration::from_millis(1000));
         if cnt == 10{
@@ -154,7 +154,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     }
 
     // Connect to migration destination.
-    println!("Connect to migration destination");
+    eprintln!("Connect to migration destination");
     let qd_migration_out: QDesc = match libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0) {
         Ok(qd) => qd,
         Err(e) => panic!("failed to create socket: {:?}", e.cause),
@@ -173,13 +173,13 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
         Err(e) => panic!("operation failed: {:?}", e.cause),
         _ => unreachable!(),
     };
-    println!("TCP Connection established with dest");   
+    eprintln!("TCP Connection established with dest");   
 
 
 
-    // println!("Sleep 10s...");
+    // eprintln!("Sleep 10s...");
     // thread::sleep(Duration::from_millis(10000));
-    // println!("Resume!");
+    // eprintln!("Resume!");
 
     libos.perform_tcp_migration_out_sync(qd_migration_out, qd_connection_in, local, dest).unwrap();
 
@@ -196,14 +196,14 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
         Err(e) => panic!("operation failed: {:?}", e.cause),
         _ => unreachable!(),
     };
-    println!("Push TcpState (len: {})", serialized.len());
-    println!("header: {:?}", state.header);
-    println!("TcpState: {}", from_utf8(&state.payload)?); */
+    eprintln!("Push TcpState (len: {})", serialized.len());
+    eprintln!("header: {:?}", state.header);
+    eprintln!("TcpState: {}", from_utf8(&state.payload)?); */
     
     
-    println!("Sleep 10s...");
+    eprintln!("Sleep 10s...");
     thread::sleep(Duration::from_millis(10000));
-    println!("Resume!");
+    eprintln!("Resume!");
 
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
@@ -217,7 +217,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
 //======================================================================================================================
 
 fn server_dest(local: SocketAddrV4) -> Result<()> {
-    println!("Setup libos.");
+    eprintln!("Setup libos.");
     let libos_name: LibOSName = match LibOSName::from_env() {
         Ok(libos_name) => libos_name.into(),
         Err(e) => panic!("{:?}", e),
@@ -228,7 +228,7 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
     };
 
     // Setup peer.
-    println!("Setup peer.");
+    eprintln!("Setup peer.");
     let sockqd: QDesc = match libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0) {
         Ok(qd) => qd,
         Err(e) => panic!("failed to create socket: {:?}", e.cause),
@@ -245,7 +245,7 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
     };
 
     // Accept incoming connections.
-    println!("Accept incoming connections.");
+    eprintln!("Accept incoming connections.");
     let qt: QToken = match libos.accept(sockqd) {
         Ok(qt) => qt,
         Err(e) => panic!("accept failed: {:?}", e.cause),
@@ -255,15 +255,15 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
         Err(e) => panic!("operation failed: {:?}", e.cause),
         _ => unreachable!(),
     };
-    println!("TCP Connection established with origin");
+    eprintln!("TCP Connection established with origin");
 
     
-    println!("Migrating in connection");
+    eprintln!("Migrating in connection");
     let dest_fd = libos.perform_tcp_migration_in_sync(qd).unwrap();
     
-    println!("Sleep 1s...");
-    thread::sleep(Duration::from_millis(1000));
-    println!("Resume!");
+    // eprintln!("Sleep 1s...");
+    // thread::sleep(Duration::from_millis(1000));
+    // eprintln!("Resume!");
     /* let qtoken: QToken = match libos.pop(qd) {
         Ok(qt) => qt,
         Err(e) => panic!("pop failed: {:?}", e.cause),
@@ -276,15 +276,15 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
     };
 
     // let msg = &recvbuf;
-    // println!("pop: {}", msg);
+    // eprintln!("pop: {}", msg);
     let deserialized = TcpMigrationSegment::deserialize(&recvbuf).unwrap();
-    println!("header: {:?}", deserialized.header);
-    println!("TcpState: {}", from_utf8(&deserialized.payload)?);
+    eprintln!("header: {:?}", deserialized.header);
+    eprintln!("TcpState: {}", from_utf8(&deserialized.payload)?);
     
-    println!("Sleep 1s...");
+    eprintln!("Sleep 1s...");
     thread::sleep(Duration::from_millis(1000));
-    println!("Resume!");
-    println!("Migrating in connection");
+    eprintln!("Resume!");
+    eprintln!("Migrating in connection");
     let dest_fd = libos.migrate_in_tcp_connection(deserialized.clone()).unwrap(); */
 
 
@@ -297,7 +297,7 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
             Ok(qt) => qt,
             Err(e) => panic!("pop failed: {:?}", e.cause),
         };
-        // println!("Waiting pop...");
+        // eprintln!("Waiting pop...");
         // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
         let recvbuf = match libos.wait2(qtoken) {
             Ok((_, OperationResult::Pop(_, buf))) => buf,
@@ -307,7 +307,7 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
 
         // i += recvbuf.len();
         let msg = from_utf8(&recvbuf).unwrap();
-        println!("ping: {}", msg);
+        eprintln!("ping: {}", msg);
 
 
         let qt: QToken = match libos.push2(dest_fd, &recvbuf[..]) {
@@ -319,7 +319,7 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
             Err(e) => panic!("operation failed: {:?}", e.cause),
             _ => unreachable!(),
         };
-        println!("pong: {}", msg);
+        eprintln!("pong: {}", msg);
         
         // thread::sleep(Duration::from_millis(1000));
         if cnt == 10{
@@ -387,7 +387,7 @@ fn client(remote: SocketAddrV4) -> Result<()> {
             Err(e) => panic!("operation failed: {:?}", e.cause),
             _ => unreachable!(),
         };
-        println!("ping: {}", msg);
+        eprintln!("ping: {}", msg);
         
         // Pop data.
         let qt: QToken = match libos.pop(sockqd) {
@@ -416,7 +416,7 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         retransmissions = 0;
 
         let msg = from_utf8(&recvbuf).unwrap();
-        println!("pong: {}", msg);
+        eprintln!("pong: {}", msg);
         
         // thread::sleep(Duration::from_millis(1000));
         if cnt == 20{
@@ -451,7 +451,7 @@ fn usage(program_name: &String) {
 
 
 pub fn main() -> Result<()> {
-    println!("Hello main!");
+    eprintln!("Hello main!");
     let args: Vec<String> = env::args().collect();
 
     if args.len() >= 2 {
@@ -459,17 +459,17 @@ pub fn main() -> Result<()> {
             let local_sockaddr: SocketAddrV4 = SocketAddrV4::from_str(&args[2])?;
             let origin_sockaddr: SocketAddrV4 = SocketAddrV4::from_str(&args[3])?;
             let dest_sockaddr: SocketAddrV4 = SocketAddrV4::from_str(&args[4])?;
-            println!("I'm server!");
+            eprintln!("I'm server!");
             let ret: Result<()> = server_origin(local_sockaddr, origin_sockaddr, dest_sockaddr);
             return ret;
         } else if args[1] == "--client" {
             let server_sockaddr: SocketAddrV4 = SocketAddrV4::from_str(&args[2])?;
-            println!("I'm client!");
+            eprintln!("I'm client!");
             let ret: Result<()> = client(server_sockaddr);
             return ret;
         } else if args[1] == "--dest" {
             let dest_sockaddr: SocketAddrV4 = SocketAddrV4::from_str(&args[2])?;
-            println!("I'm destination!");
+            eprintln!("I'm destination!");
             let ret: Result<()> = server_dest(dest_sockaddr);
             return ret;
         }

@@ -51,7 +51,7 @@ impl NetworkRuntime for DPDKRuntime {
         // Chain body buffer.
 
         /* FOR DEBUGGING PACKETS */
-        /* 
+        
         fn copy_body(src: &[u8], dst: &mut [u8]) {
             for i in 0..src.len() { dst[i] = src[i]; }
         }
@@ -69,8 +69,8 @@ impl NetworkRuntime for DPDKRuntime {
         let (eth, tmpbuf) = Ethernet2Header::parse(tmpbuf).unwrap();
         let (ip, tmpbuf) = Ipv4Header::parse(tmpbuf).unwrap();
         let (tcp, tmpbuf) = TcpHeader::parse(&ip, tmpbuf, false).unwrap();
-        eprintln!("Eth: {:#?}\nIP: {:#?}\nTCP: {:#?}", eth, ip, tcp);
-        */
+        eprintln!("===TX START===\nEth: {:#?}\nIP: {:#?}\nTCP: {:#?}\n===TX END===", eth, ip, tcp);
+        
         /* FOR DEBUGGING PACKETS */
 
         // First, allocate a header mbuf and write the header into it.
@@ -172,14 +172,14 @@ impl NetworkRuntime for DPDKRuntime {
                 let buf: Buffer = Buffer::DPDK(mbuf);
 
                 /* FOR DEBUGGING PACKETS */
-                /*
+                
                 use crate::inetstack::protocols::{ipv4::Ipv4Header, ethernet2::Ethernet2Header, tcp::segment::TcpHeader};
                 let mut tmpbuf = buf.clone();
                 let (eth, tmpbuf) = Ethernet2Header::parse(tmpbuf).unwrap();
                 let (ip, tmpbuf) = Ipv4Header::parse(tmpbuf).unwrap();
                 let (tcp, tmpbuf) = TcpHeader::parse(&ip, tmpbuf, false).unwrap();
-                eprintln!("Eth: {:#?}\nIP: {:#?}\nTCP: {:#?}", eth, ip, tcp);
-                */
+                eprintln!("===RX START===\nEth: {:#?}\nIP: {:#?}\nTCP: {:#?}\n===RX END===", eth, ip, tcp);
+                
                 /* FOR DEBUGGING PACKETS */
 
                 out.push(buf);
