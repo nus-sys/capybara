@@ -152,7 +152,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
         // thread::sleep(Duration::from_millis(1000));
         if cnt == 10 {
             // Connect to migration destination.
-            println!("Connect to migration destination");
+            eprintln!("Connect to migration destination");
             let qd_migration_out: QDesc = match libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0) {
                 Ok(qd) => qd,
                 Err(e) => panic!("failed to create socket: {:?}", e.cause),
@@ -171,7 +171,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
                 Err(e) => panic!("operation failed: {:?}", e.cause),
                 _ => unreachable!(),
             };
-            println!("TCP Connection established with dest");
+            eprintln!("TCP Connection established with dest");
 
             handle = Some(libos.initiate_tcp_migration_out_sync(
                 qd_migration_out,
@@ -190,7 +190,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
 
     // eprintln!("Sleep 10s...");
     // thread::sleep(Duration::from_millis(10000));
-    // println!("Resume!");
+    // eprintln!("Resume!");
 
     /* let state = libos.migrate_out_tcp_connection(qd_connection_in, Some(dest))?; // fd: queue descriptor of the connection to be migrated
     let serialized = state.serialize().unwrap();
