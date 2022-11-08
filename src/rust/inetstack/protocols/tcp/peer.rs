@@ -154,7 +154,7 @@ pub struct Inner {
     /// remote -> queue
     /// 
     /// TODO: (local, remote) -> queue
-    migrating_recv_queues: HashMap<SocketAddrV4, VecDeque<Buffer>>,
+    migrating_recv_queues: HashMap<SocketAddrV4, VecDeque<(Ipv4Header, TcpHeader, Buffer)>>,
 }
 
 pub struct TcpPeer {
@@ -669,7 +669,7 @@ impl TcpPeer {
 
     pub fn migrate_in_tcp_connection(&mut self, qd: QDesc, state: TcpState, origin: SocketAddrV4) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
-        let mut state = state;
+        //let mut state = state;
         let local = state.local;
         let remote = state.remote;
         /* let TcpMigrationSegment { header, payload } = conn;
@@ -704,10 +704,10 @@ impl TcpPeer {
         }
 
         // Check if migrating queue exists and add all its elements to state's recv_queue. Remove migrating queue.
-        match inner.migrating_recv_queues.remove(&remote) {
-            Some(queue) => state.recv_queue.extend(queue),
+        let migrating_queue = match inner.migrating_recv_queues.remove(&remote) {
+            Some(queue) => queue, //state.recv_queue.extend(queue),
             None => return Err(Fail::new(EINVAL, "unprepared for migration")),
-        }
+        };
 
         let receiver = Receiver::migrated_in(
             state.reader_next,
@@ -757,6 +757,14 @@ impl TcpPeer {
             inner.migrated_in_origins.insert((state.local, state.remote), origin);
         } */
         inner.migrated_in_origins.insert((local, remote), origin);
+
+        for (ip_hdr, tcp_hdr, payload) in migrating_queue {
+            // Find better way than cloning buffer.
+            let mut buf = vec![0u8; tcp_hdr.compute_size() + payload.len()];
+            tcp_hdr.serialize(&mut buf, &ip_hdr, &payload, inner.tcp_config.get_rx_checksum_offload());
+            let buf = Buffer::Heap(crate::runtime::memory::DataBuffer::from_slice(&buf));
+            inner.receive(&ip_hdr, buf)?;
+        }
 
         Ok(())
     }
@@ -828,7 +836,7 @@ impl Inner {
 
         // Check if migrating queue exists. If yes, push buffer to queue.
         if let Some(queue) = self.migrating_recv_queues.get_mut(&remote) {
-            queue.push_back(data);
+            queue.push_back((*ip_hdr, tcp_hdr, data));
             return Ok(());
         }
 
