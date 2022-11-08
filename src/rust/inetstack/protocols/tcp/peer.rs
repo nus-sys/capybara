@@ -527,7 +527,7 @@ impl TcpPeer {
                 let key = (*local, *remote);
                 match inner.established.get(&key) {
                     Some(connection) => {
-                        let cb = dbg!(connection.cb.clone());
+                        let cb = connection.cb.clone();
                         let mss = cb.get_mss();
                         let (send_window, _) = cb.get_send_window();
                         let (send_unacked, _) = cb.get_send_unacked();
@@ -746,7 +746,6 @@ impl TcpPeer {
             congestion_control::None::new,
             None,
         );
-        dbg!(&cb);
 
         let established = EstablishedSocket::new(cb, qd, inner.dead_socket_tx.clone());
 
