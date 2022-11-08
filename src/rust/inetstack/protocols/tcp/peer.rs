@@ -531,7 +531,7 @@ impl TcpPeer {
                         let mss = cb.get_mss();
                         let (send_window, _) = cb.get_send_window();
                         let (send_unacked, _) = cb.get_send_unacked();
-
+                        let (unsent_seq_no, _) = cb.get_unsent_seq_no();
                         let (send_next, _) = cb.get_send_next();
                         let receive_next = cb.receiver.receive_next.get();
                         let sender_window_scale = cb.get_sender_window_scale();
@@ -548,6 +548,7 @@ impl TcpPeer {
                             receive_next,
                             cb.take_receive_queue(),
 
+                            unsent_seq_no,
                             send_unacked,
                             send_next,
                             send_window,
@@ -716,7 +717,8 @@ impl TcpPeer {
         );
 
         let sender = Sender::migrated_in(
-            state.seq_no,
+            state.unsent_seq_no,
+            state.send_unacked,
             state.send_next,
             state.send_window,
             state.send_window_last_update_seq,

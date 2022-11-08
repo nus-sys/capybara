@@ -29,7 +29,8 @@ pub struct TcpState {
 
     pub recv_queue: VecDeque<Buffer>,
 
-    pub seq_no: SeqNumber,
+    pub unsent_seq_no: SeqNumber,
+    pub send_unacked: SeqNumber,
     pub send_next: SeqNumber,
     pub send_window: u32,
     pub send_window_last_update_seq: SeqNumber,
@@ -102,7 +103,8 @@ impl TcpState {
         receive_next: SeqNumber,
         recv_queue: VecDeque<Buffer>,
 
-        seq_no: SeqNumber,
+        unsent_seq_no: SeqNumber,
+        send_unacked: SeqNumber,
         send_next: SeqNumber,
         send_window: u32,
         send_window_last_update_seq: SeqNumber,
@@ -123,7 +125,8 @@ impl TcpState {
             receive_next,
             recv_queue,
 
-            seq_no,
+            unsent_seq_no,
+            send_unacked,
             send_next,
             send_window,
             send_window_last_update_seq,

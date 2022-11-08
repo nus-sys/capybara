@@ -133,7 +133,8 @@ impl Sender {
     }
 
     pub fn migrated_in(
-        seq_no: SeqNumber,
+        unsent_seq_no: SeqNumber,
+        send_unacked: SeqNumber,
         send_next: SeqNumber,
         send_window: u32,
         send_window_last_update_seq: SeqNumber,
@@ -144,11 +145,11 @@ impl Sender {
         unsent_queue: VecDeque<Buffer>,
     ) -> Self {
         Self {
-            send_unacked: WatchedValue::new(seq_no),
+            send_unacked: WatchedValue::new(send_unacked),
             unacked_queue: RefCell::new(unacked_queue),
             send_next: WatchedValue::new(send_next),
             unsent_queue: RefCell::new(unsent_queue),
-            unsent_seq_no: WatchedValue::new(seq_no),
+            unsent_seq_no: WatchedValue::new(unsent_seq_no),
 
             send_window: WatchedValue::new(send_window),
             send_window_last_update_seq: Cell::new(send_window_last_update_seq),
