@@ -95,6 +95,8 @@ pub enum State {
 }
 
 // ToDo: Consider incorporating this directly into ControlBlock.
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct Receiver {
     //
     // Receive Sequence Space:
@@ -161,18 +163,24 @@ impl Receiver {
 
 /// Transmission control block for representing our TCP connection.
 // ToDo: Make all public fields in this structure private.
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct ControlBlock {
     local: SocketAddrV4,
     remote: SocketAddrV4,
 
+    #[derivative(Debug="ignore")]
     rt: Rc<dyn NetworkRuntime>,
+    #[derivative(Debug="ignore")]
     pub scheduler: Scheduler,
+    #[derivative(Debug="ignore")]
     pub clock: TimerRc,
     local_link_addr: MacAddress,
     tcp_config: TcpConfig,
 
     // ToDo: We shouldn't be keeping anything datalink-layer specific at this level.  The IP layer should be holding
     // this along with other remote IP information (such as routing, path MTU, etc).
+    #[derivative(Debug="ignore")]
     arp: Rc<ArpPeer>,
 
     // Send-side state information.  ToDo: Consider incorporating this directly into ControlBlock.
