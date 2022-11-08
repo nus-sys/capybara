@@ -868,8 +868,8 @@ impl InetStack {
         if !seg.header.flag_prepare_migration {
             return Err(Fail::new(libc::EINVAL, "improper request from server_origin"));
         }
-
-        eprintln!("Header: {:#?}", seg.header);
+        eprintln!("RECEIVED PREPARE_MIGRATION");
+        // eprintln!("Header: {:#?}", seg.header);
 
         let TcpMigrationHeader { origin, dest, remote, .. } = seg.header;
 
@@ -883,11 +883,11 @@ impl InetStack {
         seg.header.flag_load = true;
 
         
-
+        
         let qt = self.push2(server_origin_fd, &seg.serialize())?;
         self.wait2(qt)?;
-
-        eprintln!("Header: {:#?}", seg.header);
+        eprintln!("SENT PREPARE_MIGRATION_ACK");
+        // eprintln!("Header: {:#?}", seg.header);
         // PAYLOAD_STATE
 
         let qt = self.pop(server_origin_fd)?;
@@ -910,7 +910,7 @@ impl InetStack {
 
         let state = TcpState::deserialize(&seg.payload).expect("TcpState deserialization failed");
 
-        eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
+        // eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
 
         self.migrate_in_tcp_connection(state, origin)
     }
@@ -935,8 +935,8 @@ impl InetStack {
 
         let qt = self.push2(server_dest_fd, &seg.serialize())?;
         self.wait2(qt)?;
-
-        eprintln!("Header: {:#?}", seg.header);
+        eprintln!("SENT PREPARE_MIGRATION");
+        // eprintln!("Header: {:#?}", seg.header);
 
 
         // PREPARE_MIGRATION_ACK
@@ -958,10 +958,10 @@ impl InetStack {
         if !seg.header.flag_prepare_migration_ack || !seg.header.flag_load {
             return Err(Fail::new(libc::EINVAL, "improper response from server_dest"));
         }
+        eprintln!("RECEIVED PREPARE_MIGRATION_ACK");
+        // eprintln!("Header: {:#?}", seg.header);
 
-        eprintln!("Header: {:#?}", seg.header);
-
-        std::thread::sleep(std::time::Duration::from_millis(1000));
+        // std::thread::sleep(std::time::Duration::from_millis(1000));
             
         Ok(MigrationHandle{
             server_dest_migration_fd: server_dest_fd,
@@ -996,8 +996,8 @@ impl InetStack {
         
         let qt = self.push2(server_dest_migration_fd, &seg.serialize())?;
         self.wait2(qt)?;
-
-        eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
+        eprintln!("SENT MIGRATION_STATE");
+        // eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
 
         // Maybe get another ACK from dest?
 

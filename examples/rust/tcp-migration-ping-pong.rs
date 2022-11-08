@@ -268,7 +268,7 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
     
     eprintln!("Migrating in connection");
     let dest_fd = libos.perform_tcp_migration_in_sync(qd).unwrap();
-    
+    eprintln!("Processed all pkts in migrating_queue, MIGRATION DONE");
     // eprintln!("Sleep 1s...");
     // thread::sleep(Duration::from_millis(1000));
     // eprintln!("Resume!");
