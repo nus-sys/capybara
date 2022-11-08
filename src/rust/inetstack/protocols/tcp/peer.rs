@@ -761,11 +761,15 @@ impl TcpPeer {
         inner.migrated_in_origins.insert((local, remote), origin);
 
         dbg!(&migrating_queue);
-        for (ip_hdr, tcp_hdr, buf) in migrating_queue {
-            // Find better way than cloning buffer.
-            /* let mut buf = vec![0u8; tcp_hdr.compute_size() + payload.len()];
-            tcp_hdr.serialize(&mut buf, &ip_hdr, &payload, inner.tcp_config.get_rx_checksum_offload());
-            let buf = Buffer::Heap(crate::runtime::memory::DataBuffer::from_slice(&payload)); */
+        for (ip_hdr, tcp_hdr, data) in migrating_queue {
+            let tcp_hdr_size = tcp_hdr.compute_size();
+            let mut buf = vec![0u8; tcp_hdr_size + data.len()];
+            tcp_hdr.serialize(&mut buf, &ip_hdr, &data, inner.tcp_config.get_rx_checksum_offload());
+
+            // Find better way than cloning data.
+            buf[tcp_hdr_size..].copy_from_slice(&data);
+
+            let buf = Buffer::Heap(crate::runtime::memory::DataBuffer::from_slice(&buf));
             inner.receive(&ip_hdr, buf)?;
         }
 
@@ -811,7 +815,6 @@ impl Inner {
     }
 
     fn receive(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
-        let cloned_buf = buf.clone();
         let (mut tcp_hdr, data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
         debug!("TCP received {:?}", tcp_hdr);
         let local = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
@@ -836,7 +839,7 @@ impl Inner {
         dbg!(self.migrating_recv_queues.get(&remote));
         // Check if migrating queue exists. If yes, push buffer to queue.
         if let Some(queue) = self.migrating_recv_queues.get_mut(&remote) {
-            queue.push_back((*ip_hdr, tcp_hdr, cloned_buf));
+            queue.push_back((*ip_hdr, tcp_hdr, data));
             return Ok(());
         }
 
