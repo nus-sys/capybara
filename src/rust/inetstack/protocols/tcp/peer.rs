@@ -760,11 +760,12 @@ impl TcpPeer {
         } */
         inner.migrated_in_origins.insert((local, remote), origin);
 
-        for (ip_hdr, tcp_hdr, payload) in migrating_queue {
+        dbg!(&migrating_queue);
+        for (ip_hdr, tcp_hdr, buf) in migrating_queue {
             // Find better way than cloning buffer.
-            let mut buf = vec![0u8; tcp_hdr.compute_size() + payload.len()];
+            /* let mut buf = vec![0u8; tcp_hdr.compute_size() + payload.len()];
             tcp_hdr.serialize(&mut buf, &ip_hdr, &payload, inner.tcp_config.get_rx_checksum_offload());
-            let buf = Buffer::Heap(crate::runtime::memory::DataBuffer::from_slice(&buf));
+            let buf = Buffer::Heap(crate::runtime::memory::DataBuffer::from_slice(&payload)); */
             inner.receive(&ip_hdr, buf)?;
         }
 
@@ -810,6 +811,7 @@ impl Inner {
     }
 
     fn receive(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
+        let cloned_buf = buf.clone();
         let (mut tcp_hdr, data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
         debug!("TCP received {:?}", tcp_hdr);
         let local = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
@@ -830,16 +832,18 @@ impl Inner {
             s.receive(&tcp_hdr);
             return Ok(());
         }
+        
+        dbg!(self.migrating_recv_queues.get(&remote));
+        // Check if migrating queue exists. If yes, push buffer to queue.
+        if let Some(queue) = self.migrating_recv_queues.get_mut(&remote) {
+            queue.push_back((*ip_hdr, tcp_hdr, cloned_buf));
+            return Ok(());
+        }
+
         let (local, _) = key;
         if let Some(s) = self.passive.get_mut(&local) {
             debug!("Routing to passive connection: {:?}", local);
             return s.receive(ip_hdr, &tcp_hdr);
-        }
-
-        // Check if migrating queue exists. If yes, push buffer to queue.
-        if let Some(queue) = self.migrating_recv_queues.get_mut(&remote) {
-            queue.push_back((*ip_hdr, tcp_hdr, data));
-            return Ok(());
         }
 
         // The packet isn't for an open port; send a RST segment.
