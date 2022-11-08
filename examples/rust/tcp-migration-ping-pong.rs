@@ -184,7 +184,6 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
             break;
         }
     }
-
     let handle = handle.expect("MigrationHandle not set");
     libos.complete_tcp_migration_out_sync(handle).unwrap();
 
@@ -270,9 +269,9 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
     eprintln!("Migrating in connection");
     let dest_fd = libos.perform_tcp_migration_in_sync(qd).unwrap();
     
-    eprintln!("Sleep 1s...");
-    thread::sleep(Duration::from_millis(1000));
-    eprintln!("Resume!");
+    // eprintln!("Sleep 1s...");
+    // thread::sleep(Duration::from_millis(1000));
+    // eprintln!("Resume!");
 
     
     /* let qtoken: QToken = match libos.pop(qd) {
@@ -308,8 +307,8 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
             Ok(qt) => qt,
             Err(e) => panic!("pop failed: {:?}", e.cause),
         };
-        // eprintln!("Waiting pop...");
         // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
+        // eprintln!("waiting ping...");
         let recvbuf = match libos.wait2(qtoken) {
             Ok((_, OperationResult::Pop(_, buf))) => buf,
             Err(e) => panic!("operation failed: {:?}", e.cause),
@@ -406,25 +405,30 @@ fn client(remote: SocketAddrV4) -> Result<()> {
             Err(e) => panic!("pop failed: {:?}", e.cause),
         };
         // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
-        let recvbuf = match libos.timedwait2(qt, Some(SystemTime::now() + Duration::from_millis(2000))) {
+        let recvbuf = match libos.wait2(qt) {
             Ok((_, OperationResult::Pop(_, buf))) => buf,
-            Err(e) => {
-                if e.errno == libc::ETIMEDOUT {
-                    if retransmissions == 5 {
-                        panic!("Exceeded 5 timeout retransmissions");
-                    }
-
-                    eprintln!("TIMEOUT: pong {}", cnt);
-                    cnt -= 1;
-                    retransmissions += 1;
-                    continue;
-                }
-                panic!("operation failed: {:?}", e.cause)
-            },
+            Err(e) => panic!("operation failed: {:?}", e.cause),
             _ => unreachable!(),
         };
+        // let recvbuf = match libos.timedwait2(qt, Some(SystemTime::now() + Duration::from_millis(2000))) {
+        //     Ok((_, OperationResult::Pop(_, buf))) => buf,
+        //     Err(e) => {
+        //         if e.errno == libc::ETIMEDOUT {
+        //             if retransmissions == 5 {
+        //                 panic!("Exceeded 5 timeout retransmissions");
+        //             }
 
-        retransmissions = 0;
+        //             eprintln!("TIMEOUT: pong {}", cnt);
+        //             cnt -= 1;
+        //             retransmissions += 1;
+        //             continue;
+        //         }
+        //         panic!("operation failed: {:?}", e.cause)
+        //     },
+        //     _ => unreachable!(),
+        // };
+
+        // retransmissions = 0;
 
         let msg = from_utf8(&recvbuf).unwrap();
         eprintln!("pong: {}", msg);
