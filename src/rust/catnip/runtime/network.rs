@@ -177,8 +177,13 @@ impl NetworkRuntime for DPDKRuntime {
                 let mut tmpbuf = buf.clone();
                 let (eth, tmpbuf) = Ethernet2Header::parse(tmpbuf).unwrap();
                 let (ip, tmpbuf) = Ipv4Header::parse(tmpbuf).unwrap();
-                let (tcp, tmpbuf) = TcpHeader::parse(&ip, tmpbuf, false).unwrap();
-                eprintln!("===RX START===\nEth: {:#?}\nIP: {:#?}\nTCP: {:#?}\n===RX END===", eth, ip, tcp);
+                let () = match TcpHeader::parse(&ip, tmpbuf, false) {
+                    Ok((tcp, buf)) => {
+                        eprintln!("===RX START===\nEth: {:#?}\nIP: {:#?}\nTCP: {:#?}\n===RX END===", eth, ip, tcp);
+                    },
+                    Err(e) => eprintln!("RECEIVED NON-TCP PACKET\n"),
+                };
+                
                 
                 /* FOR DEBUGGING PACKETS */
 
