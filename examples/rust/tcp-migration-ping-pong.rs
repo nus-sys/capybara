@@ -119,21 +119,14 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     // Process client messages (before migration).
     let mut cnt: i32 = 1;
     let mut handle: Option<MigrationHandle> = None;
-    let mut pop_qtoken: Option<QToken> = None;
+    let mut init_migration = false;
     loop {
-        let mut pop_qtoken = match libos.pop(qd_connection_in) {
-            Ok(qt) => Some(qt),
+        let pop_qtoken = match libos.pop(qd_connection_in) {
+            Ok(qt) => qt,
             Err(e) => panic!("pop failed: {:?}", e.cause),
         };
-        /* pop_qtoken = match pop_qtoken {
-            None => match libos.pop(qd_connection_in) {
-                Ok(qt) => Some(qt),
-                Err(e) => panic!("pop failed: {:?}", e.cause),
-            },
-            some => some,
-        }; */
-
-        let wait_result = match libos.trywait2(pop_qtoken.unwrap()) {
+        
+        let wait_result = match libos.trywait2(pop_qtoken) {
             Ok(res) => res,
             Err(e) => panic!("operation failed: {:?}", e.cause),
         };
@@ -160,11 +153,11 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
             eprintln!("pong: {}", msg);
 
             cnt += 1;
-            pop_qtoken = None;
         }
         
         // thread::sleep(Duration::from_millis(1000));
-        if cnt == 10 {
+        if cnt == 10 && !init_migration {
+            init_migration = true;
             // Connect to migration destination.
             eprintln!("Connect to migration destination");
             let qd_migration_out: QDesc = match libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0) {
@@ -194,7 +187,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
                 dest,
             ).unwrap());
         }
-        else if cnt > 10 {
+        else if cnt >= 10 {
             let handle = handle.expect("MigrationHandle not set");
             if libos.try_complete_tcp_migration_out(handle).unwrap() {
                 break;
@@ -399,7 +392,6 @@ fn client(remote: SocketAddrV4) -> Result<()> {
     let mut retransmissions = 0;
     loop {
         cnt+=1;
-        
         let mut msg = String::from("Hello ");
         msg.push_str(&cnt.to_string());
         
