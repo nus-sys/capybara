@@ -126,7 +126,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
         };
         // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
 
-        let wait_result = match libos.trywait2(qt) {
+        let wait_result = match libos.trywait2(qtoken) {
             Ok(res) => res,
             Err(e) => panic!("operation failed: {:?}", e.cause),
         };
