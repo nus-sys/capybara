@@ -257,30 +257,34 @@ impl LibOS {
         }
     } */
 
-    /// Performs the complete process (synchronously, through TCP communication) to migrate out a tcp connection,
+    /// 
+    /// Initiates the process (through TCP communication) to migrate out a tcp connection,
     /// provided the descriptor of a connection to the destination server.
     /// 
-    /// `origin`: Listening address for connection on origin server.
+    /// `server_origin_listen`: Listening address for connection on origin server.
     /// 
-    /// `dest`: Listening address for connection on destination server.
+    /// `server_dest_listen`: Listening address for connection on destination server.
     /// 
-    /// `remote`: Connection's remote address.
-    /// 
-    pub fn initiate_tcp_migration_out_sync(
+    pub fn initiate_tcp_migration_out(
         &mut self,
-        server_dest_fd: QDesc,
+        server_target_fd: QDesc,
         conn_fd: QDesc,
         server_origin_listen: SocketAddrV4,
-        server_dest_listen: SocketAddrV4,
+        server_target_listen: SocketAddrV4,
     ) -> Result<MigrationHandle, Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.initiate_tcp_migration_out_sync(server_dest_fd, conn_fd, server_origin_listen, server_dest_listen),
+            LibOS::NetworkLibOS(libos) => libos.initiate_tcp_migration_out(
+                server_target_fd,
+                conn_fd,
+                server_origin_listen,
+                server_target_listen
+            ),
         }
     }
 
-    pub fn complete_tcp_migration_out_sync(&mut self, handle: MigrationHandle) -> Result<(), Fail> {
+    pub fn try_complete_tcp_migration_out(&mut self, handle: MigrationHandle) -> Result<bool, Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.complete_tcp_migration_out_sync(handle),
+            LibOS::NetworkLibOS(libos) => libos.try_complete_tcp_migration_out(handle),
         }
     }
 

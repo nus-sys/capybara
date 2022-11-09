@@ -119,14 +119,17 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     // Process client messages (before migration).
     let mut cnt: i32 = 1;
     let mut handle: Option<MigrationHandle> = None;
-    loop {        
-        let qtoken: QToken = match libos.pop(qd_connection_in) {
-            Ok(qt) => qt,
-            Err(e) => panic!("pop failed: {:?}", e.cause),
+    let mut pop_qtoken: Option<QToken> = None;
+    loop {
+        pop_qtoken = match pop_qtoken {
+            None => match libos.pop(qd_connection_in) {
+                Ok(qt) => Some(qt),
+                Err(e) => panic!("pop failed: {:?}", e.cause),
+            },
+            some => some,
         };
-        // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
 
-        let wait_result = match libos.trywait2(qtoken) {
+        let wait_result = match libos.trywait2(pop_qtoken.unwrap()) {
             Ok(res) => res,
             Err(e) => panic!("operation failed: {:?}", e.cause),
         };
@@ -151,7 +154,9 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
                 _ => unreachable!(),
             };
             eprintln!("pong: {}", msg);
+
             cnt += 1;
+            pop_qtoken = None;
         }
         
         // thread::sleep(Duration::from_millis(1000));
@@ -178,7 +183,7 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
             };
             eprintln!("TCP Connection established with dest");
 
-            handle = Some(libos.initiate_tcp_migration_out_sync(
+            handle = Some(libos.initiate_tcp_migration_out(
                 qd_migration_out,
                 qd_connection_in,
                 local,
@@ -186,11 +191,12 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
             ).unwrap());
         }
         else if cnt > 10 {
-            break;
+            let handle = handle.expect("MigrationHandle not set");
+            if libos.try_complete_tcp_migration_out(handle).unwrap() {
+                break;
+            }
         }
     }
-    let handle = handle.expect("MigrationHandle not set");
-    libos.complete_tcp_migration_out_sync(handle).unwrap();
 
     // eprintln!("Sleep 10s...");
     // thread::sleep(Duration::from_millis(10000));

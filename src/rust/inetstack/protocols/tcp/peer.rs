@@ -13,7 +13,7 @@ use super::{
     },
     isn_generator::IsnGenerator,
     passive_open::PassiveSocket,
-    migration::TcpState,
+    migration::{TcpState, TcpMigrationHeader},
 };
 use crate::{
     inetstack::protocols::{
@@ -155,6 +155,11 @@ pub struct Inner {
     /// 
     /// TODO: (local, remote) -> queue
     migrating_recv_queues: HashMap<SocketAddrV4, VecDeque<(Ipv4Header, TcpHeader, Buffer)>>,
+
+    /// For connections that need to wait for a PREPARE_MIGRATION_ACK.
+    /// 
+    /// (origin, target, remote) -> has_received ACK
+    migration_ack_pending: HashMap<(SocketAddrV4, SocketAddrV4, SocketAddrV4), bool>,
 }
 
 pub struct TcpPeer {
@@ -598,7 +603,27 @@ impl TcpPeer {
         }
     }
 
-    /// 1) Change status of our socket to MigratedOut
+    /// Marks the connection as "waiting for PREPARE_MIGRATION_ACK".
+    pub fn initiate_migrating_out(&mut self, origin: SocketAddrV4, target: SocketAddrV4, remote: SocketAddrV4) -> Result<(), Fail> {
+        let mut inner = self.inner.borrow_mut();
+
+        match inner.migration_ack_pending.insert((origin, target, remote), false) {
+            None => Ok(()),
+            Some(..) => Err(Fail::new(EBUSY, "connection already marked for migration out initiation")),
+        }
+    }
+
+    /// Checks if initiation for migrating out is done. (i.e. if PREPARE_MIGRATION_ACK has been received)
+    pub fn is_initiate_migrating_out_done(&self, origin: SocketAddrV4, target: SocketAddrV4, remote: SocketAddrV4) -> Result<bool, Fail> {
+        let inner = self.inner.borrow();
+
+        match inner.migration_ack_pending.get(&(origin, target, remote)) {
+            Some(flag) => Ok(*flag),
+            None => Err(Fail::new(EBUSY, "no such connection marked for migration out initiation")),
+        }
+    }
+
+    /// 1) Change status of our socket to MigratedOut.
     /// 2) Change status of ControlBlock state to Migrated out.
     /// 3) Remove socket from Established hashmap.
     pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
@@ -809,8 +834,10 @@ impl Inner {
             arp,
             rng: Rc::new(RefCell::new(rng)),
             dead_socket_tx,
+
             migrated_in_origins: HashMap::new(),
             migrating_recv_queues: HashMap::new(),
+            migration_ack_pending: HashMap::new(),
         }
     }
 
@@ -829,7 +856,22 @@ impl Inner {
 
         if let Some(s) = self.established.get(&key) {
             debug!("Routing to established connection: {:?}", key);
+
+            // Check if payload is a TcpMigrationSegment with PREPARE_MIGRATION_ACK set.
+            let migration_header = if let Ok(header) = TcpMigrationHeader::deserialize(&data) {
+                if header.flag_prepare_migration_ack { Some(header) } else { None }
+            } else { None };
+
             s.receive(&mut tcp_hdr, data);
+
+            // Set prepare migration ACK flag if applicable.
+            if let Some(header) = migration_header {
+                match self.migration_ack_pending.get_mut(&(header.origin, header.target, header.remote)) {
+                    Some(flag) => *flag = true,
+                    None => return Err(Fail::new(EINVAL, "connection not initiated for migrating out")),
+                }
+            };
+
             return Ok(());
         }
         if let Some(s) = self.connecting.get_mut(&key) {

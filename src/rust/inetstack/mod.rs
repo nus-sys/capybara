@@ -689,11 +689,12 @@ impl InetStack {
 // TCP Migration
 //==============================================================================
 
+#[derive(Debug, Clone, Copy)]
 pub struct MigrationHandle {
-    server_dest_migration_fd: QDesc,
+    server_target_migration_fd: QDesc,
     conn_fd: QDesc,
     origin: SocketAddrV4,
-    dest: SocketAddrV4,
+    target: SocketAddrV4,
     remote: SocketAddrV4,
 }
 
@@ -787,86 +788,6 @@ impl InetStack {
     }
 
     /// 
-    /// Performs the complete process (synchronously, through TCP communication) to migrate out a tcp connection,
-    /// provided the descriptor of a connection to the destination server.
-    /// 
-    /// `server_origin_listen`: Listening address for connection on origin server.
-    /// 
-    /// `server_dest_listen`: Listening address for connection on destination server.
-    /// 
-    /// TODO: Incorporate all parameters into the process and make this a parameterless method.
-    /// 
-    /* pub fn perform_tcp_migration_out_sync(
-        &mut self,
-        server_dest_fd: QDesc,
-        conn_fd: QDesc,
-        server_origin_listen: SocketAddrV4,
-        server_dest_listen: SocketAddrV4,
-    ) -> Result<(), Fail> {
-        let origin = self.get_origin(conn_fd)?.unwrap_or(server_origin_listen);
-        let dest = server_dest_listen;
-        let remote = self.get_remote(conn_fd)?;
-
-        // PREPARE_MIGRATION
-
-        let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, dest, remote), Vec::new());
-        seg.header.flag_prepare_migration = true;
-
-        
-
-        let qt = self.push2(server_dest_fd, &seg.serialize())?;
-        self.wait2(qt)?;
-
-        eprintln!("Header: {:#?}", seg.header);
-
-
-        // PREPARE_MIGRATION_ACK
-
-        let qt = self.pop(server_dest_fd)?;
-        let seg = match self.wait2(qt) {
-            Ok((_, OperationResult::Pop(_, buf))) => {
-                let seg = TcpMigrationSegment::deserialize(&buf);
-                match seg {
-                    Ok(seg) => seg,
-                    Err(msg) => return Err(Fail::new(libc::EINVAL, msg)),
-                }
-            },
-            Err(e) => return Err(e),
-            _ => unreachable!(),
-        };
-
-        // Should have been ACKed and switch should have started redirecting packets to server_dest.
-        if !seg.header.flag_prepare_migration_ack || !seg.header.flag_load {
-            return Err(Fail::new(libc::EINVAL, "improper response from server_dest"));
-        }
-
-        eprintln!("Header: {:#?}", seg.header);
-
-
-        // PAYLOAD_STATE
-
-        let mut state = self.migrate_out_tcp_connection(conn_fd)?;
-        state.local = dest;
-
-        let mut seg = TcpMigrationSegment::new(
-            TcpMigrationHeader::new(origin, dest, remote),
-            state.serialize().expect("TcpState serialization failed")
-        );
-        seg.header.flag_payload_state = true;
-        seg.header.origin = origin;
-
-        
-        let qt = self.push2(server_dest_fd, &seg.serialize())?;
-        self.wait2(qt)?;
-
-        eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
-
-        // Maybe get another ACK from dest?
-
-        Ok(())
-    } */
-
-    /// 
     /// Performs the complete process (synchronously, through TCP communication) to migrate in a tcp connection,
     /// provided the descriptor of a connection to the origin server.
     /// 
@@ -895,14 +816,14 @@ impl InetStack {
         eprintln!("RECEIVED PREPARE_MIGRATION");
         // eprintln!("Header: {:#?}", seg.header);
 
-        let TcpMigrationHeader { origin, dest, remote, .. } = seg.header;
+        let TcpMigrationHeader { origin, target, remote, .. } = seg.header;
 
 
         // PREPARE_MIGRATION_ACK
 
         self.prepare_migrating_in(remote)?;
         
-        let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, dest, remote), Vec::new());
+        let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, target, remote), Vec::new());
         seg.header.flag_prepare_migration_ack = true;
         seg.header.flag_load = true;
 
@@ -939,7 +860,7 @@ impl InetStack {
         self.migrate_in_tcp_connection(state, origin)
     }
 
-    pub fn initiate_tcp_migration_out_sync(
+    /* pub fn initiate_tcp_migration_out_sync(
         &mut self,
         server_dest_fd: QDesc, // TODO: create migration connection here instead
         conn_fd: QDesc,
@@ -994,37 +915,87 @@ impl InetStack {
             dest,
             remote,
         })
-    }
+    } */
 
-    pub fn complete_tcp_migration_out_sync(&mut self, handle: MigrationHandle) -> Result<(), Fail> {
-        let MigrationHandle {
-            server_dest_migration_fd,
+    /// 
+    /// Initiates the process (through TCP communication) to migrate out a tcp connection,
+    /// provided the descriptor of a connection to the destination server.
+    /// 
+    /// `server_origin_listen`: Listening address for connection on origin server.
+    /// 
+    /// `server_dest_listen`: Listening address for connection on destination server.
+    /// 
+    /// TODO: See if it is possible to incorporate all parameters into the process and make this a parameterless method.
+    /// 
+    pub fn initiate_tcp_migration_out(
+        &mut self,
+        server_target_migration_fd: QDesc, // TODO: create migration connection here instead
+        conn_fd: QDesc,
+        server_origin_listen: SocketAddrV4,
+        server_target_listen: SocketAddrV4,
+    ) -> Result<MigrationHandle, Fail> {
+        let origin = self.get_origin(conn_fd)?.unwrap_or(server_origin_listen);
+        let target = server_target_listen;
+        let remote = self.get_remote(conn_fd)?;
+
+        // PREPARE_MIGRATION
+
+        let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, target, remote), Vec::new());
+        seg.header.flag_prepare_migration = true;
+
+        let qt = self.push2(server_target_migration_fd, &seg.serialize())?;
+        self.wait2(qt)?;
+        eprintln!("SENT PREPARE_MIGRATION");
+
+        self.ipv4.tcp.initiate_migrating_out(origin, target, remote)?;
+
+        Ok(MigrationHandle{
+            server_target_migration_fd,
             conn_fd,
             origin,
-            dest,
+            target,
+            remote,
+        })
+    }
+
+    /// 
+    /// Tries to complete migrating out a tcp connection. Returns whether it succeeded.
+    /// 
+    /// NOTE: If successful, this method will close the TCP connection (on the local side) that the handle was obtained from.
+    /// 
+    pub fn try_complete_tcp_migration_out(&mut self, handle: MigrationHandle) -> Result<bool, Fail> {
+        let MigrationHandle {
+            server_target_migration_fd,
+            conn_fd,
+            origin,
+            target,
             remote,
         } = handle;
+
+        if !self.ipv4.tcp.is_initiate_migrating_out_done(origin, target, remote)? {
+            return Ok(false);
+        }
 
         // PAYLOAD_STATE
 
         let mut state = self.migrate_out_tcp_connection(conn_fd)?;
-        state.local = dest;
+        state.local = target;
 
         let mut seg = TcpMigrationSegment::new(
-            TcpMigrationHeader::new(origin, dest, remote),
+            TcpMigrationHeader::new(origin, target, remote),
             state.serialize().expect("TcpState serialization failed")
         );
         seg.header.flag_payload_state = true;
         seg.header.origin = origin;
 
         
-        let qt = self.push2(server_dest_migration_fd, &seg.serialize())?;
+        let qt = self.push2(server_target_migration_fd, &seg.serialize())?;
         self.wait2(qt)?;
         eprintln!("SENT MIGRATION_STATE");
         // eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
 
         // Maybe get another ACK from dest?
 
-        Ok(())
+        Ok(true)
     }
 }

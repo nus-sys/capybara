@@ -75,7 +75,7 @@ pub struct TcpState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TcpMigrationHeader {
     pub origin: SocketAddrV4,
-    pub dest: SocketAddrV4,
+    pub target: SocketAddrV4,
     pub remote: SocketAddrV4,
 
     pub flag_load: bool,
@@ -159,10 +159,10 @@ impl TcpMigrationHeader {
     const FLAG_PREPARE_MIGRATION_ACK: u8 = 2;
     const FLAG_PAYLOAD_STATE: u8 = 3;
 
-    pub fn new(origin: SocketAddrV4, dest: SocketAddrV4, remote: SocketAddrV4) -> Self {
+    pub fn new(origin: SocketAddrV4, target: SocketAddrV4, remote: SocketAddrV4) -> Self {
         Self {
             origin,
-            dest,
+            target,
             remote,
             flag_load: false,
             flag_prepare_migration: false,
@@ -176,8 +176,8 @@ impl TcpMigrationHeader {
         NetworkEndian::write_u32(&mut bytes[0..4], 0xCAFEDEAD);
         bytes[4..8].copy_from_slice(&self.origin.ip().octets());
         NetworkEndian::write_u16(&mut bytes[8..10], self.origin.port());
-        bytes[10..14].copy_from_slice(&self.dest.ip().octets());
-        NetworkEndian::write_u16(&mut bytes[14..16], self.dest.port());
+        bytes[10..14].copy_from_slice(&self.target.ip().octets());
+        NetworkEndian::write_u16(&mut bytes[14..16], self.target.port());
         bytes[16..20].copy_from_slice(&self.remote.ip().octets());
         NetworkEndian::write_u16(&mut bytes[20..22], self.remote.port());
 
@@ -209,7 +209,7 @@ impl TcpMigrationHeader {
                     Ipv4Addr::new(serialized[4], serialized[5], serialized[6], serialized[7]),
                     NetworkEndian::read_u16(&serialized[8..10]),
                 ),
-                dest: SocketAddrV4::new(
+                target: SocketAddrV4::new(
                     Ipv4Addr::new(serialized[10], serialized[11], serialized[12], serialized[13]),
                     NetworkEndian::read_u16(&serialized[14..16]),
                 ),
