@@ -87,6 +87,20 @@ impl NetworkLibOS {
         }
     }
 
+    /// Checks if an operation has completed and returns the result if it has.
+    pub fn trywait2(&mut self, qt: QToken) -> Result<Option<(QDesc, OperationResult)>, Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(libos) => todo!("catpowder `trywait2()`"),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(libos) => todo!("catnap `trywait2()`"),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(libos) => todo!("catcollar `trywait2()`"),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.trywait2(qt),
+        }
+    }
+
     /// Waits for an I/O operation to complete or a timeout to expire.
     pub fn timedwait2(&mut self, qt: QToken, abstime: Option<SystemTime>) -> Result<(QDesc, OperationResult), Fail> {
         match self {

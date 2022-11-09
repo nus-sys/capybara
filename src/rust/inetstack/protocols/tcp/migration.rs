@@ -198,9 +198,8 @@ impl TcpMigrationHeader {
 
     /// Panics if slice is not long enough, or if the header is not in the right format.
     pub fn deserialize(serialized: &[u8]) -> Result<Self, &str> {
-        if serialized.len() < Self::SIZE { panic!("Serialized TcpMigrationHeader not long enough.") }
-
-        if NetworkEndian::read_u32(serialized) != 0xCAFEDEAD { Err("Magic number (0xCAFEDEAD) not found") }
+        if serialized.len() < Self::SIZE { Err("Serialized TcpMigrationHeader not long enough") }
+        else if NetworkEndian::read_u32(serialized) != 0xCAFEDEAD { Err("Magic number (0xCAFEDEAD) not found") }
         else if serialized[..Self::SIZE].iter().fold(0, |sum, e| sum + e) != 0 { Err("Invalid checksum") }
         else { 
             let flags = serialized[22];

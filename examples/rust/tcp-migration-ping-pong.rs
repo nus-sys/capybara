@@ -117,37 +117,42 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     eprintln!("TCP Connection established with client");
 
     // Process client messages (before migration).
-    let mut cnt: i32 = 0;
+    let mut cnt: i32 = 1;
     let mut handle: Option<MigrationHandle> = None;
-    loop {
-        cnt+=1;
-        
+    loop {        
         let qtoken: QToken = match libos.pop(qd_connection_in) {
             Ok(qt) => qt,
             Err(e) => panic!("pop failed: {:?}", e.cause),
         };
         // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
-        let recvbuf = match libos.wait2(qtoken) {
-            Ok((_, OperationResult::Pop(_, buf))) => buf,
+
+        let wait_result = match libos.trywait2(qt) {
+            Ok(res) => res,
             Err(e) => panic!("operation failed: {:?}", e.cause),
-            _ => unreachable!(),
         };
 
-        // i += recvbuf.len();
-        let msg = from_utf8(&recvbuf).unwrap();
-        eprintln!("ping: {}", msg);
+        if let Some((_, pop_result)) = wait_result {
+            let recvbuf = match pop_result {
+                OperationResult::Pop(_, buf) => buf,
+                _ => unreachable!("Operation had to be a pop"),
+            };
 
-        
-        let qt: QToken = match libos.push2(qd_connection_in, &recvbuf[..]) {
-            Ok(qt) => qt,
-            Err(e) => panic!("push failed: {:?}", e.cause),
-        };
-        match libos.wait2(qt) {
-            Ok((_, OperationResult::Push)) => (),
-            Err(e) => panic!("operation failed: {:?}", e.cause),
-            _ => unreachable!(),
-        };
-        eprintln!("pong: {}", msg);
+            // i += recvbuf.len();
+            let msg = from_utf8(&recvbuf).unwrap();
+            eprintln!("ping: {}", msg);
+            
+            let qt: QToken = match libos.push2(qd_connection_in, &recvbuf[..]) {
+                Ok(qt) => qt,
+                Err(e) => panic!("push failed: {:?}", e.cause),
+            };
+            match libos.wait2(qt) {
+                Ok((_, OperationResult::Push)) => (),
+                Err(e) => panic!("operation failed: {:?}", e.cause),
+                _ => unreachable!(),
+            };
+            eprintln!("pong: {}", msg);
+            cnt += 1;
+        }
         
         // thread::sleep(Duration::from_millis(1000));
         if cnt == 10 {

@@ -107,6 +107,13 @@ impl LibOS {
         }
     }
 
+    /// Checks if an operation has completed and returns the result if it has.
+    pub fn trywait2(&mut self, qt: QToken) -> Result<Option<(QDesc, OperationResult)>, Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.trywait2(qt),
+        }
+    }
+
     /// Waits for an I/O operation to complete or a timeout to expire.
     pub fn timedwait2(&mut self, qt: QToken, abstime: Option<SystemTime>) -> Result<(QDesc, OperationResult), Fail> {
         match self {
