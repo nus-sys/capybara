@@ -121,13 +121,17 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     let mut handle: Option<MigrationHandle> = None;
     let mut pop_qtoken: Option<QToken> = None;
     loop {
-        pop_qtoken = match pop_qtoken {
+        let mut pop_qtoken = match libos.pop(qd_connection_in) {
+            Ok(qt) => Some(qt),
+            Err(e) => panic!("pop failed: {:?}", e.cause),
+        };
+        /* pop_qtoken = match pop_qtoken {
             None => match libos.pop(qd_connection_in) {
                 Ok(qt) => Some(qt),
                 Err(e) => panic!("pop failed: {:?}", e.cause),
             },
             some => some,
-        };
+        }; */
 
         let wait_result = match libos.trywait2(pop_qtoken.unwrap()) {
             Ok(res) => res,
