@@ -16,6 +16,11 @@ const int MAC_TABLE_SIZE        = 65536;
 const bit<3> L2_LEARN_DIGEST = 1;
 const bit<3> TCP_MIGRATION_DIGEST = 2;
 
+
+struct pair {
+    bit<32>     first;
+    bit<32>     second;
+}
 /*************************************************************************
  ***********************  H E A D E R S  *********************************
  *************************************************************************/
@@ -96,8 +101,8 @@ header tcp_migration_header_h {
     bit<32>  origin_ip;
     bit<16>  origin_port;
     
-    bit<32>  dst_ip;
-    bit<16>  dst_port;
+    bit<32>  target_ip;
+    bit<16>  target_port;
     
     bit<32>  client_ip;
     bit<16>  client_port;

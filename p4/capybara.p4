@@ -1,8 +1,7 @@
 /* -*- P4_16 -*- */
 
 #include "./capybara_header.h"
-#include <core.p4>
-#include <tna.p4>
+
 
 
 /******  G L O B A L   I N G R E S S   M E T A D A T A  *********/
@@ -17,8 +16,19 @@ struct my_ingress_headers_t {
 struct my_ingress_metadata_t {
     PortId_t ingress_port;
     PortId_t egress_port;
-    bit<32> origin_ip;
     bit<16> l4_payload_checksum;
+
+    bit<48> mac;
+    bit<32> ip;
+    bit<16> port;
+
+    bit<16> hash_digest1;
+    bit<16> hash_digest2;
+    
+    bit<32> src_ip;
+    bit<16> src_port;
+    bit<32> dst_ip;
+    bit<16> dst_port;
 }
 
 /***********************  P A R S E R  **************************/
@@ -41,8 +51,19 @@ parser IngressParser(
     state meta_init {
         meta.ingress_port = ig_intr_md.ingress_port;
         meta.egress_port = 0;
-        meta.origin_ip = 0;
         meta.l4_payload_checksum  = 0;
+        
+        meta.mac = 0;
+        meta.ip = 0;
+        meta.port = 0;
+        meta.hash_digest1 = 0;
+        meta.hash_digest2 = 0;
+
+        meta.src_ip = 0;
+        meta.src_port = 0;
+        meta.dst_ip = 0;
+        meta.dst_port = 0;
+        
         transition parse_ethernet;
     }
 
@@ -57,6 +78,10 @@ parser IngressParser(
     state parse_ipv4 {
         pkt.extract(hdr.ipv4);
         
+        meta.src_ip = hdr.ipv4.src_ip;
+        meta.dst_ip = hdr.ipv4.dst_ip;
+
+
         tcp_checksum.subtract({
             hdr.ipv4.src_ip,
             hdr.ipv4.dst_ip,
@@ -70,6 +95,9 @@ parser IngressParser(
 
     state parse_tcp {
         pkt.extract(hdr.tcp);
+
+        meta.src_port = hdr.tcp.src_port;
+        meta.dst_port = hdr.tcp.dst_port;
 
         /* Calculate Payload checksum */
         tcp_checksum.subtract({
@@ -93,14 +121,13 @@ parser IngressParser(
 
     state parse_tcp_migration_header {
         pkt.extract(hdr.tcp_migration_header);
-        meta.origin_ip = hdr.tcp_migration_header.origin_ip;
         transition accept;
     }
 
 }
 
 /***************** M A T C H - A C T I O N  *********************/
-
+#include "./capybara_hash.p4"
 control Ingress(
     /* User */
     inout my_ingress_headers_t                       hdr,
@@ -111,6 +138,70 @@ control Ingress(
     inout ingress_intrinsic_metadata_for_deparser_t  ig_dprsr_md,
     inout ingress_intrinsic_metadata_for_tm_t        ig_tm_md)
 {
+    Register< bit<32>, bit<16> >(1 << 16) reg_target_ip;
+    RegisterAction< bit<32>, bit<16>, bit<1> >(reg_target_ip) write_target_ip = {
+        void apply(inout bit<32> register_data, out bit<1> is_collision){
+            if(register_data == 0){
+                register_data = hdr.tcp_migration_header.target_ip;
+                is_collision = 0;
+            }else{
+                is_collision = 1;
+            }
+        }
+    };
+    action exec_write_target_ip(bit<16> idx) {
+        write_target_ip.execute(idx);
+    }
+
+    Register< bit<32>, bit<16> >(1 << 16) reg_target_ports;
+    RegisterAction< bit<32>, bit<16>, bit<1> >(reg_target_ports) write_target_ports = {
+        void apply(inout bit<32> register_data, out bit<1> is_collision){
+            if(register_data == 0){
+                register_data = (bit<32>)(hdr.tcp_migration_header.target_port ++ meta.ingress_port);
+                is_collision = 0;
+            }else{
+                is_collision = 1;
+            }
+        }
+    };
+    action exec_write_target_ports(bit<16> idx) {
+        write_target_ports.execute(idx);
+    }
+
+
+    Register< bit<32>, bit<16> >(1 << 16) reg_origin_ip;
+    RegisterAction< bit<32>, bit<16>, bit<1> >(reg_origin_ip) write_origin_ip = {
+        void apply(inout bit<32> register_data, out bit<1> is_collision){
+            if(register_data == 0){
+                register_data = hdr.tcp_migration_header.origin_ip;
+                is_collision = 0;
+            }else{
+                is_collision = 1;
+            }
+        }
+    };
+    action exec_write_origin_ip(bit<16> idx) {
+        write_origin_ip.execute(idx);
+    }
+
+    Register< bit<32>, bit<16> >(1 << 16) reg_origin_ports;
+    RegisterAction< bit<32>, bit<16>, bit<1> >(reg_origin_ports) write_origin_ports = {
+        void apply(inout bit<32> register_data, out bit<1> is_collision){
+            if(register_data == 0){
+                register_data = (bit<32>)(hdr.tcp_migration_header.origin_port ++ meta.egress_port);
+                is_collision = 0;
+            }else{
+                is_collision = 1;
+            }
+        }
+    };
+    action exec_write_origin_ports(bit<16> idx) {
+        write_origin_ports.execute(idx);
+    }
+
+
+
+
     action send(PortId_t port) {
         meta.egress_port = port;
         ig_tm_md.ucast_egress_port = port;
@@ -118,19 +209,6 @@ control Ingress(
 
     action drop() {
         ig_dprsr_md.drop_ctl = 1;
-    }
-
-    
-    Register< bit<32>, bit<8> >(1, 0) reg_ip;  // value, key
-    RegisterAction< bit<32>, bit<8>, bit<32> >(reg_ip)
-    reg_write_ip = {
-        void apply(inout bit<32> register_data, out bit<32> ip_addr) {
-            register_data = meta.origin_ip;
-            ip_addr = register_data;
-        }
-    };
-    action exec_write_ip(){
-        reg_write_ip.execute(0);
     }
 
     Register<bit<32>, _> (32w1) counter;
@@ -141,54 +219,10 @@ control Ingress(
         }
     };
 
-
-
-    action migrate_request_hit(bit<48> migrate_mac, bit<32> migrate_ip, bit<16> migrate_port, PortId_t migrate_egress_port) {
-        hdr.ethernet.dst_mac = migrate_mac;
-        hdr.ipv4.dst_ip = migrate_ip;
-        hdr.tcp.dst_port = migrate_port;
-        ig_tm_md.ucast_egress_port = migrate_egress_port;
-    }
-
-    table migrate_request {
-        key = {
-            hdr.ethernet.dst_mac  : exact;
-            hdr.ipv4.dst_ip : exact;
-            hdr.tcp.dst_port  : exact;
-        }
-        actions = {
-            migrate_request_hit; NoAction;
-        }
-        size           = 65536;
-        default_action = NoAction();
-    }
-
-    action migrate_reply_hit(bit<48> migrate_mac, bit<32> migrate_ip, bit<16> migrate_port) {
-        hdr.ethernet.src_mac = migrate_mac;
-        hdr.ipv4.src_ip = migrate_ip;
-        hdr.tcp.src_port = migrate_port;
-    }
-
-    table migrate_reply {
-        key = {
-            hdr.ethernet.src_mac  : exact;
-            hdr.ipv4.src_ip : exact;
-            hdr.tcp.src_port  : exact;
-        }
-        actions = {
-            migrate_reply_hit; NoAction;
-        }
-        size           = 65536;
-        default_action = NoAction();
-    }
     action broadcast() {
         ig_tm_md.mcast_grp_a       = 1;
         ig_tm_md.level2_exclusion_id = ig_intr_md.ingress_port;
     }
-
-    // action l2_forward(PortId_t port) {
-    //     ig_tm_md.ucast_egress_port=port;
-    // }
 
     table l2_forwarding {
         key = {
@@ -201,6 +235,11 @@ control Ingress(
             // l2_forward;
         }
         const entries = {
+            0xb8cef62a2f95 : send(8);
+            0xb8cef62a45fd : send(12);
+            0xb8cef62a3f9d : send(16);
+            0xb8cef62a30ed : send(20);
+            0x1070fdc8944d : send(0);
             0x08c0ebb6cd5d : send(32);
             0x08c0ebb6e805 : send(36);
             0x08c0ebb6c5ad : send(24);
@@ -209,24 +248,119 @@ control Ingress(
         default_action = drop();
         size = 128;
     }
+
+    action mac_writing(bit<48> mac_addr) {
+        meta.mac = mac_addr;
+    }
+    table reverse_l2_forwarding {
+        key = {
+            meta.egress_port : exact;
+        }
+        actions = {
+            mac_writing;
+            drop;
+        }
+        const entries = {
+            24 : mac_writing(0x08c0ebb6c5ad);
+            32 : mac_writing(0x08c0ebb6cd5d);
+            36 : mac_writing(0x08c0ebb6e805);
+        }
+        default_action = drop();
+        size = 128;
+    }
+
+    table reverse_l2_forwarding_2 {
+        key = {
+            meta.egress_port : exact;
+        }
+        actions = {
+            mac_writing;
+            drop;
+        }
+        const entries = {
+            24 : mac_writing(0x08c0ebb6c5ad);
+            32 : mac_writing(0x08c0ebb6cd5d);
+            36 : mac_writing(0x08c0ebb6e805);
+        }
+        default_action = drop();
+        size = 128;
+    }
+
+
+    Register< bit<16>, bit<8> >(1, 0) reg_check;  // value, key
+    RegisterAction< bit<16>, bit<8>, bit<16> >(reg_check)
+    check_val = {
+        void apply(inout bit<16> register_data, out bit<16> return_data) {
+            register_data = meta.hash_digest1;
+            return_data = register_data;
+        }
+    };
+    action exec_check_val(){
+        check_val.execute(0);
+    }
+    calc_hash(CRCPolynomial<bit<32>>(
+            coeff=32w0x04C11DB7, reversed=true, msb=false, extended=false,
+            init=32w0xFFFFFFFF, xor=32w0xFFFFFFFF)) hash; 
     apply {
-        // hdr.ipv4.hdr_checksum = 0;
-        // hdr.tcp.checksum = 0;
         ig_tm_md.bypass_egress = 1w1;
-
         l2_forwarding.apply();
-
         
         if(hdr.tcp_migration_header.isValid()){
-            if(hdr.tcp_migration_header.flag[0:0] == 0b1){
-                ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
-                counter_update.execute(0);
-                exec_write_ip();
+            if(hdr.tcp_migration_header.flag[0:0] == 0b1){ // LOAD flag is on
+                // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+
+                meta.ip = hdr.tcp_migration_header.client_ip;
+                meta.port = hdr.tcp_migration_header.client_port;
+                hash.apply(hdr, meta, meta.hash_digest1);
+                
+                exec_write_target_ip(meta.hash_digest1);
+                exec_write_target_ports(meta.hash_digest1);
+
+                exec_write_origin_ip(meta.hash_digest1);
+                exec_write_origin_ports(meta.hash_digest1);
+
+                exec_check_val();
             }
         }
         else if(hdr.tcp.isValid()){
-            migrate_reply.apply();
-            migrate_request.apply();
+            counter_update.execute(0);
+            // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+            bit<32> ports;
+            meta.ip = hdr.ipv4.src_ip;
+            meta.port = hdr.tcp.src_port;
+            hash.apply(hdr, meta, meta.hash_digest1);
+
+            meta.ip = hdr.ipv4.dst_ip;
+            meta.port = hdr.tcp.dst_port;
+            hash.apply(hdr, meta, meta.hash_digest2);
+
+            meta.ip = reg_target_ip.read(meta.hash_digest1);
+            
+            if(meta.ip != 0){
+                // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+                ports = reg_target_ports.read(meta.hash_digest1);
+                meta.port = ports[24:9];
+                meta.egress_port = ports[8:0];
+
+                reverse_l2_forwarding.apply();
+                hdr.ethernet.dst_mac = meta.mac;
+                hdr.ipv4.dst_ip = meta.ip;
+                hdr.tcp.dst_port = meta.port;
+                ig_tm_md.ucast_egress_port = meta.egress_port;
+            }else{
+                meta.ip = reg_origin_ip.read(meta.hash_digest2);
+                if(meta.ip != 0){
+                    // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+                    ports = reg_origin_ports.read(meta.hash_digest2);
+                    meta.port = ports[24:9];
+                    meta.egress_port = ports[8:0];
+
+                    reverse_l2_forwarding_2.apply();
+                    hdr.ethernet.src_mac = meta.mac;
+                    hdr.ipv4.src_ip = meta.ip;
+                    hdr.tcp.src_port = meta.port;
+                }
+            }
         }
 
     }
@@ -237,15 +371,15 @@ control Ingress(
 
 /* This struct is needed for proper digest receive API generation */
 struct migration_digest_t {
-    bit<48>  origin_mac;
-    bit<32>  origin_ip;
-    bit<16>  origin_port;
-
-    bit<48>  dst_mac;
+    bit<32>  src_ip;
+    bit<16>  src_port;
     bit<32>  dst_ip;
     bit<16>  dst_port;
+    bit<32>  meta_ip;
+    bit<16>  meta_port;
 
-    bit<9> egress_port;
+    bit<16>  hash_digest1;
+    bit<16>  hash_digest2;
 }
 
 control IngressDeparser(packet_out pkt,
@@ -262,15 +396,14 @@ control IngressDeparser(packet_out pkt,
     apply {
         if (ig_dprsr_md.digest_type == TCP_MIGRATION_DIGEST) {
             migration_digest.pack({
-                    hdr.ethernet.dst_mac,
-                    hdr.ipv4.dst_ip,
-                    hdr.tcp_migration_header.origin_port,
-                    
-                    hdr.ethernet.src_mac,
-                    hdr.ipv4.src_ip,
-                    hdr.tcp_migration_header.dst_port,
-
-                    meta.ingress_port });
+                    meta.src_ip,
+                    meta.src_port,
+                    meta.dst_ip,
+                    meta.dst_port,
+                    meta.ip,
+                    meta.port,
+                    meta.hash_digest1,
+                    meta.hash_digest2 });
         }
 
 

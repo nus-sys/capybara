@@ -204,31 +204,33 @@ class capybara():
 
     @staticmethod
     def learning_migration(dev_id, pipe_id, direction, parser_id, session, msg):
-        migrate_request = bfrt.capybara.pipe.Ingress.migrate_request
-        migrate_reply = bfrt.capybara.pipe.Ingress.migrate_reply
+        # migrate_request = bfrt.capybara.pipe.Ingress.migrate_request
+        # migrate_reply = bfrt.capybara.pipe.Ingress.migrate_reply
         
         for digest in msg:
-            origin_mac      =   digest["origin_mac"]
-            origin_ip       =   digest["origin_ip"]
-            origin_port     =   digest["origin_port"]
+            src_ip         =   digest["src_ip"];
+            src_port         =   digest["src_port"];
+            dst_ip         =   digest["dst_ip"];
+            dst_port         =   digest["dst_port"];
+            meta_ip         =   digest["meta_ip"];
+            meta_port         =   digest["meta_port"];
 
-            dst_mac         =   digest["dst_mac"]
-            dst_ip          =   digest["dst_ip"]
-            dst_port        =   digest["dst_port"]
+            hash_digest1         =   digest["hash_digest1"];
+            hash_digest2         =   digest["hash_digest2"];
 
-            egress_port     =   digest["egress_port"]
+            print("src: {}:{}, dst: {}:{}, meta: {},{}\nHash1: {} and Hash2: {}\n".format(
+                ip(src_ip), src_port, ip(dst_ip), dst_port, ip(meta_ip), meta_port, hash_digest1, hash_digest2), end="", flush=True)
 
-
-            print("\nMIGRATION: {}:{}:{} => {}:{}:{} (dev_port: {})\n".format(
-                mac(origin_mac), ip(origin_ip), origin_port, mac(dst_mac), ip(dst_ip), dst_port, egress_port), end="", flush=True)
+            # print("\nMIGRATION: {}:{}:{} => {}:{}:{} (dev_port: {})\n".format(
+            #     mac(origin_mac), ip(origin_ip), origin_port, mac(target_mac), ip(target_ip), target_port, egress_port), end="", flush=True)
 
 
             # Since we do not have access to self, we have to use
             # the hardcoded value for the TTL :(
-            migrate_request.entry_with_migrate_request_hit(dst_mac=origin_mac, dst_ip=origin_ip, dst_port=origin_port,
-                                                            migrate_mac=dst_mac, migrate_ip=dst_ip, migrate_port=dst_port, migrate_egress_port=egress_port).push()
-            migrate_reply.entry_with_migrate_reply_hit(src_mac=dst_mac, src_ip=dst_ip, src_port=dst_port,
-                                                            migrate_mac=origin_mac, migrate_ip=origin_ip, migrate_port=origin_port).push()
+            # migrate_request.entry_with_migrate_request_hit(dst_mac=origin_mac, dst_ip=origin_ip, dst_port=origin_port,
+            #                                                 migrate_mac=dst_mac, migrate_ip=dst_ip, migrate_port=dst_port, migrate_egress_port=egress_port).push()
+            # migrate_reply.entry_with_migrate_reply_hit(src_mac=dst_mac, src_ip=dst_ip, src_port=dst_port,
+            #                                                 migrate_mac=origin_mac, migrate_ip=origin_ip, migrate_port=origin_port).push()
         return 0
 
     def l2_add_smac_drop(self, vid, mac_addr):
