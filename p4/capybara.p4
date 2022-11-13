@@ -138,6 +138,53 @@ control Ingress(
     inout ingress_intrinsic_metadata_for_deparser_t  ig_dprsr_md,
     inout ingress_intrinsic_metadata_for_tm_t        ig_tm_md)
 {
+    /* REGISTERS FOR REQUEST MIGRATION */
+    Register< bit<32>, bit<16> >(1 << 16) reg_client_ip; // <value, index> => 2^16 = 65536 entries
+    RegisterAction< bit<32>, bit<16>, bit<1> >(reg_client_ip) write_client_ip = { // <value, index, out>
+        void apply(inout bit<32> register_data, out bit<1> is_collision){
+            if(register_data == 0){
+                register_data = hdr.tcp_migration_header.client_ip;
+                is_collision = 0;
+            }else{
+                is_collision = 1;
+            }
+        }
+    };
+    action exec_write_client_ip(bit<16> idx) {
+        write_client_ip.execute(idx);
+    }
+
+
+    Register< bit<32>, bit<16> >(1 << 16) reg_client_port_target_mac_hi16; 
+    RegisterAction< bit<32>, bit<16>, bit<1> >(reg_client_port_target_mac_hi16) write_client_port_target_mac_hi16 = { 
+        void apply(inout bit<32> register_data, out bit<1> is_collision){
+            if(register_data == 0){
+                register_data = (hdr.tcp_migration_header.client_port ++ hdr.ethernet.src_mac[47:32]);
+                is_collision = 0;
+            }else{
+                is_collision = 1;
+            }
+        }
+    };
+    action exec_write_client_port_target_mac_hi16(bit<16> idx) {
+        write_client_port_target_mac_hi16.execute(idx);
+    }
+
+    Register< bit<32>, bit<16> >(1 << 16) reg_target_mac_lo32; 
+    RegisterAction< bit<32>, bit<16>, bit<1> >(reg_target_mac_lo32) write_target_mac_lo32 = { 
+        void apply(inout bit<32> register_data, out bit<1> is_collision){
+            if(register_data == 0){
+                register_data = hdr.ethernet.src_mac[31:0];
+                is_collision = 0;
+            }else{
+                is_collision = 1;
+            }
+        }
+    };
+    action exec_write_target_mac_lo32(bit<16> idx) {
+        write_target_mac_lo32.execute(idx);
+    }
+
     Register< bit<32>, bit<16> >(1 << 16) reg_target_ip;
     RegisterAction< bit<32>, bit<16>, bit<1> >(reg_target_ip) write_target_ip = {
         void apply(inout bit<32> register_data, out bit<1> is_collision){
@@ -167,6 +214,41 @@ control Ingress(
     action exec_write_target_ports(bit<16> idx) {
         write_target_ports.execute(idx);
     }
+
+    /* REGISTERS FOR REQUEST MIGRATION */
+
+
+    /* REGISTERS FOR REPLY MIGRATION */
+    Register< bit<32>, bit<16> >(1 << 16) reg_client_port_origin_mac_hi16; 
+    RegisterAction< bit<32>, bit<16>, bit<1> >(reg_client_port_origin_mac_hi16) write_client_port_origin_mac_hi16 = { 
+        void apply(inout bit<32> register_data, out bit<1> is_collision){
+            if(register_data == 0){
+                register_data = (hdr.tcp_migration_header.client_port ++ hdr.ethernet.dst_mac[47:32]);
+                is_collision = 0;
+            }else{
+                is_collision = 1;
+            }
+        }
+    };
+    action exec_write_client_port_origin_mac_hi16(bit<16> idx) {
+        write_client_port_origin_mac_hi16.execute(idx);
+    }
+
+    Register< bit<32>, bit<16> >(1 << 16) reg_origin_mac_lo32; 
+    RegisterAction< bit<32>, bit<16>, bit<1> >(reg_origin_mac_lo32) write_origin_mac_lo32 = { 
+        void apply(inout bit<32> register_data, out bit<1> is_collision){
+            if(register_data == 0){
+                register_data = hdr.ethernet.dst_mac[31:0];
+                is_collision = 0;
+            }else{
+                is_collision = 1;
+            }
+        }
+    };
+    action exec_write_origin_mac_lo32(bit<16> idx) {
+        write_origin_mac_lo32.execute(idx);
+    }
+
 
 
     Register< bit<32>, bit<16> >(1 << 16) reg_origin_ip;
@@ -199,7 +281,7 @@ control Ingress(
         write_origin_ports.execute(idx);
     }
 
-
+    /* REGISTERS FOR REPLY MIGRATION */
 
 
     action send(PortId_t port) {
@@ -313,9 +395,14 @@ control Ingress(
                 meta.port = hdr.tcp_migration_header.client_port;
                 hash.apply(hdr, meta, meta.hash_digest1);
                 
+                exec_write_client_ip(meta.hash_digest1);
+                exec_write_client_port_target_mac_hi16(meta.hash_digest1);
+                exec_write_target_mac_lo32(meta.hash_digest1);
                 exec_write_target_ip(meta.hash_digest1);
                 exec_write_target_ports(meta.hash_digest1);
 
+                exec_write_client_port_origin_mac_hi16(meta.hash_digest1);
+                exec_write_origin_mac_lo32(meta.hash_digest1);
                 exec_write_origin_ip(meta.hash_digest1);
                 exec_write_origin_ports(meta.hash_digest1);
 
