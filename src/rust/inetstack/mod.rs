@@ -837,7 +837,7 @@ impl InetStack {
         let state = TcpState::deserialize(&seg.payload).expect("TcpState deserialization failed");
 
         // eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
-
+        eprintln!("RECEIVED MIGRATION_STATE");
         self.migrate_in_tcp_connection(state, origin)
     }
 
