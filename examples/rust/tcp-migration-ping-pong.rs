@@ -222,8 +222,8 @@ fn server_origin(local: SocketAddrV4, origin: SocketAddrV4, dest: SocketAddrV4) 
     thread::sleep(Duration::from_millis(10000));
     eprintln!("Resume!");
 
-    #[cfg(feature = "profiler")]
-    profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
+    // #[cfg(feature = "profiler")]
+    // profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
 
     // TODO: close socket when we get close working properly in catnip.
     Ok(())
@@ -348,8 +348,8 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
 
 
 
-    #[cfg(feature = "profiler")]
-    profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
+    // #[cfg(feature = "profiler")]
+    // profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
 
     // TODO: close socket when we get close working properly in catnip.
     Ok(())
