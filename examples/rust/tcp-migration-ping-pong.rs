@@ -394,29 +394,37 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         cnt+=1;
         let mut msg = String::from("Hello ");
         msg.push_str(&cnt.to_string());
+
+        let recvbuf = {
+            #[cfg(feature = "profiler")]
+            demikernel::timer!("request-response");
+
+            let qt: QToken = match libos.push2(sockqd, msg.as_bytes()) {
+                Ok(qt) => qt,
+                Err(e) => panic!("push failed: {:?}", e.cause),
+            };
+            match libos.wait2(qt) {
+                Ok((_, OperationResult::Push)) => (),
+                Err(e) => panic!("operation failed: {:?}", e.cause),
+                _ => unreachable!(),
+            };
+            eprintln!("ping: {}", msg);
+            
+            // Pop data.
+            let qt: QToken = match libos.pop(sockqd) {
+                Ok(qt) => qt,
+                Err(e) => panic!("pop failed: {:?}", e.cause),
+            };
+            // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
+            let recvbuf = match libos.wait2(qt) {
+                Ok((_, OperationResult::Pop(_, buf))) => buf,
+                Err(e) => panic!("operation failed: {:?}", e.cause),
+                _ => unreachable!(),
+            };
+
+            recvbuf
+        };
         
-        let qt: QToken = match libos.push2(sockqd, msg.as_bytes()) {
-            Ok(qt) => qt,
-            Err(e) => panic!("push failed: {:?}", e.cause),
-        };
-        match libos.wait2(qt) {
-            Ok((_, OperationResult::Push)) => (),
-            Err(e) => panic!("operation failed: {:?}", e.cause),
-            _ => unreachable!(),
-        };
-        eprintln!("ping: {}", msg);
-        
-        // Pop data.
-        let qt: QToken = match libos.pop(sockqd) {
-            Ok(qt) => qt,
-            Err(e) => panic!("pop failed: {:?}", e.cause),
-        };
-        // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
-        let recvbuf = match libos.wait2(qt) {
-            Ok((_, OperationResult::Pop(_, buf))) => buf,
-            Err(e) => panic!("operation failed: {:?}", e.cause),
-            _ => unreachable!(),
-        };
         // let recvbuf = match libos.timedwait2(qt, Some(SystemTime::now() + Duration::from_millis(2000))) {
         //     Ok((_, OperationResult::Pop(_, buf))) => buf,
         //     Err(e) => {
