@@ -424,6 +424,9 @@ fn client(remote: SocketAddrV4) -> Result<()> {
 
             recvbuf
         };
+
+        #[cfg(feature = "profiler")]
+        profiler::write(&mut std::io::stdout(), Some(0)).expect("failed to write to stdout");
         
         // let recvbuf = match libos.timedwait2(qt, Some(SystemTime::now() + Duration::from_millis(2000))) {
         //     Ok((_, OperationResult::Pop(_, buf))) => buf,
@@ -453,9 +456,6 @@ fn client(remote: SocketAddrV4) -> Result<()> {
             break;
         }
     }
-
-    #[cfg(feature = "profiler")]
-    profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
 
     // TODO: close socket when we get close working properly in catnip.
     Ok(())
