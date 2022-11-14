@@ -511,9 +511,9 @@ impl InetStack {
         // Poll first, so as to give pending operations a chance to complete.
         self.poll_bg_work();
 
-        // The operation has completed, so extract the result and return.
+        // If the operation has completed, extract the result and return it.
         if handle.has_completed() {
-            trace!("wait2() qt={:?} completed!", qt);
+            trace!("trywait2() qt={:?} completed!", qt);
             Ok(Some(self.take_operation(handle)))
         } else {
             Ok(None)
@@ -699,25 +699,6 @@ pub struct MigrationHandle {
 }
 
 impl InetStack {
-    fn take_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
-        match self.file_table.get(fd) {
-            Some(qtype) => {
-                match QType::try_from(qtype) {
-                    Ok(QType::TcpSocket) => {
-                        self.ipv4.tcp.take_tcp_state(fd)
-                    }
-                    _ => {
-                        info!("Found unsupported socket type: {}", qtype);
-                        Err(Fail::new(EINVAL, "invalid queue type"))
-                    }
-                }
-            },
-            None => {
-                panic!("No such socket found on file table..");
-            }
-        }
-    }
-
     fn get_origin(&self, fd: QDesc) -> Result<Option<SocketAddrV4>, Fail> {
         match self.file_table.get(fd) {
             Some(qtype) => {
@@ -859,63 +840,6 @@ impl InetStack {
 
         self.migrate_in_tcp_connection(state, origin)
     }
-
-    /* pub fn initiate_tcp_migration_out_sync(
-        &mut self,
-        server_dest_fd: QDesc, // TODO: create migration connection here instead
-        conn_fd: QDesc,
-        server_origin_listen: SocketAddrV4,
-        server_dest_listen: SocketAddrV4,
-    ) -> Result<MigrationHandle, Fail> {
-        let origin = self.get_origin(conn_fd)?.unwrap_or(server_origin_listen);
-        let dest = server_dest_listen;
-        let remote = self.get_remote(conn_fd)?;
-
-        // PREPARE_MIGRATION
-
-        let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, dest, remote), Vec::new());
-        seg.header.flag_prepare_migration = true;
-
-        
-
-        let qt = self.push2(server_dest_fd, &seg.serialize())?;
-        self.wait2(qt)?;
-        eprintln!("SENT PREPARE_MIGRATION");
-        // eprintln!("Header: {:#?}", seg.header);
-
-
-        // PREPARE_MIGRATION_ACK
-
-        let qt = self.pop(server_dest_fd)?;
-        let seg = match self.wait2(qt) {
-            Ok((_, OperationResult::Pop(_, buf))) => {
-                let seg = TcpMigrationSegment::deserialize(&buf);
-                match seg {
-                    Ok(seg) => seg,
-                    Err(msg) => return Err(Fail::new(libc::EINVAL, msg)),
-                }
-            },
-            Err(e) => return Err(e),
-            _ => unreachable!(),
-        };
-
-        // Should have been ACKed and switch should have started redirecting packets to server_dest.
-        if !seg.header.flag_prepare_migration_ack || !seg.header.flag_load {
-            return Err(Fail::new(libc::EINVAL, "improper response from server_dest"));
-        }
-        eprintln!("RECEIVED PREPARE_MIGRATION_ACK");
-        // eprintln!("Header: {:#?}", seg.header);
-
-        // std::thread::sleep(std::time::Duration::from_millis(1000));
-            
-        Ok(MigrationHandle{
-            server_dest_migration_fd: server_dest_fd,
-            conn_fd,
-            origin,
-            dest,
-            remote,
-        })
-    } */
 
     /// 
     /// Initiates the process (through TCP communication) to migrate out a tcp connection,

@@ -27,7 +27,7 @@ use crate::{
         QDesc,
         QToken,
     },
-    inetstack::{protocols::tcp::migration::{TcpMigrationSegment, TcpMigrationHeader, TcpState}, MigrationHandle},
+    inetstack::MigrationHandle,
 };
 use ::std::{
     env,
