@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+use std::collections::VecDeque;
 //======================================================================================================================
 // Imports
 //======================================================================================================================
@@ -428,7 +429,7 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         };
 
         #[cfg(feature = "profiler")]
-        profiler::write(&mut ProfilingWriter, Some(0)).expect("failed to write to stdout");
+        profiler::write(&mut ProfilingWriter::new(), Some(0)).expect("failed to write to stdout");
         
         // let recvbuf = match libos.timedwait2(qt, Some(SystemTime::now() + Duration::from_millis(2000))) {
         //     Ok((_, OperationResult::Pop(_, buf))) => buf,
@@ -468,17 +469,44 @@ fn client(remote: SocketAddrV4) -> Result<()> {
 //======================================================================================================================
 
 /// Custom writer for profiling request-response.
-struct ProfilingWriter;
+struct ProfilingWriter{
+    buffer: VecDeque<u8>,
+}
 
 impl io::Write for ProfilingWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let start = self.buffer.len();
+        for &byte in buf {
+            self.buffer.push_back(byte);
+        }
+
         let msg = std::str::from_utf8(buf).expect("ProfilingWriter expects UTF-8 string");
-        if !msg.contains(PROFILER_SCOPE_NAME) { Ok(0) }
-        else { std::io::stdout().write(buf) }
+        if let Some(idx) = msg.find('\n') {
+            let line_len = start + idx + 1;
+            let mut line = Vec::with_capacity(line_len);
+            for _ in 0..line_len {
+                line.push(self.buffer.pop_front().unwrap());
+            }
+
+            let msg = std::str::from_utf8(&line).expect("ProfilingWriter expects UTF-8 string");
+            if msg.contains(PROFILER_SCOPE_NAME) {
+                std::io::stdout().write(msg.as_bytes())?;
+                self.buffer.push_back(b' ');
+            }
+        }
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
         std::io::stdout().flush()
+    }
+}
+
+impl ProfilingWriter {
+    fn new() -> Self {
+        Self {
+            buffer: VecDeque::from([b' ']),
+        }
     }
 }
 
