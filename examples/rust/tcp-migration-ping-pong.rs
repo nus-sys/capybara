@@ -359,6 +359,8 @@ fn server_dest(local: SocketAddrV4) -> Result<()> {
 // client()
 //======================================================================================================================
 
+const PROFILER_SCOPE_NAME: &str = "request-response";
+
 fn client(remote: SocketAddrV4) -> Result<()> {
     let libos_name: LibOSName = match LibOSName::from_env() {
         Ok(libos_name) => libos_name.into(),
@@ -397,7 +399,7 @@ fn client(remote: SocketAddrV4) -> Result<()> {
 
         let recvbuf = {
             #[cfg(feature = "profiler")]
-            demikernel::timer!("request-response");
+            demikernel::timer!(PROFILER_SCOPE_NAME);
 
             let qt: QToken = match libos.push2(sockqd, msg.as_bytes()) {
                 Ok(qt) => qt,
@@ -426,7 +428,7 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         };
 
         #[cfg(feature = "profiler")]
-        profiler::write(&mut std::io::stdout(), Some(0)).expect("failed to write to stdout");
+        profiler::write(&mut ProfilingWriter, Some(0)).expect("failed to write to stdout");
         
         // let recvbuf = match libos.timedwait2(qt, Some(SystemTime::now() + Duration::from_millis(2000))) {
         //     Ok((_, OperationResult::Pop(_, buf))) => buf,
@@ -459,6 +461,25 @@ fn client(remote: SocketAddrV4) -> Result<()> {
 
     // TODO: close socket when we get close working properly in catnip.
     Ok(())
+}
+
+//======================================================================================================================
+// ProfilingWriter
+//======================================================================================================================
+
+/// Custom writer for profiling request-response.
+struct ProfilingWriter;
+
+impl io::Write for ProfilingWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let msg = std::str::from_utf8(buf).expect("ProfilingWriter expects UTF-8 string");
+        if !msg.contains(PROFILER_SCOPE_NAME) { Ok(0) }
+        else { std::io::stdout().write(buf) }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        std::io::stdout().flush()
+    }
 }
 
 //======================================================================================================================
