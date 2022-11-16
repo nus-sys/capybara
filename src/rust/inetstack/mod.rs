@@ -698,6 +698,12 @@ pub struct MigrationHandle {
     remote: SocketAddrV4,
 }
 
+#[derive(Debug)]
+pub struct TcpMigrationLock {
+    local: SocketAddrV4,
+    remote: SocketAddrV4,
+}
+
 impl InetStack {
     fn get_origin(&self, fd: QDesc) -> Result<Option<SocketAddrV4>, Fail> {
         match self.file_table.get(fd) {
@@ -921,5 +927,18 @@ impl InetStack {
         // Maybe get another ACK from dest?
 
         Ok(true)
+    }
+
+    /// Prevent migration of the connection represented by `qd` until `tcp_migration_unlock()` is called.
+    /// 
+    /// Returns the lock to use when the connection needs to be unlocked.
+    pub fn tcp_migration_lock(&mut self, qd: QDesc) -> Result<TcpMigrationLock, Fail> {
+        let (local, remote) = self.ipv4.tcp.tcp_migration_lock(qd)?;
+        Ok(TcpMigrationLock { local, remote })
+    }
+
+    /// Allow migration of the migration-locked connection represented by `lock`.
+    pub fn tcp_migration_unlock(&mut self, lock: TcpMigrationLock) -> Result<(), Fail> {
+        self.ipv4.tcp.tcp_migration_unlock((lock.local, lock.remote))
     }
 }

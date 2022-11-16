@@ -27,7 +27,7 @@ use crate::{
         QDesc,
         QToken,
     },
-    inetstack::MigrationHandle,
+    inetstack::{MigrationHandle, TcpMigrationLock},
 };
 use ::std::{
     env,
@@ -238,25 +238,6 @@ impl LibOS {
         }
     }
 
-    /// Returns the state along with the actual origin of the connection.
-    /* pub fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<(TcpState, SocketAddrV4), Fail> {
-        match self {
-            LibOS::NetworkLibOS(libos) => libos.migrate_out_tcp_connection(fd),
-        }
-    }
-
-    pub fn prepare_migrating_in(&mut self, local: SocketAddrV4, remote: SocketAddrV4) -> Result<(), Fail> {
-        match self {
-            LibOS::NetworkLibOS(libos) => libos.prepare_migrating_in(local, remote),
-        }
-    }
-
-    pub fn migrate_in_tcp_connection(&mut self, state: TcpState, origin: SocketAddrV4) -> Result<QDesc, Fail> {
-        match self {
-            LibOS::NetworkLibOS(libos) => libos.migrate_in_tcp_connection(state, origin),
-        }
-    } */
-
     /// 
     /// Initiates the process (through TCP communication) to migrate out a tcp connection,
     /// provided the descriptor of a connection to the destination server.
@@ -293,6 +274,22 @@ impl LibOS {
     pub fn perform_tcp_migration_in_sync(&mut self, server_origin_fd: QDesc) -> Result<QDesc, Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.perform_tcp_migration_in_sync(server_origin_fd),
+        }
+    }
+
+    /// Prevent migration of the connection represented by `qd` until `tcp_migration_unlock()` is called.
+    /// 
+    /// Returns the lock to use when the connection needs to be unlocked.
+    pub fn tcp_migration_lock(&mut self, qd: QDesc) -> Result<TcpMigrationLock, Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.tcp_migration_lock(qd),
+        }
+    }
+
+    /// Allow migration of the migration-locked connection represented by `lock`.
+    pub fn tcp_migration_unlock(&mut self, lock: TcpMigrationLock) -> Result<(), Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.tcp_migration_unlock(lock),
         }
     }
 }

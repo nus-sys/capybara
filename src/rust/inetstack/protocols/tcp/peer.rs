@@ -160,6 +160,9 @@ pub struct Inner {
     /// 
     /// (origin, target, remote) -> has_received ACK
     migration_ack_pending: HashMap<(SocketAddrV4, SocketAddrV4, SocketAddrV4), bool>,
+
+    /// Migration-locked connections.
+    migration_locked: HashMap<(SocketAddrV4, SocketAddrV4), bool>,
 }
 
 pub struct TcpPeer {
@@ -603,6 +606,34 @@ impl TcpPeer {
         }
     }
 
+    /// Returns (local, remote).
+    pub fn tcp_migration_lock(&mut self, qd: QDesc) -> Result<(SocketAddrV4, SocketAddrV4), Fail> {
+        let mut inner = self.inner.borrow_mut();
+
+        let key = match inner.sockets.get(&qd) {
+            Some(Socket::Established { local, remote }) => (*local, *remote),
+            _ => return Err(Fail::new(EINVAL, "no such established connection")),
+        };
+
+        match inner.migration_locked.insert(key, true) {
+            Some(true) => Err(Fail::new(EBUSY, "connection already migration-locked")),
+            _ => Ok(key)
+        }
+    }
+
+    /// conn = (local, remote).
+    pub fn tcp_migration_unlock(&mut self, conn: (SocketAddrV4, SocketAddrV4)) -> Result<(), Fail> {
+        let mut inner = self.inner.borrow_mut();
+
+        match inner.migration_locked.get_mut(&conn) {
+            Some(lock@true) => {
+                *lock = false;
+                Ok(())
+            },
+            _ => unreachable!("connection should have been migration-locked"),
+        }
+    }
+
     /// Marks the connection as "waiting for PREPARE_MIGRATION_ACK".
     pub fn initiate_migrating_out(&mut self, origin: SocketAddrV4, target: SocketAddrV4, remote: SocketAddrV4) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
@@ -786,7 +817,7 @@ impl TcpPeer {
         inner.migrated_in_origins.insert((local, remote), origin);
 
         dbg!(&migrating_queue.len());
-        for (ip_hdr, tcp_hdr, buf) in migrating_queue {
+        for (ip_hdr, _, buf) in migrating_queue {
             /* let tcp_hdr_size = tcp_hdr.compute_size();
             let mut buf = vec![0u8; tcp_hdr_size + data.len()];
             tcp_hdr.serialize(&mut buf, &ip_hdr, &data, inner.tcp_config.get_rx_checksum_offload());
@@ -838,6 +869,7 @@ impl Inner {
             migrated_in_origins: HashMap::new(),
             migrating_recv_queues: HashMap::new(),
             migration_ack_pending: HashMap::new(),
+            migration_locked: HashMap::new(),
         }
     }
 
@@ -868,7 +900,6 @@ impl Inner {
             if let Some(header) = migration_header {
                 match self.migration_ack_pending.get_mut(&(header.origin, header.target, header.remote)) {
                     Some(flag) => {
-                        eprintln!("RECEIVED PREPARE_MIGRATION_ACK");
                         *flag = true;
                     },
                     None => return Err(Fail::new(EINVAL, "connection not initiated for migrating out")),
