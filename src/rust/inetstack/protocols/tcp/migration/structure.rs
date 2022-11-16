@@ -2,7 +2,7 @@
 // Imports
 //==============================================================================
 
-use super::established::UnackedSegment;
+use crate::inetstack::protocols::tcp::established::UnackedSegment;
 use crate::{
     inetstack::protocols::tcp::SeqNumber,
     runtime::memory::Buffer,

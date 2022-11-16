@@ -13,7 +13,7 @@ use super::{
     },
     isn_generator::IsnGenerator,
     passive_open::PassiveSocket,
-    migration::{TcpState, TcpMigrationHeader},
+    migration::{TcpState, TcpMigrationHeader, protocol::TcpMigrationData},
 };
 use crate::{
     inetstack::protocols::{
@@ -144,25 +144,7 @@ pub struct Inner {
 
     dead_socket_tx: mpsc::UnboundedSender<QDesc>,
 
-    /// For established migrated connections.
-    /// 
-    /// (local, remote) -> origin
-    migrated_in_origins: HashMap<(SocketAddrV4, SocketAddrV4), SocketAddrV4>,
-
-    /// For not yet migrated in connections.
-    /// 
-    /// remote -> queue
-    /// 
-    /// TODO: (local, remote) -> queue
-    migrating_recv_queues: HashMap<SocketAddrV4, VecDeque<(Ipv4Header, TcpHeader, Buffer)>>,
-
-    /// For connections that need to wait for a PREPARE_MIGRATION_ACK.
-    /// 
-    /// (origin, target, remote) -> has_received ACK
-    migration_ack_pending: HashMap<(SocketAddrV4, SocketAddrV4, SocketAddrV4), bool>,
-
-    /// Migration-locked connections.
-    migration_locked: HashMap<(SocketAddrV4, SocketAddrV4), bool>,
+    migrations: TcpMigrationData,
 }
 
 pub struct TcpPeer {
@@ -588,7 +570,7 @@ impl TcpPeer {
 
         match inner.sockets.get(&fd) {
             Some(Socket::Established { local, remote }) => {
-                match inner.migrated_in_origins.get(&(*local, *remote)) {
+                match inner.migrations.origins.get(&(*local, *remote)) {
                     Some(origin) => Ok(Some(*origin)),
                     None => Ok(None)
                 }
@@ -615,7 +597,7 @@ impl TcpPeer {
             _ => return Err(Fail::new(EINVAL, "no such established connection")),
         };
 
-        match inner.migration_locked.insert(key, true) {
+        match inner.migrations.locked.insert(key, true) {
             Some(true) => Err(Fail::new(EBUSY, "connection already migration-locked")),
             _ => Ok(key)
         }
@@ -625,7 +607,7 @@ impl TcpPeer {
     pub fn tcp_migration_unlock(&mut self, conn: (SocketAddrV4, SocketAddrV4)) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
 
-        match inner.migration_locked.get_mut(&conn) {
+        match inner.migrations.locked.get_mut(&conn) {
             Some(lock@true) => {
                 *lock = false;
                 Ok(())
@@ -638,7 +620,7 @@ impl TcpPeer {
     pub fn initiate_migrating_out(&mut self, origin: SocketAddrV4, target: SocketAddrV4, remote: SocketAddrV4) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
 
-        match inner.migration_ack_pending.insert((origin, target, remote), false) {
+        match inner.migrations.ack_pending.insert((origin, target, remote), false) {
             None => Ok(()),
             Some(..) => Err(Fail::new(EBUSY, "connection already marked for migration out initiation")),
         }
@@ -648,7 +630,7 @@ impl TcpPeer {
     pub fn is_initiate_migrating_out_done(&self, origin: SocketAddrV4, target: SocketAddrV4, remote: SocketAddrV4) -> Result<bool, Fail> {
         let inner = self.inner.borrow();
 
-        match inner.migration_ack_pending.get(&(origin, target, remote)) {
+        match inner.migrations.ack_pending.get(&(origin, target, remote)) {
             Some(flag) => Ok(*flag),
             None => Err(Fail::new(EBUSY, "no such connection marked for migration out initiation")),
         }
@@ -708,7 +690,7 @@ impl TcpPeer {
             None => TcpMigrationHeader::new(key.0, dest.unwrap_or(key.0), remote),
         }; */
 
-        inner.migrated_in_origins.remove(&key);
+        inner.migrations.origins.remove(&key);
 
         Ok(state)
 
@@ -716,10 +698,10 @@ impl TcpPeer {
 
     pub fn prepare_migrating_in(&mut self, remote: SocketAddrV4) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
-        if inner.migrating_recv_queues.contains_key(&remote) {
+        if inner.migrations.recv_queues.contains_key(&remote) {
             Err(Fail::new(EBUSY, "connection already prepared for migrating in"))
         } else {
-            inner.migrating_recv_queues.insert(remote, VecDeque::new());
+            inner.migrations.recv_queues.insert(remote, VecDeque::new());
             Ok(())
         }
     }
@@ -761,7 +743,7 @@ impl TcpPeer {
         }
 
         // Check if migrating queue exists and add all its elements to state's recv_queue. Remove migrating queue.
-        let migrating_queue = match inner.migrating_recv_queues.remove(&remote) {
+        let migrating_queue = match inner.migrations.recv_queues.remove(&remote) {
             Some(queue) => queue, //state.recv_queue.extend(queue),
             None => return Err(Fail::new(EINVAL, "unprepared for migration")),
         };
@@ -814,7 +796,7 @@ impl TcpPeer {
         /* if state.local != origin {
             inner.migrated_in_origins.insert((state.local, state.remote), origin);
         } */
-        inner.migrated_in_origins.insert((local, remote), origin);
+        inner.migrations.origins.insert((local, remote), origin);
 
         dbg!(&migrating_queue.len());
         for (ip_hdr, _, buf) in migrating_queue {
@@ -866,10 +848,7 @@ impl Inner {
             rng: Rc::new(RefCell::new(rng)),
             dead_socket_tx,
 
-            migrated_in_origins: HashMap::new(),
-            migrating_recv_queues: HashMap::new(),
-            migration_ack_pending: HashMap::new(),
-            migration_locked: HashMap::new(),
+            migrations: TcpMigrationData::new(),
         }
     }
 
@@ -898,7 +877,7 @@ impl Inner {
 
             // Set prepare migration ACK flag if applicable.
             if let Some(header) = migration_header {
-                match self.migration_ack_pending.get_mut(&(header.origin, header.target, header.remote)) {
+                match self.migrations.ack_pending.get_mut(&(header.origin, header.target, header.remote)) {
                     Some(flag) => {
                         *flag = true;
                     },
@@ -916,7 +895,7 @@ impl Inner {
         
         // dbg!(self.migrating_recv_queues.get(&remote));
         // Check if migrating queue exists. If yes, push buffer to queue.
-        if let Some(queue) = self.migrating_recv_queues.get_mut(&remote) {
+        if let Some(queue) = self.migrations.recv_queues.get_mut(&remote) {
             queue.push_back((*ip_hdr, tcp_hdr, cloned_buf));
             return Ok(());
         }
