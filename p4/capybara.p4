@@ -284,15 +284,6 @@ control Ingress(
     /* REGISTERS FOR REPLY MIGRATION */
 
 
-    action send(PortId_t port) {
-        meta.egress_port = port;
-        ig_tm_md.ucast_egress_port = port;
-    }
-
-    action drop() {
-        ig_dprsr_md.drop_ctl = 1;
-    }
-
     Register<bit<32>, _> (32w1) counter;
     RegisterAction<bit<32>, _, bit<32>>(counter) counter_update = {
         void apply(inout bit<32> val, out bit<32> rv) {
@@ -300,36 +291,6 @@ control Ingress(
             val = val + 1;
         }
     };
-
-    action broadcast() {
-        ig_tm_md.mcast_grp_a       = 1;
-        ig_tm_md.level2_exclusion_id = ig_intr_md.ingress_port;
-    }
-
-    table l2_forwarding {
-        key = {
-            hdr.ethernet.dst_mac : exact;
-        }
-        actions = {
-            send;
-            drop;
-            broadcast;
-            // l2_forward;
-        }
-        const entries = {
-            0xb8cef62a2f95 : send(8);
-            0xb8cef62a45fd : send(12);
-            0xb8cef62a3f9d : send(16);
-            0xb8cef62a30ed : send(20);
-            0x1070fdc8944d : send(0);
-            0x08c0ebb6cd5d : send(32);
-            0x08c0ebb6e805 : send(36);
-            0x08c0ebb6c5ad : send(24);
-            0xffffffffffff : broadcast();
-        }
-        default_action = drop();
-        size = 128;
-    }
 
     action mac_writing(bit<48> mac_addr) {
         meta.mac = mac_addr;
@@ -380,6 +341,9 @@ control Ingress(
     action exec_check_val(){
         check_val.execute(0);
     }
+
+    #include "forwarding.p4"
+
     calc_hash(CRCPolynomial<bit<32>>(
             coeff=32w0x04C11DB7, reversed=true, msb=false, extended=false,
             init=32w0xFFFFFFFF, xor=32w0xFFFFFFFF)) hash; 
