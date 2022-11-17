@@ -2,9 +2,9 @@
 
 
 control calc_hash(
-    in    my_ingress_headers_t   hdr,
-    in    my_ingress_metadata_t  meta,
-    out   bit<16>                hash)
+    in    bit<32>       ip,
+    in    bit<16>       port,
+    out   bit<16>       hash)
 
     (CRCPolynomial<bit<32>>       poly)
 {
@@ -12,10 +12,8 @@ control calc_hash(
 
     action do_hash() {
         hash = hash_algo.get({
-                meta.ip,
-                meta.port
-                // hdr.tcp_migration_header.client_ip,
-                // hdr.tcp_migration_header.client_port
+                ip,
+                port
             });
     }
 

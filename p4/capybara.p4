@@ -393,7 +393,7 @@ control Ingress(
 
                 meta.ip = hdr.tcp_migration_header.client_ip;
                 meta.port = hdr.tcp_migration_header.client_port;
-                hash.apply(hdr, meta, meta.hash_digest1);
+                hash.apply(meta.ip, meta.port, meta.hash_digest1);
                 
                 exec_write_client_ip(meta.hash_digest1);
                 exec_write_client_port_target_mac_hi16(meta.hash_digest1);
@@ -415,11 +415,11 @@ control Ingress(
             bit<32> ports;
             meta.ip = hdr.ipv4.src_ip;
             meta.port = hdr.tcp.src_port;
-            hash.apply(hdr, meta, meta.hash_digest1);
+            hash.apply(meta.ip, meta.port, meta.hash_digest1);
 
             meta.ip = hdr.ipv4.dst_ip;
             meta.port = hdr.tcp.dst_port;
-            hash.apply(hdr, meta, meta.hash_digest2);
+            hash.apply(meta.ip, meta.port, meta.hash_digest2);
 
             meta.ip = reg_target_ip.read(meta.hash_digest1);
             
