@@ -879,6 +879,7 @@ impl Inner {
             if let Some(header) = migration_header {
                 match self.migrations.ack_pending.get_mut(&(header.origin, header.target, header.remote)) {
                     Some(flag) => {
+                        eprintln!("RECEIVED PREPARE_MIGRATION_ACK");
                         *flag = true;
                     },
                     None => return Err(Fail::new(EINVAL, "connection not initiated for migrating out")),
