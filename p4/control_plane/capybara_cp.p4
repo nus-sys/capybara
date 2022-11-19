@@ -111,7 +111,9 @@ control Ingress(
     inout ingress_intrinsic_metadata_for_deparser_t  ig_dprsr_md,
     inout ingress_intrinsic_metadata_for_tm_t        ig_tm_md)
 {
-    #include "../forwarding.p4"    
+    #include "../forwarding.p4"
+
+    
     Register< bit<32>, bit<8> >(1, 0) reg_ip;  // value, key
     RegisterAction< bit<32>, bit<8>, bit<32> >(reg_ip)
     reg_write_ip = {
@@ -172,6 +174,7 @@ control Ingress(
         size           = 65536;
         default_action = NoAction();
     }
+
     apply {
         // hdr.ipv4.hdr_checksum = 0;
         // hdr.tcp.checksum = 0;
@@ -181,9 +184,11 @@ control Ingress(
 
         
         if(hdr.tcp_migration_header.isValid()){
-            ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
-            counter_update.execute(0);
-            exec_write_ip();
+            if(hdr.tcp_migration_header.flag[0:0] == 0b1){
+                ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+                counter_update.execute(0);
+                exec_write_ip();
+            }
         }
         else if(hdr.tcp.isValid()){
             migrate_reply.apply();
@@ -223,15 +228,15 @@ control IngressDeparser(packet_out pkt,
     apply {
         if (ig_dprsr_md.digest_type == TCP_MIGRATION_DIGEST) {
             migration_digest.pack({
-                    hdr.ethernet.src_mac,
-                    hdr.ipv4.src_ip,
-                    hdr.tcp_migration_header.origin_port,
-                    
                     hdr.ethernet.dst_mac,
                     hdr.ipv4.dst_ip,
+                    hdr.tcp_migration_header.origin_port,
+                    
+                    hdr.ethernet.src_mac,
+                    hdr.ipv4.src_ip,
                     hdr.tcp_migration_header.target_port,
 
-                    meta.egress_port });
+                    meta.ingress_port });
         }
 
 
