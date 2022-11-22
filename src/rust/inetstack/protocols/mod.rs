@@ -8,8 +8,10 @@ pub mod ip;
 pub mod ipv4;
 mod peer;
 pub mod tcp;
-pub mod tcp_migration;
 pub mod udp;
+
+#[cfg(feature = "tcp-migration")]
+pub mod tcp_migration;
 
 pub use peer::Peer;
 

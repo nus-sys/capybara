@@ -48,7 +48,7 @@ use crate::{
                 TcpSegment,
             },
             SeqNumber, migration,
-        }, tcp_migration::TcpMigPeer,
+        },
     },
     runtime::{
         fail::Fail,
@@ -100,6 +100,8 @@ use ::std::{
     },
     time::Duration,
 };
+#[cfg(feature = "tcp-migration")]
+use crate::inetstack::protocols::tcp_migration::TcpMigPeer;
 
 #[cfg(feature = "profiler")]
 use crate::timer;
@@ -145,6 +147,8 @@ pub struct Inner {
     dead_socket_tx: mpsc::UnboundedSender<QDesc>,
 
     migrations: TcpMigrationData,
+
+    #[cfg(feature = "tcp-migration")]
     tcpmig: TcpMigPeer,
 }
 
@@ -166,6 +170,8 @@ impl TcpPeer {
         tcp_config: TcpConfig,
         arp: ArpPeer,
         rng_seed: [u8; 32],
+
+        #[cfg(feature = "tcp-migration")]
         tcpmig: TcpMigPeer,
     ) -> Result<Self, Fail> {
         let (tx, rx) = mpsc::unbounded();
@@ -178,6 +184,8 @@ impl TcpPeer {
             tcp_config,
             arp,
             rng_seed,
+
+            #[cfg(feature = "tcp-migration")]
             tcpmig,
             tx,
             rx,
@@ -816,7 +824,10 @@ impl Inner {
         tcp_config: TcpConfig,
         arp: ArpPeer,
         rng_seed: [u8; 32],
+
+        #[cfg(feature = "tcp-migration")]
         tcpmig: TcpMigPeer,
+
         dead_socket_tx: mpsc::UnboundedSender<QDesc>,
         _dead_socket_rx: mpsc::UnboundedReceiver<QDesc>,
     ) -> Self {
@@ -850,6 +861,9 @@ impl Inner {
             dead_socket_tx,
 
             migrations,
+
+            
+            #[cfg(feature = "tcp-migration")]
             tcpmig,
         }
     }
@@ -870,6 +884,7 @@ impl Inner {
         if let Some(s) = self.established.get(&key) {
             debug!("Routing to established connection: {:?}", key);
 
+            #[cfg(feature = "tcp-migration")]
             // Possible decision-making point.
             if self.tcpmig.should_migrate() {
                 eprintln!("*** Should Migrate ***");

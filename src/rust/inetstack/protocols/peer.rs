@@ -9,7 +9,6 @@ use crate::{
         ipv4::Ipv4Header,
         tcp::TcpPeer,
         udp::UdpPeer,
-        tcp_migration::TcpMigPeer,
     },
     runtime::{
         fail::Fail,
@@ -34,6 +33,9 @@ use ::std::{
     time::Duration,
 };
 
+#[cfg(feature = "tcp-migration")]
+use crate::inetstack::protocols::tcp_migration::TcpMigPeer;
+
 #[cfg(test)]
 use crate::runtime::QDesc;
 
@@ -42,6 +44,8 @@ pub struct Peer {
     icmpv4: Icmpv4Peer,
     pub tcp: TcpPeer,
     pub udp: UdpPeer,
+
+    #[cfg(feature = "tcp-migration")]
     tcpmig: TcpMigPeer,
 }
 
@@ -77,6 +81,7 @@ impl Peer {
             rng_seed,
         )?;
 
+        #[cfg(feature = "tcp-migration")]
         let tcpmig = TcpMigPeer::new(
             rt.clone(),
             local_link_addr,
@@ -92,6 +97,8 @@ impl Peer {
             tcp_config,
             arp,
             rng_seed,
+
+            #[cfg(feature = "tcp-migration")]
             tcpmig.clone(),
         )?;
 
@@ -100,6 +107,8 @@ impl Peer {
             icmpv4,
             tcp,
             udp,
+
+            #[cfg(feature = "tcp-migration")]
             tcpmig,
         })
     }
@@ -115,6 +124,7 @@ impl Peer {
             IpProtocol::ICMPv4 => self.icmpv4.receive(&header, payload),
             IpProtocol::TCP => self.tcp.receive(&header, payload),
             IpProtocol::UDP => self.udp.do_receive(&header, payload),
+            #[cfg(feature = "tcp-migration")]
             IpProtocol::TCPMig => self.tcpmig.receive(&header, payload),
         }
     }
