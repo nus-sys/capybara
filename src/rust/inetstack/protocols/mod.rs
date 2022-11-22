@@ -8,6 +8,7 @@ pub mod ip;
 pub mod ipv4;
 mod peer;
 pub mod tcp;
+pub mod tcp_migration;
 pub mod udp;
 
 pub use peer::Peer;

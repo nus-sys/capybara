@@ -9,6 +9,7 @@ use crate::{
         ipv4::Ipv4Header,
         tcp::TcpPeer,
         udp::UdpPeer,
+        tcp_migration::TcpMigPeer,
     },
     runtime::{
         fail::Fail,
@@ -41,6 +42,7 @@ pub struct Peer {
     icmpv4: Icmpv4Peer,
     pub tcp: TcpPeer,
     pub udp: UdpPeer,
+    tcpmig: TcpMigPeer,
 }
 
 impl Peer {
@@ -74,6 +76,13 @@ impl Peer {
             arp.clone(),
             rng_seed,
         )?;
+
+        let tcpmig = TcpMigPeer::new(
+            rt.clone(),
+            local_link_addr,
+            local_ipv4_addr,
+        )?;
+
         let tcp: TcpPeer = TcpPeer::new(
             rt.clone(),
             scheduler.clone(),
@@ -83,6 +92,7 @@ impl Peer {
             tcp_config,
             arp,
             rng_seed,
+            tcpmig.clone(),
         )?;
 
         Ok(Peer {
@@ -90,6 +100,7 @@ impl Peer {
             icmpv4,
             tcp,
             udp,
+            tcpmig,
         })
     }
 
@@ -99,10 +110,12 @@ impl Peer {
         if header.get_dest_addr() != self.local_ipv4_addr && !header.get_dest_addr().is_broadcast() {
             return Err(Fail::new(ENOTCONN, "invalid destination address"));
         }
+
         match header.get_protocol() {
             IpProtocol::ICMPv4 => self.icmpv4.receive(&header, payload),
             IpProtocol::TCP => self.tcp.receive(&header, payload),
             IpProtocol::UDP => self.udp.do_receive(&header, payload),
+            IpProtocol::TCPMig => self.tcpmig.receive(&header, payload),
         }
     }
 

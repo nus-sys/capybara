@@ -51,8 +51,8 @@ pub struct TcpState {
 //  0       4       Signature (0xCAFEDEAD)
 //  4       4       Origin IP
 //  8       2       Origin Port
-//  10      4       Dest IP
-//  14      2       Dest Port
+//  10      4       Target IP
+//  14      2       Target Port
 //  16      4       Remote IP
 //  20      2       Remote Port
 //  22      1       Flags
@@ -64,8 +64,8 @@ pub struct TcpState {
 //  Flags format:
 //  Bit number      Flag
 //  0               LOAD - Instructs the switch to load the entry into the migration tables.
-//  1               PREPARE_MIGRATION - Instructs `server_dest` to prepare itself to receive a migrated connection.
-//  2               PREPARE_MIGRATION_ACK - Notifies `server_origin` that its `PREPARE_MIGRATION` signal has been acknowledged and completed.
+//  1               PREPARE_MIGRATION - Instructs `server_target` to prepare itself to receive a migrated connection.
+//  2               ACK - Notifies `server_origin` that its previous request has been acknowledged and completed.
 //  3               PAYLOAD_STATE - The payload of this segment contains the TCP state.
 //  4-7             Unused
 //
@@ -80,7 +80,7 @@ pub struct TcpMigrationHeader {
 
     pub flag_load: bool,
     pub flag_prepare_migration: bool,
-    pub flag_prepare_migration_ack: bool,
+    pub flag_ack: bool,
     pub flag_payload_state: bool,
 }
 
@@ -91,7 +91,7 @@ pub struct TcpMigrationSegment {
 }
 
 //==============================================================================
-// Associated FUnctions
+// Associated Functions
 //==============================================================================
 
 impl TcpState {
@@ -156,7 +156,7 @@ impl TcpMigrationHeader {
     const SIZE: usize = 24;
     const FLAG_LOAD: u8 = 0;
     const FLAG_PREPARE_MIGRATION: u8 = 1;
-    const FLAG_PREPARE_MIGRATION_ACK: u8 = 2;
+    const FLAG_ACK: u8 = 2;
     const FLAG_PAYLOAD_STATE: u8 = 3;
 
     pub fn new(origin: SocketAddrV4, target: SocketAddrV4, remote: SocketAddrV4) -> Self {
@@ -166,7 +166,7 @@ impl TcpMigrationHeader {
             remote,
             flag_load: false,
             flag_prepare_migration: false,
-            flag_prepare_migration_ack: false,
+            flag_ack: false,
             flag_payload_state: false,
         }
     }
@@ -192,7 +192,7 @@ impl TcpMigrationHeader {
     fn serialize_flags(&self) -> u8 {
         ((self.flag_load as u8) << Self::FLAG_LOAD)
         | ((self.flag_prepare_migration as u8) << Self::FLAG_PREPARE_MIGRATION)
-        | ((self.flag_prepare_migration_ack as u8) << Self::FLAG_PREPARE_MIGRATION_ACK)
+        | ((self.flag_ack as u8) << Self::FLAG_ACK)
         | ((self.flag_payload_state as u8) << Self::FLAG_PAYLOAD_STATE)
     }
 
@@ -220,7 +220,7 @@ impl TcpMigrationHeader {
 
                 flag_load: (flags & (1 << Self::FLAG_LOAD)) != 0,
                 flag_prepare_migration: (flags & (1 << Self::FLAG_PREPARE_MIGRATION)) != 0,
-                flag_prepare_migration_ack: (flags & (1 << Self::FLAG_PREPARE_MIGRATION_ACK)) != 0,
+                flag_ack: (flags & (1 << Self::FLAG_ACK)) != 0,
                 flag_payload_state: (flags & (1 << Self::FLAG_PAYLOAD_STATE)) != 0,
             }
         )}

@@ -7,7 +7,7 @@ use std::{
         HashMap,
         VecDeque
     },
-    net::SocketAddrV4
+    net::SocketAddrV4, str::FromStr
 };
 
 use crate::{
@@ -15,8 +15,10 @@ use crate::{
         ipv4::Ipv4Header,
         tcp::segment::TcpHeader
     },
-    runtime::memory::Buffer
+    runtime::memory::Buffer, MacAddress
 };
+
+use super::{connection::MigrationConnection, TcpMigrationHeader};
 
 //==============================================================================
 // Structures
@@ -24,11 +26,6 @@ use crate::{
 
 pub struct TcpMigrationData {
     // Migrate-in data
-
-    /// Original origins for established migrated-in connections.
-    /// 
-    /// (local, remote) -> origin
-    pub origins: HashMap<(SocketAddrV4, SocketAddrV4), SocketAddrV4>,
 
     /// For not yet migrated in connections.
     /// 
@@ -47,19 +44,49 @@ pub struct TcpMigrationData {
 
     /// Migration-locked connections.
     pub locked: HashMap<(SocketAddrV4, SocketAddrV4), bool>,
+
+    /// All possible targets to migrate out to.
+    /// 
+    /// target_addr -> connection
+    pub targets: HashMap<SocketAddrV4, MigrationConnection>,
 }
 
 //==============================================================================
-// Associated FUnctions
+// Associated Functions
 //==============================================================================
 
 impl TcpMigrationData {
     pub fn new() -> Self {
         Self {
-            origins: HashMap::new(),
             recv_queues: HashMap::new(),
             ack_pending: HashMap::new(),
             locked: HashMap::new(),
+            targets: HashMap::new(),
         }
+    }
+
+    fn send(&self, buf: Buffer) {
+
+    }
+
+    /// Check if this packet came from a target, and if so, perform migration actions.
+    pub fn try_receive(&self, buf: Buffer) -> Result<(), &str> {
+        //let migration_header = TcpMigrationHeader::deserialize(&buf)?;
+        Ok(())
+    }
+
+    // TEMP
+
+    pub fn get_target(&self) -> &MigrationConnection {
+        self.targets.get(&SocketAddrV4::from_str("10.0.1.9:30000").unwrap()).unwrap()
+    }
+
+    pub fn should_migrate() -> bool {
+        static mut FLAG: i32 = 0;
+        unsafe {
+            FLAG += 1;
+            FLAG == 11
+        }
+
     }
 }

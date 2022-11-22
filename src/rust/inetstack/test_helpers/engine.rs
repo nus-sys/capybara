@@ -185,7 +185,7 @@ impl Engine {
         self.arp.export_cache()
     }
 
-    pub fn tcp_migrate_in_connection(&mut self, conn: TcpMigrationSegment) -> Result<QDesc, Fail> {
+    /* pub fn tcp_migrate_in_connection(&mut self, conn: TcpMigrationSegment) -> Result<QDesc, Fail> {
         let newfd = self.file_table.alloc(u32::from(QType::TcpSocket));
 
         self.ipv4.tcp.migrate_in_tcp_connection(conn, newfd)?;
@@ -204,5 +204,5 @@ impl Engine {
 
     pub fn tcp_take_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
         self.ipv4.tcp.take_tcp_state(fd)
-    }
+    } */
 }

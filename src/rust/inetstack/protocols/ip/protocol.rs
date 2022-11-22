@@ -24,6 +24,8 @@ pub enum IpProtocol {
     TCP = 0x06,
     /// User Datagram Protocol
     UDP = 0x11,
+    /// TCP Migration
+    TCPMig = 0xC0,
 }
 
 //==============================================================================
