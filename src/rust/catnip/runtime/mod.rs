@@ -276,7 +276,7 @@ impl DPDKRuntime {
             port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_JUMBO_FRAME as u64;
         }
         port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
-        port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IP as u64 | dev_info.flow_type_rss_offloads;
+        port_conf.rx_adv_conf.rss_conf.rss_hf = 0;//ETH_RSS_IP as u64 | dev_info.flow_type_rss_offloads;
 
         port_conf.txmode.mq_mode = ETH_MQ_TX_NONE;
         if tcp_checksum_offload {

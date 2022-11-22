@@ -811,7 +811,7 @@ impl InetStack {
         self.prepare_migrating_in(remote)?;
         
         let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, target, remote), Vec::new());
-        seg.header.flag_prepare_migration_ack = true;
+        seg.header.flag_ack = true;
         seg.header.flag_load = true;
 
         

@@ -47,8 +47,8 @@ use crate::{
                 TcpHeader,
                 TcpSegment,
             },
-            SeqNumber,
-        },
+            SeqNumber, migration,
+        }, tcp_migration::TcpMigPeer,
     },
     runtime::{
         fail::Fail,
@@ -79,7 +79,7 @@ use ::rand::{
     Rng,
     SeedableRng,
 };
-use std::collections::VecDeque;
+use std::{collections::VecDeque, str::FromStr};
 use ::std::{
     cell::{
         RefCell,
@@ -145,6 +145,7 @@ pub struct Inner {
     dead_socket_tx: mpsc::UnboundedSender<QDesc>,
 
     migrations: TcpMigrationData,
+    tcpmig: TcpMigPeer,
 }
 
 pub struct TcpPeer {
@@ -165,6 +166,7 @@ impl TcpPeer {
         tcp_config: TcpConfig,
         arp: ArpPeer,
         rng_seed: [u8; 32],
+        tcpmig: TcpMigPeer,
     ) -> Result<Self, Fail> {
         let (tx, rx) = mpsc::unbounded();
         let inner = Rc::new(RefCell::new(Inner::new(
@@ -176,6 +178,7 @@ impl TcpPeer {
             tcp_config,
             arp,
             rng_seed,
+            tcpmig,
             tx,
             rx,
         )));
@@ -570,10 +573,11 @@ impl TcpPeer {
 
         match inner.sockets.get(&fd) {
             Some(Socket::Established { local, remote }) => {
-                match inner.migrations.origins.get(&(*local, *remote)) {
+                /* match inner.migrations.origins.get(&(*local, *remote)) {
                     Some(origin) => Ok(Some(*origin)),
                     None => Ok(None)
-                }
+                } */
+                Ok(None)
             },
             _ => Err(Fail::new(EINVAL, "no such established connection")),
         }
@@ -685,13 +689,6 @@ impl TcpPeer {
             panic!("Established socket somehow missing.");
         }
 
-        /* let migration_hdr = match inner.migrated_in_origins.get(&key) {
-            Some(origin) => TcpMigrationHeader::new(*origin, dest.unwrap_or(*origin), remote),
-            None => TcpMigrationHeader::new(key.0, dest.unwrap_or(key.0), remote),
-        }; */
-
-        inner.migrations.origins.remove(&key);
-
         Ok(state)
 
     }
@@ -792,12 +789,6 @@ impl TcpPeer {
             unreachable!();
         }
 
-        // If this was the original origin, do not insert.
-        /* if state.local != origin {
-            inner.migrated_in_origins.insert((state.local, state.remote), origin);
-        } */
-        inner.migrations.origins.insert((local, remote), origin);
-
         dbg!(&migrating_queue.len());
         for (ip_hdr, _, buf) in migrating_queue {
             /* let tcp_hdr_size = tcp_hdr.compute_size();
@@ -825,12 +816,22 @@ impl Inner {
         tcp_config: TcpConfig,
         arp: ArpPeer,
         rng_seed: [u8; 32],
+        tcpmig: TcpMigPeer,
         dead_socket_tx: mpsc::UnboundedSender<QDesc>,
         _dead_socket_rx: mpsc::UnboundedReceiver<QDesc>,
     ) -> Self {
         let mut rng: SmallRng = SmallRng::from_seed(rng_seed);
         let ephemeral_ports: EphemeralPorts = EphemeralPorts::new(&mut rng);
         let nonce: u32 = rng.gen();
+
+        // TEMP
+        let mut migrations = TcpMigrationData::new();
+        let target_mac = MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]);
+        let target_addr = SocketAddrV4::from_str("10.0.1.9:30000").unwrap();
+        migrations.targets.insert(target_addr, migration::MigrationConnection::new(
+            local_link_addr, target_mac, SocketAddrV4::new(local_ipv4_addr, 30000), target_addr
+        ));
+
         Self {
             isn_generator: IsnGenerator::new(nonce),
             ephemeral_ports,
@@ -848,7 +849,8 @@ impl Inner {
             rng: Rc::new(RefCell::new(rng)),
             dead_socket_tx,
 
-            migrations: TcpMigrationData::new(),
+            migrations,
+            tcpmig,
         }
     }
 
@@ -868,23 +870,13 @@ impl Inner {
         if let Some(s) = self.established.get(&key) {
             debug!("Routing to established connection: {:?}", key);
 
-            // Check if payload is a TcpMigrationSegment with PREPARE_MIGRATION_ACK set.
-            let migration_header = if let Ok(header) = TcpMigrationHeader::deserialize(&data) {
-                if header.flag_prepare_migration_ack { Some(header) } else { None }
-            } else { None };
+            // Possible decision-making point.
+            if self.tcpmig.should_migrate() {
+                eprintln!("*** Should Migrate ***");
+                self.tcpmig.init_migration_out(ip_hdr, &tcp_hdr);
+            }
 
             s.receive(&mut tcp_hdr, data);
-
-            // Set prepare migration ACK flag if applicable.
-            if let Some(header) = migration_header {
-                match self.migrations.ack_pending.get_mut(&(header.origin, header.target, header.remote)) {
-                    Some(flag) => {
-                        *flag = true;
-                    },
-                    None => return Err(Fail::new(EINVAL, "connection not initiated for migrating out")),
-                }
-            };
-
             return Ok(());
         }
         if let Some(s) = self.connecting.get_mut(&key) {
@@ -893,7 +885,6 @@ impl Inner {
             return Ok(());
         }
         
-        // dbg!(self.migrating_recv_queues.get(&remote));
         // Check if migrating queue exists. If yes, push buffer to queue.
         if let Some(queue) = self.migrations.recv_queues.get_mut(&remote) {
             queue.push_back((*ip_hdr, tcp_hdr, cloned_buf));
