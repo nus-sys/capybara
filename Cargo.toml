@@ -125,6 +125,14 @@ path = "examples/rust/tcp-migration.rs"
 name = "tcp-migration-ping-pong"
 path = "examples/rust/tcp-migration-ping-pong.rs"
 
+[[example]]
+name = "tcpmig-server"
+path = "examples/rust/tcpmig-server.rs"
+
+[[example]]
+name = "tcpmig-client"
+path = "examples/rust/tcpmig-client.rs"
+
 #=======================================================================================================================
 # Features
 #=======================================================================================================================
@@ -139,6 +147,7 @@ libdpdk = [ "dpdk-rs" ]
 mlx4 = [ "dpdk-rs/mlx4" ]
 mlx5 = [ "dpdk-rs/mlx5" ]
 profiler = [  ]
+tcp-migration = [  ]
 
 #=======================================================================================================================
 # Profile
