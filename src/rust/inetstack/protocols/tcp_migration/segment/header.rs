@@ -28,7 +28,7 @@ use std::net::{SocketAddrV4, Ipv4Addr};
 // Constants
 //==============================================================================
 
-/// Size of a UDP header (in bytes).
+/// Size of a TCPMig header (in bytes).
 pub const TCPMIG_HEADER_SIZE: usize = 24;
 
 const FLAG_LOAD_BIT: u8 = 0;
@@ -93,12 +93,12 @@ pub struct TcpMigHeader {
 
 impl TcpMigHeader {
     /// Creates a TcpMigration header.
-    pub fn new(origin: SocketAddrV4, target: SocketAddrV4, remote: SocketAddrV4, stage: MigrationStage) -> Self {
+    pub fn new(origin: SocketAddrV4, target: SocketAddrV4, remote: SocketAddrV4, payload_length: u16, stage: MigrationStage) -> Self {
         Self {
             origin,
             target,
             remote,
-            payload_length: 0,
+            payload_length,
             flag_load: false,
             flag_prepare_migration: false,
             flag_ack: false,

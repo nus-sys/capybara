@@ -17,11 +17,11 @@ use crate::{
                 Ethernet2Header,
             },
             ip::IpProtocol,
-            ipv4::Ipv4Header, tcp::segment::TcpHeader,
+            ipv4::Ipv4Header, tcp::{segment::TcpHeader, migration::TcpState, TcpPeer}, tcp_migration::{MigrationStage, active::MigrationRequestStatus},
         },
     runtime::{
         fail::Fail,
-        memory::Buffer,
+        memory::{Buffer, DataBuffer},
         network::{
             types::MacAddress,
             NetworkRuntime,
@@ -38,7 +38,7 @@ use ::libc::{
     EBADF,
     EEXIST,
 };
-use std::{str::FromStr, cell::RefCell};
+use std::{cell::RefCell};
 use ::std::{
     collections::HashMap,
     net::{
@@ -74,8 +74,13 @@ struct Inner {
 
     /// Connections being actively migrated in/out.
     /// 
-    /// key = (origin, target, remote).
-    active_migrations: HashMap<(SocketAddrV4, SocketAddrV4, SocketAddrV4), ActiveMigration>,
+    /// key = (origin, remote).
+    active_migrations: HashMap<(SocketAddrV4, SocketAddrV4), ActiveMigration>,
+
+    /// Origins. Only used on the target side to get the origin of redirected packets.
+    /// 
+    /// key = (target, remote).
+    origins: HashMap<(SocketAddrV4, SocketAddrV4), SocketAddrV4>,
 
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
@@ -86,6 +91,11 @@ struct Inner {
 #[derive(Clone)]
 pub struct TcpMigPeer {
     inner: Rc<RefCell<Inner>>,
+}
+
+pub struct MigrationHandle {
+    origin: SocketAddrV4,
+    remote: SocketAddrV4,
 }
 
 //======================================================================================================================
@@ -115,7 +125,7 @@ impl TcpMigPeer {
             None => {
                 return Err(Fail::new(
                     EAGAIN,
-                    "failed to schedule background co-routine for UDP module",
+                    "failed to schedule background co-routine for TCPMig module",
                 ))
             },
         }; */
@@ -129,58 +139,115 @@ impl TcpMigPeer {
     }
 
     /// Consumes the payload from a buffer.
-    pub fn receive(&mut self, ipv4_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
+    pub fn receive(&mut self, tcp_peer: &mut TcpPeer, ipv4_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         #[cfg(feature = "profiler")]
         timer!("tcpmig::receive");
 
-        // Parse datagram.
-        let (hdr, data) = TcpMigHeader::parse(ipv4_hdr, buf)?;
+        // Parse header.
+        let (hdr, buf) = TcpMigHeader::parse(ipv4_hdr, buf)?;
         debug!("TCPMig received {:?}", hdr);
+        eprintln!("TCPMig received {:#?}", hdr);
 
-        // Pass this packet to the correct migration connection.
+        let key = (hdr.origin, hdr.remote);
+
+        let mut inner = self.inner.borrow_mut();
+
+        if hdr.stage == MigrationStage::PrepareMigration {
+            let active = ActiveMigration::new(
+                inner.rt.clone(),
+                inner.local_ipv4_addr,
+                inner.local_link_addr,
+                hdr.origin.ip().clone(),
+                MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xe8, 0x05]), // TEMP
+                hdr.origin,
+                hdr.target,
+                hdr.remote,
+            );
+            if let Some(..) = inner.active_migrations.insert(key, active) {
+                todo!("duplicate active migration");
+            }
+            inner.origins.insert((hdr.target, hdr.remote), hdr.origin);
+        }
+
+        let active = match inner.active_migrations.get_mut(&key) {
+            Some(active) => active,
+            None => return Err(Fail::new(libc::EINVAL, "no such active migration")),
+        };
+
+        if active.process_packet(tcp_peer, hdr, buf)? == MigrationRequestStatus::Rejected {
+            todo!("handle migration rejection");
+        }
 
         Ok(())
     }
 
-    /// Sends a TCPMig segment.
-    fn send(
-        rt: Rc<dyn NetworkRuntime>,
-        local_ipv4_addr: Ipv4Addr,
-        local_link_addr: MacAddress,
-        remote_link_addr: MacAddress,
-        buf: Buffer,
-        local: &SocketAddrV4,
-        remote: &SocketAddrV4,
-    ) {
-        /* let tcpmig_hdr = TcpMigHeader::new(local.port(), remote.port());
-        debug!("TCPMig send {:?}", tcpmig_hdr);
-
-        let segment = TcpMigSegment::new(
-            Ethernet2Header::new(remote_link_addr, local_link_addr, EtherType2::Ipv4),
-            Ipv4Header::new(local_ipv4_addr, remote.ip().clone(), IpProtocol::UDP),
-            tcpmig_hdr,
-            buf,
-        );
-        rt.transmit(Box::new(segment)); */
-    }
-
-    // For now, assume only called when receiving.
-    pub fn init_migration_out(&mut self, ipv4_hdr: &Ipv4Header, tcp_hdr: &TcpHeader) {
-        // TEMP
-        let target = SocketAddrV4::from_str("10.0.1.9:22222").unwrap();
-        let target_mac = MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]);
-        let origin = SocketAddrV4::new(ipv4_hdr.get_dest_addr(), tcp_hdr.dst_port);
-        let remote = SocketAddrV4::new(ipv4_hdr.get_src_addr(), tcp_hdr.src_port);
-
+    pub fn initiate_migration(&mut self, origin_port: u16, remote: SocketAddrV4) {
         let mut inner = self.inner.borrow_mut();
 
-        let active = ActiveMigration::new();
-        if let Some(..) = inner.active_migrations.insert((origin, target, remote), active) {
-            todo!("duplicate active migration");
-        }
+        let origin = SocketAddrV4::new(inner.local_ipv4_addr, origin_port);
+        let target = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), origin_port); // TEMP
+        let key = (origin, remote);
 
-        eprintln!("NOW SENDING PREPARE MIGRATION");
+        let active = ActiveMigration::new(
+            inner.rt.clone(),
+            inner.local_ipv4_addr,
+            inner.local_link_addr,
+            target.ip().clone(),
+            MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]), // TEMP
+            origin,
+            target,
+            remote,
+        );
+        
+        if let Some(..) = inner.active_migrations.insert(key, active) {
+            todo!("duplicate active migration");
+        };
+
+        let active = match inner.active_migrations.get_mut(&key) {
+            Some(active) => active,
+            None => unreachable!(),
+        };
+
+        active.initiate_migration();
     }
+
+    pub fn can_migrate_out(&self, origin: SocketAddrV4, remote: SocketAddrV4) -> Option<MigrationHandle> {
+        let key = (origin, remote);
+        let inner = self.inner.borrow();
+        if let Some(active) = inner.active_migrations.get(&key) {
+            if active.is_prepared() {
+                return Some(MigrationHandle { origin, remote })
+            }
+        }
+        None
+    }
+
+    pub fn migrate_out(&mut self, handle: MigrationHandle, state: TcpState) {
+        let key = (handle.origin, handle.remote);
+        let mut inner = self.inner.borrow_mut();
+        if let Some(active) = inner.active_migrations.get_mut(&key) {
+            active.send_connection_state(state);
+        }
+    }
+
+    pub fn try_buffer_packet(&self, target: SocketAddrV4, remote: SocketAddrV4, ip_hdr: Ipv4Header, tcp_hdr: TcpHeader, buf: Buffer) -> Result<(), ()> {
+        let mut inner = self.inner.borrow_mut();
+
+        let origin = match inner.origins.get(&(target, remote)) {
+            Some(origin) => *origin,
+            None => return Err(()),
+        };
+
+        match inner.active_migrations.get_mut(&(origin, remote)) {
+            Some(active) => {
+                active.buffer_packet(ip_hdr, tcp_hdr, buf);
+                Ok(())
+            },
+            None => Err(()),
+        }
+    }
+
+
 
     // TEMP
     pub fn should_migrate(&self) -> bool {
@@ -201,11 +268,12 @@ impl Inner {
         //arp: ArpPeer,
     ) -> Self {
         Self {
-            rt: rt.clone(),
+            rt,
             //arp,
             local_link_addr,
             local_ipv4_addr,
             active_migrations: HashMap::new(),
+            origins: HashMap::new(),
             //background: handle,
         }
     }

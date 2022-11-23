@@ -166,7 +166,7 @@ impl TcpOptions2 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TcpHeader {
     pub src_port: u16,
     pub dst_port: u16,

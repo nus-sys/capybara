@@ -648,6 +648,32 @@ impl TcpPeer {
         }
     }
 
+    pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<(), Fail> {
+        let inner = self.inner.borrow();
+        let (local, remote) = match inner.sockets.get(&fd) {
+            None => {
+                debug!("No entry in `sockets` for fd: {:?}", fd);
+                return Err(Fail::new(EBADF, "socket does not exist"));
+            },
+            Some(Socket::Established { local, remote }) => {
+                (*local, *remote)
+            },
+            Some(s) => {
+                return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
+            },
+        };
+        
+        if let Some(handle) = inner.tcpmig.can_migrate_out(local, remote) {
+            eprintln!("*** Can migrate out ***");
+            drop(inner);
+            let state = self.migrate_out_tcp_connection(fd)?;
+            let mut inner = self.inner.borrow_mut();
+            inner.tcpmig.migrate_out(handle, state);
+        }
+
+        Ok(())
+    }
+
     /// 1) Change status of our socket to MigratedOut.
     /// 2) Change status of ControlBlock state to Migrated out.
     /// 3) Remove socket from Established hashmap.
@@ -888,7 +914,10 @@ impl Inner {
             // Possible decision-making point.
             if self.tcpmig.should_migrate() {
                 eprintln!("*** Should Migrate ***");
-                self.tcpmig.init_migration_out(ip_hdr, &tcp_hdr);
+                self.tcpmig.initiate_migration(
+                    tcp_hdr.dst_port,
+                    SocketAddrV4::new(ip_hdr.get_src_addr(),tcp_hdr.src_port)
+                );
             }
 
             s.receive(&mut tcp_hdr, data);
@@ -901,8 +930,7 @@ impl Inner {
         }
         
         // Check if migrating queue exists. If yes, push buffer to queue.
-        if let Some(queue) = self.migrations.recv_queues.get_mut(&remote) {
-            queue.push_back((*ip_hdr, tcp_hdr, cloned_buf));
+        if let Ok(()) = self.tcpmig.try_buffer_packet(local, remote, ip_hdr.clone(), tcp_hdr.clone(), cloned_buf) {
             return Ok(());
         }
 

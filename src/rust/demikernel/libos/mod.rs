@@ -292,4 +292,10 @@ impl LibOS {
             LibOS::NetworkLibOS(libos) => libos.tcp_migration_unlock(lock),
         }
     }
+
+    pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<(), Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.notify_migration_safety(fd),
+        }
+    }
 }

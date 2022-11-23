@@ -941,4 +941,9 @@ impl InetStack {
     pub fn tcp_migration_unlock(&mut self, lock: TcpMigrationLock) -> Result<(), Fail> {
         self.ipv4.tcp.tcp_migration_unlock((lock.local, lock.remote))
     }
+
+
+    pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<(), Fail> {
+        self.ipv4.tcp.notify_migration_safety(fd)
+    }
 }

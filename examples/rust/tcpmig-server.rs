@@ -117,6 +117,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
         };
 
         println!("pong {:?}", i);
+
+        libos.notify_migration_safety(qd)?;
     }
 
     #[cfg(feature = "profiler")]

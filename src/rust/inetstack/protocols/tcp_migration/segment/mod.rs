@@ -29,14 +29,13 @@ pub use header::TcpMigHeader;
 // Structures
 //==============================================================================
 
-/// UDP Datagram
 #[derive(Debug)]
 pub struct TcpMigSegment {
     /// Ethernet header.
     ethernet2_hdr: Ethernet2Header,
     /// IPv4 header.
     ipv4_hdr: Ipv4Header,
-    /// UDP header.
+    /// TCPMig header.
     tcpmig_hdr: TcpMigHeader,
     /// Payload
     data: Buffer,
@@ -46,7 +45,6 @@ pub struct TcpMigSegment {
 // Associate Functions
 //==============================================================================
 
-// Associate Functions for UDP Datagrams
 impl TcpMigSegment {
     /// Creates a TCPMig packet.
     pub fn new(

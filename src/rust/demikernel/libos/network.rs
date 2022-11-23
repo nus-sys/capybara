@@ -423,4 +423,17 @@ impl NetworkLibOS {
             NetworkLibOS::Catnip(libos) => libos.tcp_migration_unlock(_lock),
         }
     }
+
+    pub fn notify_migration_safety(&mut self, _fd: QDesc) -> Result<(), Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.notify_migration_safety(_fd),
+        }
+    }
 }

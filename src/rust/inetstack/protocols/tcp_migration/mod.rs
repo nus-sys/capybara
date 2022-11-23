@@ -16,6 +16,7 @@ pub enum MigrationStage {
     PrepareMigrationAck,
     ConnectionState,
     ConnectionStateAck,
+    Rejected = 0xFF,
 }
 
 //======================================================================================================================
@@ -39,6 +40,7 @@ impl TryFrom<u8> for MigrationStage {
             2 => Ok(PrepareMigrationAck),
             3 => Ok(ConnectionState),
             4 => Ok(ConnectionStateAck),
+            0xFF => Ok(Rejected),
             e => Err(e),
         }
     }
