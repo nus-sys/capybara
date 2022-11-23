@@ -648,6 +648,7 @@ impl TcpPeer {
         }
     }
 
+    #[cfg(feature = "tcp-migration")]
     pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<(), Fail> {
         let inner = self.inner.borrow();
         let (local, remote) = match inner.sockets.get(&fd) {
@@ -929,6 +930,7 @@ impl Inner {
             return Ok(());
         }
         
+        #[cfg(feature = "tcp-migration")]
         // Check if migrating queue exists. If yes, push buffer to queue.
         if let Ok(()) = self.tcpmig.try_buffer_packet(local, remote, ip_hdr.clone(), tcp_hdr.clone(), cloned_buf) {
             return Ok(());

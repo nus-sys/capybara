@@ -424,6 +424,7 @@ impl NetworkLibOS {
         }
     }
 
+    #[cfg(feature = "tcp-migration")]
     pub fn notify_migration_safety(&mut self, _fd: QDesc) -> Result<(), Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
