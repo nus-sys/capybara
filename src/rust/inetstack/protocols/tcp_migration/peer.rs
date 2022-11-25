@@ -152,6 +152,7 @@ impl TcpMigPeer {
 
         let mut inner = self.inner.borrow_mut();
 
+        // First packet that target receives.
         if hdr.stage == MigrationStage::PrepareMigration {
             let active = ActiveMigration::new(
                 inner.rt.clone(),
@@ -160,13 +161,14 @@ impl TcpMigPeer {
                 hdr.origin.ip().clone(),
                 MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xe8, 0x05]), // TEMP
                 hdr.origin,
-                hdr.target,
                 hdr.remote,
             );
             if let Some(..) = inner.active_migrations.insert(key, active) {
                 todo!("duplicate active migration");
             }
-            inner.origins.insert((hdr.target, hdr.remote), hdr.origin);
+
+            let target = SocketAddrV4::new(inner.local_ipv4_addr, hdr.origin.port());
+            inner.origins.insert((target, hdr.remote), hdr.origin);
         }
 
         let active = match inner.active_migrations.get_mut(&key) {
@@ -195,7 +197,6 @@ impl TcpMigPeer {
             target.ip().clone(),
             MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]), // TEMP
             origin,
-            target,
             remote,
         );
         

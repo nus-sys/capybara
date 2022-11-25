@@ -11,12 +11,12 @@ pub use peer::TcpMigPeer;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MigrationStage {
-    None = 0,
+    Rejected = 0,
+    None,
     PrepareMigration,
     PrepareMigrationAck,
     ConnectionState,
     ConnectionStateAck,
-    Rejected = 0xFF,
 }
 
 //======================================================================================================================
@@ -35,12 +35,12 @@ impl TryFrom<u8> for MigrationStage {
     fn try_from(value: u8) -> Result<Self, u8> {
         use MigrationStage::*;
         match value {
-            0 => Ok(None),
-            1 => Ok(PrepareMigration),
-            2 => Ok(PrepareMigrationAck),
-            3 => Ok(ConnectionState),
-            4 => Ok(ConnectionStateAck),
-            0xFF => Ok(Rejected),
+            0 => Ok(Rejected),
+            1 => Ok(None),
+            2 => Ok(PrepareMigration),
+            3 => Ok(PrepareMigrationAck),
+            4 => Ok(ConnectionState),
+            5 => Ok(ConnectionStateAck),
             e => Err(e),
         }
     }

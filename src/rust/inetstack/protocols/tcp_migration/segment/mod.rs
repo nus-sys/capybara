@@ -137,13 +137,11 @@ mod test {
     fn tcpmig_header() -> TcpMigHeader {
         TcpMigHeader {
             origin: SocketAddrV4::from_str("198.0.0.1:20000").unwrap(),
-            target: SocketAddrV4::from_str("198.0.0.2:20000").unwrap(),
             remote: SocketAddrV4::from_str("18.45.32.67:19465").unwrap(),
             payload_length: 8,
+            fragment_offset: 2,
             flag_load: false,
-            flag_prepare_migration: true,
-            flag_ack: false,
-            flag_payload_state: false,
+            flag_next_fragment: true,
             stage: super::super::MigrationStage::PrepareMigration,
         }
     }

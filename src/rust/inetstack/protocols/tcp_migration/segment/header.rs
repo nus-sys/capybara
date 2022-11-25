@@ -29,12 +29,11 @@ use std::net::{SocketAddrV4, Ipv4Addr};
 //==============================================================================
 
 /// Size of a TCPMig header (in bytes).
-pub const TCPMIG_HEADER_SIZE: usize = 24;
+pub const TCPMIG_HEADER_SIZE: usize = 20;
 
 const FLAG_LOAD_BIT: u8 = 0;
-const FLAG_PREPARE_MIGRATION_BIT: u8 = 1;
-const FLAG_ACK_BIT: u8 = 2;
-const FLAG_PAYLOAD_STATE_BIT: u8 = 3;
+const FLAG_NEXT_FRAGMENT: u8 = 1;
+const STAGE_BIT_SHIFT: u8 = 4;
 
 //==============================================================================
 // Structures
@@ -46,43 +45,35 @@ const FLAG_PAYLOAD_STATE_BIT: u8 = 3;
 //  Offset  Size    Data
 //  0       4       Origin IP
 //  4       2       Origin Port
-//  6       4       Target IP
-//  10      2       Target Port
-//  12      4       Remote IP
-//  16      2       Remote Port
-//  18      2       Payload Length
-//  20      1       Flags
-//  21      1       Migration Stage
-//  22      2       Checksum
+//  6       4       Remote IP
+//  10      2       Remote Port
+//  12      2       Payload Length
+//  14      2       Fragment Offset
+//  16      1       Flags + Stage
+//  17      1       Zero (unused)
+//  18      2       Checksum
 //
-//  TOTAL 24
+//  TOTAL 20
 //
 //
 //  Flags format:
 //  Bit number      Flag
 //  0               LOAD - Instructs the switch to load the entry into the migration tables.
-//  1               PREPARE_MIGRATION - Instructs `server_target` to prepare itself to receive a migrated connection.
-//  2               ACK - Notifies `server_origin` that its previous request has been acknowledged and completed.
-//  3               PAYLOAD_STATE - The payload of this segment contains the TCP state.
-//  4-7             Zero (unused)
-//
-// The flags are listed in decreasing priority.
+//  1               NEXT_FRAGMENT - Whether there is a fragment after this.
+//  4-7             Migration Stage.
 //  
 
 #[derive(Debug)]
 pub struct TcpMigHeader {
     /// Client-facing address of the origin server.
     pub origin: SocketAddrV4,
-    /// Client-facing address of the target server.
-    pub target: SocketAddrV4,
     /// Client's address.
     pub remote: SocketAddrV4,
     pub payload_length: u16,
+    pub fragment_offset: u16,
 
     pub flag_load: bool,
-    pub flag_prepare_migration: bool,
-    pub flag_ack: bool,
-    pub flag_payload_state: bool,
+    pub flag_next_fragment: bool,
 
     pub stage: MigrationStage,
 }
@@ -93,16 +84,14 @@ pub struct TcpMigHeader {
 
 impl TcpMigHeader {
     /// Creates a TcpMigration header.
-    pub fn new(origin: SocketAddrV4, target: SocketAddrV4, remote: SocketAddrV4, payload_length: u16, stage: MigrationStage) -> Self {
+    pub fn new(origin: SocketAddrV4, remote: SocketAddrV4, payload_length: u16, stage: MigrationStage) -> Self {
         Self {
             origin,
-            target,
             remote,
             payload_length,
+            fragment_offset: 0,
             flag_load: false,
-            flag_prepare_migration: false,
-            flag_ack: false,
-            flag_payload_state: false,
+            flag_next_fragment: false,
             stage,
         }
     }
@@ -128,45 +117,40 @@ impl TcpMigHeader {
             Ipv4Addr::new(hdr_buf[0], hdr_buf[1], hdr_buf[2], hdr_buf[3]),
             NetworkEndian::read_u16(&hdr_buf[4..6]),
         );
-        let target = SocketAddrV4::new(
+        let remote = SocketAddrV4::new(
             Ipv4Addr::new(hdr_buf[6], hdr_buf[7], hdr_buf[8], hdr_buf[9]),
             NetworkEndian::read_u16(&hdr_buf[10..12]),
         );
-        let remote = SocketAddrV4::new(
-            Ipv4Addr::new(hdr_buf[12], hdr_buf[13], hdr_buf[14], hdr_buf[15]),
-            NetworkEndian::read_u16(&hdr_buf[16..18]),
-        );
 
-        let payload_length = NetworkEndian::read_u16(&hdr_buf[18..20]);
+        let payload_length = NetworkEndian::read_u16(&hdr_buf[12..14]);
+        let fragment_offset = NetworkEndian::read_u16(&hdr_buf[14..16]);
 
         // Flags.
-        let flags = hdr_buf[20];
+        let flags = hdr_buf[16];
         let flag_load = (flags & (1 << FLAG_LOAD_BIT)) != 0;
-        let flag_prepare_migration = (flags & (1 << FLAG_PREPARE_MIGRATION_BIT)) != 0;
-        let flag_ack = (flags & (1 << FLAG_ACK_BIT)) != 0;
-        let flag_payload_state = (flags & (1 << FLAG_PAYLOAD_STATE_BIT)) != 0;
+        let flag_next_fragment = (flags & (1 << FLAG_NEXT_FRAGMENT)) != 0;
 
-        let stage: MigrationStage = match hdr_buf[21].try_into() {
+        let stage = (flags & 0xF0) >> STAGE_BIT_SHIFT;
+
+        let stage: MigrationStage = match stage.try_into() {
             Ok(stage) => stage,
             Err(e) => return Err(Fail::new(EBADMSG, &format!("Invalid TCPMig stage: {}", e))),
         };
 
         // Checksum payload.
         let payload_buf: &[u8] = &buf[TCPMIG_HEADER_SIZE..];
-        let checksum: u16 = NetworkEndian::read_u16(&hdr_buf[22..24]);
+        let checksum: u16 = NetworkEndian::read_u16(&hdr_buf[18..20]);
         if checksum != Self::checksum(&ipv4_hdr, hdr_buf, payload_buf) {
             return Err(Fail::new(EBADMSG, "TCPMig checksum mismatch"));
         }
 
         let header = Self {
             origin,
-            target,
             remote,
             payload_length,
+            fragment_offset,
             flag_load,
-            flag_prepare_migration,
-            flag_ack,
-            flag_payload_state,
+            flag_next_fragment,
             stage,
         };
 
@@ -187,25 +171,23 @@ impl TcpMigHeader {
 
         fixed_buf[0..4].copy_from_slice(&self.origin.ip().octets());
         NetworkEndian::write_u16(&mut fixed_buf[4..6], self.origin.port());
-        fixed_buf[6..10].copy_from_slice(&self.target.ip().octets());
-        NetworkEndian::write_u16(&mut fixed_buf[10..12], self.target.port());
-        fixed_buf[12..16].copy_from_slice(&self.remote.ip().octets());
-        NetworkEndian::write_u16(&mut fixed_buf[16..18], self.remote.port());
+        fixed_buf[6..10].copy_from_slice(&self.remote.ip().octets());
+        NetworkEndian::write_u16(&mut fixed_buf[10..12], self.remote.port());
 
-        NetworkEndian::write_u16(&mut fixed_buf[18..20], data.len() as u16);
-        fixed_buf[20] = self.serialize_flags();
-        fixed_buf[21] = self.stage as u8;
+        NetworkEndian::write_u16(&mut fixed_buf[12..14], self.payload_length);
+        NetworkEndian::write_u16(&mut fixed_buf[14..16], self.fragment_offset);
+        fixed_buf[16] = self.serialize_flags_and_stage();
+        fixed_buf[17] = 0;
 
         let checksum = Self::checksum(ipv4_hdr, fixed_buf, data);
-        NetworkEndian::write_u16(&mut fixed_buf[22..24], checksum);
+        NetworkEndian::write_u16(&mut fixed_buf[18..20], checksum);
     }
 
     #[inline(always)]
-    fn serialize_flags(&self) -> u8 {
+    fn serialize_flags_and_stage(&self) -> u8 {
         (if self.flag_load {1} else {0} << FLAG_LOAD_BIT)
-        | (if self.flag_prepare_migration {1} else {0} << FLAG_PREPARE_MIGRATION_BIT)
-        | (if self.flag_ack {1} else {0} << FLAG_ACK_BIT)
-        | (if self.flag_payload_state {1} else {0} << FLAG_PAYLOAD_STATE_BIT)
+        | (if self.flag_next_fragment {1} else {0} << FLAG_NEXT_FRAGMENT)
+        | ((self.stage as u8) << STAGE_BIT_SHIFT)
     }
 
     /// Computes the checksum of a TcpMigration segment.
@@ -219,7 +201,7 @@ impl TcpMigHeader {
 
         ipv4_hdr.get_src_addr().octets().chunks_exact(2)
         .chain(ipv4_hdr.get_dest_addr().octets().chunks_exact(2))
-        .chain(migration_hdr[0..22].chunks_exact(2)) // ignore checksum field
+        .chain(migration_hdr[0..18].chunks_exact(2)) // ignore checksum field
         .chain(data.chunks_exact(2))
         .chain(data_chunks_rem.chunks_exact(2))
         .fold(0, |sum: u16, e| sum.wrapping_add(NetworkEndian::read_u16(e)))
@@ -249,16 +231,25 @@ mod test {
     fn tcpmig_header() -> TcpMigHeader {
         TcpMigHeader {
             origin: SocketAddrV4::from_str("198.0.0.1:20000").unwrap(),
-            target: SocketAddrV4::from_str("198.0.0.2:20000").unwrap(),
             remote: SocketAddrV4::from_str("18.45.32.67:19465").unwrap(),
             payload_length: 8,
+            fragment_offset: 2,
             flag_load: false,
-            flag_prepare_migration: true,
-            flag_ack: false,
-            flag_payload_state: false,
+            flag_next_fragment: true,
             stage: MigrationStage::PrepareMigration,
         }
     }
+
+    const CHECKSUM: u16 = 48981;
+    const HDR_BYTES: [u8; TCPMIG_HEADER_SIZE] = [
+        198, 0, 0, 1, 0x4e, 0x20, // origin
+        18, 45, 32, 67, 0x4c, 0x09, // remote
+        0, 8, // payload length
+        0, 2, // fragment offset
+        0b0010_0010, // stage + flags
+        0,
+        ((CHECKSUM & 0xFF00) >> 8) as u8, (CHECKSUM & 0xFF) as u8,
+    ];
 
     /// Tests Checksum
     #[test]
@@ -267,21 +258,13 @@ mod test {
         let ipv4_hdr: Ipv4Header = ipv4_header();
 
         // Build fake TCPMig header.
-        let hdr: &[u8] = &[
-            198, 0, 0, 1, 0x4e, 0x20, // origin
-            198, 0, 0, 2, 0x4e, 0x20, // target
-            18, 45, 32, 67, 0x4c, 0x09, // remote
-            0, 8, // payload length
-            0b00000010, // flags
-            1,
-            0, 0
-        ];
+        let hdr: &[u8] = &HDR_BYTES;
 
         // Payload.
         let data: [u8; 8] = [0x0, 0x1, 0x0, 0x1, 0x0, 0x1, 0x0, 0x1];
 
         let checksum = TcpMigHeader::checksum(&ipv4_hdr, hdr, &data);
-        assert_eq!(checksum, 0xcb34);
+        assert_eq!(checksum, 48981);
     }
 
     /// Tests TCPMig serialization.
@@ -299,15 +282,7 @@ mod test {
         let mut buf: [u8; TCPMIG_HEADER_SIZE] = [0; TCPMIG_HEADER_SIZE];
 
         hdr.serialize(&mut buf, &ipv4_hdr, &data);
-        assert_eq!(buf, [
-            198, 0, 0, 1, 0x4e, 0x20, // origin
-            198, 0, 0, 2, 0x4e, 0x20, // target
-            18, 45, 32, 67, 0x4c, 0x09, // remote
-            0, 8, // payload length
-            0b00000010, // flags
-            1,
-            0xcb, 0x34
-        ]);
+        assert_eq!(buf, HDR_BYTES);
     }
 
     /// Tests TCPMig parsing.
@@ -320,15 +295,7 @@ mod test {
         let origin = SocketAddrV4::from_str("198.0.0.1:20000").unwrap();
         let target = SocketAddrV4::from_str("198.0.0.2:20000").unwrap();
         let remote = SocketAddrV4::from_str("18.45.32.67:19465").unwrap();
-        let hdr: [u8; TCPMIG_HEADER_SIZE] = [
-            198, 0, 0, 1, 0x4e, 0x20, // origin
-            198, 0, 0, 2, 0x4e, 0x20, // target
-            18, 45, 32, 67, 0x4c, 0x09, // remote
-            0, 8, // payload length
-            0b00000010, // flags
-            1,
-            0xcb, 0x34
-        ];
+        let hdr = HDR_BYTES;
 
         // Payload.
         let data: [u8; 8] = [0x0, 0x1, 0x0, 0x1, 0x0, 0x1, 0x0, 0x1];
@@ -341,13 +308,11 @@ mod test {
         match TcpMigHeader::parse_from_slice(&ipv4_hdr, &buf) {
             Ok((hdr, buf)) => {
                 assert_eq!(hdr.origin, origin);
-                assert_eq!(hdr.target, target);
                 assert_eq!(hdr.remote, remote);
                 assert_eq!(hdr.payload_length, 8);
+                assert_eq!(hdr.fragment_offset, 2);
                 assert_eq!(hdr.flag_load, false);
-                assert_eq!(hdr.flag_prepare_migration, true);
-                assert_eq!(hdr.flag_ack, false);
-                assert_eq!(hdr.flag_payload_state, false);
+                assert_eq!(hdr.flag_next_fragment, true);
                 assert_eq!(hdr.stage, MigrationStage::PrepareMigration);
                 assert_eq!(buf.len(), 8);
             },
