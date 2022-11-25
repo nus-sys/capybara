@@ -118,8 +118,20 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
         println!("pong {:?}", i);
 
-        libos.notify_migration_safety(qd)?;
+        if libos.notify_migration_safety(qd)? {
+            break;
+        }
     }
+
+    let qt: QToken = match libos.accept(sockqd) {
+        Ok(qt) => qt,
+        Err(e) => panic!("accept failed: {:?}", e.cause),
+    };
+    let qd: QDesc = match libos.wait2(qt) {
+        Ok((_, OperationResult::Accept(qd))) => qd,
+        Err(e) => panic!("operation failed: {:?}", e.cause),
+        _ => unreachable!(),
+    };
 
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");

@@ -294,7 +294,7 @@ impl LibOS {
     }
 
     #[cfg(feature = "tcp-migration")]
-    pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<(), Fail> {
+    pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<bool, Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.notify_migration_safety(fd),
         }

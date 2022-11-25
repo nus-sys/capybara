@@ -649,7 +649,7 @@ impl TcpPeer {
     }
 
     #[cfg(feature = "tcp-migration")]
-    pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<(), Fail> {
+    pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<bool, Fail> {
         let inner = self.inner.borrow();
         let (local, remote) = match inner.sockets.get(&fd) {
             None => {
@@ -670,9 +670,10 @@ impl TcpPeer {
             let state = self.migrate_out_tcp_connection(fd)?;
             let mut inner = self.inner.borrow_mut();
             inner.tcpmig.migrate_out(handle, state);
+            return Ok(true)
         }
 
-        Ok(())
+        Ok(false)
     }
 
     /// 1) Change status of our socket to MigratedOut.
