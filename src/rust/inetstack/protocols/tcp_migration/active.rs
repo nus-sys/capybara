@@ -7,16 +7,16 @@
 
 use super::{segment::{
     TcpMigHeader,
-    TcpMigSegment,
+    TcpMigSegment, TcpMigDefragmenter,
 }, MigrationStage};
 use crate::{
     inetstack::protocols::{
             ethernet2::{
                 EtherType2,
-                Ethernet2Header,
+                Ethernet2Header, ETHERNET2_HEADER_SIZE,
             },
             ip::IpProtocol,
-            ipv4::Ipv4Header, tcp::{migration::TcpState, segment::TcpHeader, TcpPeer},
+            ipv4::{Ipv4Header, IPV4_HEADER_DEFAULT_SIZE}, tcp::{migration::TcpState, segment::TcpHeader, TcpPeer},
         },
     runtime::{
         fail::Fail,
@@ -44,7 +44,6 @@ use crate::timer;
 //======================================================================================================================
 
 
-
 //======================================================================================================================
 // Structures
 //======================================================================================================================
@@ -70,6 +69,8 @@ pub struct ActiveMigration {
     is_prepared: bool,
 
     recv_queue: VecDeque<(Ipv4Header, TcpHeader, Buffer)>,
+
+    defragmenter: TcpMigDefragmenter,
 }
 
 //======================================================================================================================
@@ -97,6 +98,7 @@ impl ActiveMigration {
             last_sent_stage: MigrationStage::None,
             is_prepared: false,
             recv_queue: VecDeque::new(),
+            defragmenter: TcpMigDefragmenter::new(),
         }
     }
 
@@ -137,6 +139,12 @@ impl ActiveMigration {
             MigrationStage::PrepareMigrationAck => {
                 match hdr.stage {
                     MigrationStage::ConnectionState => {
+                        // Handle fragmentation.
+                        let (hdr, buf) = match self.defragmenter.defragment(hdr, buf) {
+                            Some((hdr, buf)) => (hdr, buf),
+                            None => return Ok(MigrationRequestStatus::Accepted),
+                        };
+
                         let mut state = match TcpState::deserialize(&buf) {
                             Ok(state) => state,
                             Err(..) => return Err(Fail::new(libc::EBADMSG, "invalid TCP state")),
@@ -157,7 +165,7 @@ impl ActiveMigration {
                 }
             },
 
-            // Expect FIN and close active migration. 
+            // Expect FIN and close active migration.
             MigrationStage::ConnectionStateAck => {
                 // TODO: Close active migration.
             },
@@ -227,14 +235,26 @@ impl ActiveMigration {
         buf: Buffer,
     ) {
         debug!("TCPMig send {:?}", tcpmig_hdr);
+        eprintln!("TCPMig sent: {:#?}", tcpmig_hdr);
+
+        let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::TCPMig);
+
+        const MTU: usize = 1500; // TEMP
+        let max_fragment_size =  MTU - ip_hdr.compute_size() - tcpmig_hdr.size();
+
+        if buf.len() / max_fragment_size > u16::MAX as usize {
+            todo!("Graceful rejection of migration");
+        }
 
         let segment = TcpMigSegment::new(
             Ethernet2Header::new(self.remote_link_addr, self.local_link_addr, EtherType2::Ipv4),
-            Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::TCPMig),
+            ip_hdr,
             tcpmig_hdr,
             buf,
         );
-        eprintln!("TCPMig sent: {:#?}", segment);
-        self.rt.transmit(Box::new(segment));
+
+        for fragment in segment.fragments(max_fragment_size) {
+            self.rt.transmit(Box::new(fragment));
+        }
     }
 }

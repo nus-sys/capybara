@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 mod header;
+mod defragmenter;
 
 //==============================================================================
 // Imports
@@ -13,7 +14,7 @@ use crate::{
         ipv4::Ipv4Header,
     },
     runtime::{
-        memory::Buffer,
+        memory::{Buffer, DataBuffer},
         network::PacketBuf,
     },
 };
@@ -24,6 +25,7 @@ use crate::{
 
 pub use self::header::TCPMIG_HEADER_SIZE;
 pub use header::TcpMigHeader;
+pub use defragmenter::TcpMigDefragmenter;
 
 //==============================================================================
 // Structures
@@ -39,6 +41,13 @@ pub struct TcpMigSegment {
     tcpmig_hdr: TcpMigHeader,
     /// Payload
     data: Buffer,
+}
+
+/// A generator of fragments of a [TcpMigSegment].
+pub struct TcpMigFragmenter {
+    segment: TcpMigSegment,
+    max_fragment_size: usize,
+    current_fragment: u16,
 }
 
 //==============================================================================
@@ -58,6 +67,14 @@ impl TcpMigSegment {
             ipv4_hdr,
             tcpmig_hdr,
             data,
+        }
+    }
+
+    pub fn fragments(self, max_fragment_size: usize) -> TcpMigFragmenter {
+        TcpMigFragmenter {
+            segment: self,
+            max_fragment_size,
+            current_fragment: 0,
         }
     }
 }
@@ -107,6 +124,36 @@ impl PacketBuf for TcpMigSegment {
     /// Returns the payload of the target TCPMig segment.
     fn take_body(&self) -> Option<Buffer> {
         Some(self.data.clone())
+    }
+}
+
+impl Iterator for TcpMigFragmenter {
+    type Item = TcpMigSegment;
+
+    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
+        if self.segment.data.len() == 0 {
+            None
+        } else {
+            let ethernet2_hdr = self.segment.ethernet2_hdr.clone();
+            let ipv4_hdr = self.segment.ipv4_hdr.clone();
+            let mut tcpmig_hdr = self.segment.tcpmig_hdr.clone();
+
+            let size = if self.segment.data.len() <= self.max_fragment_size {
+                tcpmig_hdr.flag_next_fragment = false;
+                self.segment.data.len()
+            } else {
+                tcpmig_hdr.flag_next_fragment = true;
+                self.max_fragment_size
+            };
+
+            let data = Buffer::Heap(DataBuffer::from_slice(&self.segment.data[0..size]));
+            self.segment.data.adjust(size);
+
+            tcpmig_hdr.fragment_offset = self.current_fragment;
+            self.current_fragment += 1;
+
+            Some(TcpMigSegment::new(ethernet2_hdr, ipv4_hdr, tcpmig_hdr, data))
+        }
     }
 }
 
@@ -191,5 +238,47 @@ mod test {
         // Do it.
         segment.write_header(&mut buf);
         assert_eq!(buf, hdr);
+    }
+
+    #[test]
+    fn test_tcpmig_fragmentation() {
+        // Build fake Ethernet2 header.
+        let dst_addr: MacAddress = MacAddress::new([0xd, 0xe, 0xa, 0xd, 0x0, 0x0]);
+        let src_addr: MacAddress = MacAddress::new([0xb, 0xe, 0xe, 0xf, 0x0, 0x0]);
+        let ether_type: EtherType2 = EtherType2::Ipv4;
+        let ethernet2_hdr: Ethernet2Header = Ethernet2Header::new(dst_addr, src_addr, ether_type);
+
+        // Build fake Ipv4 header.
+        let src_addr: Ipv4Addr = Ipv4Addr::new(198, 0, 0, 1);
+        let dst_addr: Ipv4Addr = Ipv4Addr::new(198, 0, 0, 2);
+        let protocol: IpProtocol = IpProtocol::TCPMig;
+        let ipv4_hdr: Ipv4Header = Ipv4Header::new(src_addr, dst_addr, protocol);
+
+        // Build fake TCPMig header.
+        let tcpmig_hdr = tcpmig_header();
+
+        // Payload.
+        let bytes: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+        let data: Buffer = Buffer::Heap(DataBuffer::from_slice(&bytes));
+
+        let segment = TcpMigSegment::new(ethernet2_hdr, ipv4_hdr, tcpmig_hdr, data);
+
+        let fragments: Vec<TcpMigSegment> = segment.fragments(3).collect();
+
+        use std::ops::Deref;
+
+        assert_eq!(fragments.len(), 3);
+
+        assert!(fragments[0].tcpmig_hdr.flag_next_fragment);
+        assert_eq!(fragments[0].tcpmig_hdr.fragment_offset, 0);
+        assert_eq!(fragments[0].data.deref(), &[1, 2, 3]);
+
+        assert!(fragments[1].tcpmig_hdr.flag_next_fragment);
+        assert_eq!(fragments[1].tcpmig_hdr.fragment_offset, 1);
+        assert_eq!(fragments[1].data.deref(), &[4, 5, 6]);
+
+        assert!(!fragments[2].tcpmig_hdr.flag_next_fragment);
+        assert_eq!(fragments[2].tcpmig_hdr.fragment_offset, 2);
+        assert_eq!(fragments[2].data.deref(), &[7, 8]);
     }
 }

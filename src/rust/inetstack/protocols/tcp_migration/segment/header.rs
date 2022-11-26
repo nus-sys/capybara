@@ -63,7 +63,7 @@ const STAGE_BIT_SHIFT: u8 = 4;
 //  4-7             Migration Stage.
 //  
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TcpMigHeader {
     /// Client-facing address of the origin server.
     pub origin: SocketAddrV4,
