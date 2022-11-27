@@ -17,7 +17,6 @@ use crate::{
             },
             tcp::{
                 operations::ConnectFuture,
-                migration::TcpState,
             },
             udp::UdpOperation,
             Peer,
@@ -73,8 +72,6 @@ use ::std::{
 #[cfg(feature = "profiler")]
 use crate::timer;
 
-use self::protocols::tcp::migration::{TcpMigrationSegment, TcpMigrationHeader};
-
 //==============================================================================
 // Exports
 //==============================================================================
@@ -94,6 +91,10 @@ pub mod protocols;
 
 const TIMER_RESOLUTION: usize = 64;
 const MAX_RECV_ITERS: usize = 2;
+
+//==============================================================================
+// InetStack
+//==============================================================================
 
 pub struct InetStack {
     arp: ArpPeer,
@@ -119,6 +120,7 @@ impl InetStack {
         arp_config: ArpConfig,
     ) -> Result<Self, Fail> {
         let file_table: IoQueueTable = IoQueueTable::new();
+
         let arp: ArpPeer = ArpPeer::new(
             rt.clone(),
             scheduler.clone(),
@@ -496,30 +498,6 @@ impl InetStack {
         }
     }
 
-    /// Checks if an operation has completed and returns the result if it has.
-    pub fn trywait2(&mut self, qt: QToken) -> Result<Option<(QDesc, OperationResult)>, Fail> {
-        #[cfg(feature = "profiler")]
-        timer!("inetstack::trywait2");
-        trace!("trywait2(): qt={:?}", qt);
-
-        // Retrieve associated schedule handle.
-        let handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
-            Some(handle) => handle,
-            None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
-        };
-
-        // Poll first, so as to give pending operations a chance to complete.
-        self.poll_bg_work();
-
-        // If the operation has completed, extract the result and return it.
-        if handle.has_completed() {
-            trace!("trywait2() qt={:?} completed!", qt);
-            Ok(Some(self.take_operation(handle)))
-        } else {
-            Ok(None)
-        }
-    }
-
     /// Waits for an I/O operation to complete or a timeout to expire.
     pub fn timedwait2(&mut self, qt: QToken, abstime: Option<SystemTime>) -> Result<(QDesc, OperationResult), Fail> {
         #[cfg(feature = "profiler")]
@@ -685,264 +663,8 @@ impl InetStack {
     }
 }
 
-//==============================================================================
-// TCP Migration
-//==============================================================================
-
-#[derive(Debug, Clone, Copy)]
-pub struct MigrationHandle {
-    server_target_migration_fd: QDesc,
-    conn_fd: QDesc,
-    origin: SocketAddrV4,
-    target: SocketAddrV4,
-    remote: SocketAddrV4,
-}
-
-#[derive(Debug)]
-pub struct TcpMigrationLock {
-    local: SocketAddrV4,
-    remote: SocketAddrV4,
-}
-
+#[cfg(feature = "tcp-migration")]
 impl InetStack {
-    fn get_origin(&self, fd: QDesc) -> Result<Option<SocketAddrV4>, Fail> {
-        match self.file_table.get(fd) {
-            Some(qtype) => {
-                match QType::try_from(qtype) {
-                    Ok(QType::TcpSocket) => {
-                        self.ipv4.tcp.get_origin(fd)
-                    }
-                    _ => {
-                        info!("Found unsupported socket type: {}", qtype);
-                        Err(Fail::new(EINVAL, "invalid queue type"))
-                    }
-                }
-            },
-            None => {
-                panic!("No such socket found on file table..");
-            }
-        }
-    }
-
-    fn get_remote(&self, fd: QDesc) -> Result<SocketAddrV4, Fail> {
-        match self.file_table.get(fd) {
-            Some(qtype) => {
-                match QType::try_from(qtype) {
-                    Ok(QType::TcpSocket) => {
-                        self.ipv4.tcp.get_remote(fd)
-                    }
-                    _ => {
-                        info!("Found unsupported socket type: {}", qtype);
-                        Err(Fail::new(EINVAL, "invalid queue type"))
-                    }
-                }
-            },
-            None => {
-                panic!("No such socket found on file table..");
-            }
-        }
-    }
-
-    fn migrate_out_tcp_connection(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
-        match self.file_table.get(fd) {
-            Some(qtype) => {
-                match QType::try_from(qtype) {
-                    Ok(QType::TcpSocket) => {
-                        let conn = self.ipv4.tcp.migrate_out_tcp_connection(fd)?;
-                        self.file_table.free(fd);
-                        Ok(conn)
-                    }
-                    _ => {
-                        info!("Found unsupported socket type: {}", qtype);
-                        Err(Fail::new(EINVAL, "invalid queue type"))
-                    }
-                }
-            },
-            None => {
-                Err(Fail::new(EBADF, "bad file descriptor"))
-            }
-        }
-    }
-
-    fn prepare_migrating_in(&mut self, remote: SocketAddrV4) -> Result<(), Fail> {
-        self.ipv4.tcp.prepare_migrating_in(remote)
-    }
-
-    fn migrate_in_tcp_connection(&mut self, state: TcpState, origin: SocketAddrV4) -> Result<QDesc, Fail> {
-        let qd = self.file_table.alloc(u32::from(QType::TcpSocket));
-        self.ipv4.tcp.migrate_in_tcp_connection(qd, state, origin)?;
-        Ok(qd)
-    }
-
-    /// 
-    /// Performs the complete process (synchronously, through TCP communication) to migrate in a tcp connection,
-    /// provided the descriptor of a connection to the origin server.
-    /// 
-    /// TODO: Incorporate all parameters into the process and make this a parameterless method.
-    /// 
-    pub fn perform_tcp_migration_in_sync(&mut self, server_origin_fd: QDesc) -> Result<QDesc, Fail> {
-        // PREPARE_MIGRATION
-
-        let qt = self.pop(server_origin_fd)?;
-        let seg = match self.wait2(qt) {
-            Ok((_, OperationResult::Pop(_, buf))) => {
-                let seg = TcpMigrationSegment::deserialize(&buf);
-                match seg {
-                    Ok(seg) => seg,
-                    Err(msg) => return Err(Fail::new(libc::EINVAL, msg)),
-                }
-            },
-            Err(e) => return Err(e),
-            _ => unreachable!(),
-        };
-
-        // Should have been ACKed and switch should have started redirecting packets to server_dest.
-        if !seg.header.flag_prepare_migration {
-            return Err(Fail::new(libc::EINVAL, "improper request from server_origin"));
-        }
-        eprintln!("RECEIVED PREPARE_MIGRATION");
-        // eprintln!("Header: {:#?}", seg.header);
-
-        let TcpMigrationHeader { origin, target, remote, .. } = seg.header;
-
-
-        // PREPARE_MIGRATION_ACK
-
-        self.prepare_migrating_in(remote)?;
-        
-        let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, target, remote), Vec::new());
-        seg.header.flag_ack = true;
-        seg.header.flag_load = true;
-
-        
-        
-        let qt = self.push2(server_origin_fd, &seg.serialize())?;
-        self.wait2(qt)?;
-        eprintln!("SENT PREPARE_MIGRATION_ACK");
-        // eprintln!("Header: {:#?}", seg.header);
-        // PAYLOAD_STATE
-
-        let qt = self.pop(server_origin_fd)?;
-        let seg = match self.wait2(qt) {
-            Ok((_, OperationResult::Pop(_, buf))) => {
-                let seg = TcpMigrationSegment::deserialize(&buf);
-                match seg {
-                    Ok(seg) => seg,
-                    Err(msg) => return Err(Fail::new(libc::EINVAL, msg)),
-                }
-            },
-            Err(e) => return Err(e),
-            _ => unreachable!(),
-        };
-
-        // Should have been ACKed and switch should have started redirecting packets to server_dest.
-        if !seg.header.flag_payload_state {
-            return Err(Fail::new(libc::EINVAL, "improper state payload response from server_origin"));
-        }
-
-        let state = TcpState::deserialize(&seg.payload).expect("TcpState deserialization failed");
-
-        // eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
-        eprintln!("RECEIVED MIGRATION_STATE");
-        self.migrate_in_tcp_connection(state, origin)
-    }
-
-    /// 
-    /// Initiates the process (through TCP communication) to migrate out a tcp connection,
-    /// provided the descriptor of a connection to the destination server.
-    /// 
-    /// `server_origin_listen`: Listening address for connection on origin server.
-    /// 
-    /// `server_dest_listen`: Listening address for connection on destination server.
-    /// 
-    /// TODO: See if it is possible to incorporate all parameters into the process and make this a parameterless method.
-    /// 
-    pub fn initiate_tcp_migration_out(
-        &mut self,
-        server_target_migration_fd: QDesc, // TODO: create migration connection here instead
-        conn_fd: QDesc,
-        server_origin_listen: SocketAddrV4,
-        server_target_listen: SocketAddrV4,
-    ) -> Result<MigrationHandle, Fail> {
-        let origin = self.get_origin(conn_fd)?.unwrap_or(server_origin_listen);
-        let target = server_target_listen;
-        let remote = self.get_remote(conn_fd)?;
-
-        // PREPARE_MIGRATION
-
-        let mut seg = TcpMigrationSegment::new(TcpMigrationHeader::new(origin, target, remote), Vec::new());
-        seg.header.flag_prepare_migration = true;
-
-        let qt = self.push2(server_target_migration_fd, &seg.serialize())?;
-        self.wait2(qt)?;
-        eprintln!("SENT PREPARE_MIGRATION");
-
-        self.ipv4.tcp.initiate_migrating_out(origin, target, remote)?;
-
-        Ok(MigrationHandle{
-            server_target_migration_fd,
-            conn_fd,
-            origin,
-            target,
-            remote,
-        })
-    }
-
-    /// 
-    /// Tries to complete migrating out a tcp connection. Returns whether it succeeded.
-    /// 
-    /// NOTE: If successful, this method will close the TCP connection (on the local side) that the handle was obtained from.
-    /// 
-    pub fn try_complete_tcp_migration_out(&mut self, handle: MigrationHandle) -> Result<bool, Fail> {
-        let MigrationHandle {
-            server_target_migration_fd,
-            conn_fd,
-            origin,
-            target,
-            remote,
-        } = handle;
-
-        if !self.ipv4.tcp.is_initiate_migrating_out_done(origin, target, remote)? {
-            return Ok(false);
-        }
-
-        // PAYLOAD_STATE
-
-        let mut state = self.migrate_out_tcp_connection(conn_fd)?;
-        state.local = target;
-
-        let mut seg = TcpMigrationSegment::new(
-            TcpMigrationHeader::new(origin, target, remote),
-            state.serialize().expect("TcpState serialization failed")
-        );
-        seg.header.flag_payload_state = true;
-        seg.header.origin = origin;
-
-        
-        let qt = self.push2(server_target_migration_fd, &seg.serialize())?;
-        self.wait2(qt)?;
-        eprintln!("SENT MIGRATION_STATE");
-        // eprintln!("Header: {:#?}\nState: {:#?}", seg.header, state);
-
-        // Maybe get another ACK from dest?
-
-        Ok(true)
-    }
-
-    /// Prevent migration of the connection represented by `qd` until `tcp_migration_unlock()` is called.
-    /// 
-    /// Returns the lock to use when the connection needs to be unlocked.
-    pub fn tcp_migration_lock(&mut self, qd: QDesc) -> Result<TcpMigrationLock, Fail> {
-        let (local, remote) = self.ipv4.tcp.tcp_migration_lock(qd)?;
-        Ok(TcpMigrationLock { local, remote })
-    }
-
-    /// Allow migration of the migration-locked connection represented by `lock`.
-    pub fn tcp_migration_unlock(&mut self, lock: TcpMigrationLock) -> Result<(), Fail> {
-        self.ipv4.tcp.tcp_migration_unlock((lock.local, lock.remote))
-    }
-
-    #[cfg(feature = "tcp-migration")]
     pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<bool, Fail> {
         self.ipv4.tcp.notify_migration_safety(fd)
     }

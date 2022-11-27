@@ -10,14 +10,14 @@ use super::{segment::{
     TcpMigSegment, TcpMigDefragmenter,
 }, MigrationStage};
 use crate::{
-    inetstack::protocols::{
+    inetstack::{protocols::{
             ethernet2::{
                 EtherType2,
-                Ethernet2Header, ETHERNET2_HEADER_SIZE,
+                Ethernet2Header,
             },
             ip::IpProtocol,
-            ipv4::{Ipv4Header, IPV4_HEADER_DEFAULT_SIZE}, tcp::{migration::TcpState, segment::TcpHeader, TcpPeer},
-        },
+            ipv4::Ipv4Header, tcp::{segment::TcpHeader, peer::TcpState},
+        }},
     runtime::{
         fail::Fail,
         memory::{Buffer, DataBuffer},
@@ -50,8 +50,9 @@ use crate::timer;
 
 #[derive(PartialEq, Eq)]
 pub enum MigrationRequestStatus {
-    Accepted,
+    Ok,
     Rejected,
+    StateReceived(TcpState),
 }
 
 pub struct ActiveMigration {
@@ -68,7 +69,7 @@ pub struct ActiveMigration {
     last_sent_stage: MigrationStage,
     is_prepared: bool,
 
-    recv_queue: VecDeque<(Ipv4Header, TcpHeader, Buffer)>,
+    pub recv_queue: VecDeque<(Ipv4Header, TcpHeader, Buffer)>,
 
     defragmenter: TcpMigDefragmenter,
 }
@@ -106,7 +107,7 @@ impl ActiveMigration {
         self.is_prepared
     }
 
-    pub fn process_packet(&mut self, tcp_peer: &mut TcpPeer, hdr: TcpMigHeader, buf: Buffer) -> Result<MigrationRequestStatus, Fail> {
+    pub fn process_packet(&mut self, hdr: TcpMigHeader, buf: Buffer) -> Result<MigrationRequestStatus, Fail> {
         #[inline]
         fn next_header(mut hdr: TcpMigHeader, next_stage: MigrationStage) -> TcpMigHeader {
             hdr.stage = next_stage;
@@ -142,7 +143,7 @@ impl ActiveMigration {
                         // Handle fragmentation.
                         let (hdr, buf) = match self.defragmenter.defragment(hdr, buf) {
                             Some((hdr, buf)) => (hdr, buf),
-                            None => return Ok(MigrationRequestStatus::Accepted),
+                            None => return Ok(MigrationRequestStatus::Ok),
                         };
 
                         let mut state = match TcpState::deserialize(&buf) {
@@ -153,13 +154,14 @@ impl ActiveMigration {
                         // Overwrite local address.
                         state.local = SocketAddrV4::new(self.local_ipv4_addr, self.origin.port());
 
-                        // Migrate in TCP state, allocate FD, allow accept() to return new FD.
-                        eprintln!("*** Migrating in state ***");
+                        eprintln!("*** Received state ***");
 
                         // ACK CONNECTION_STATE.
                         let hdr = next_header(hdr, MigrationStage::ConnectionStateAck);
                         self.last_sent_stage = MigrationStage::ConnectionStateAck;
                         self.send(hdr, empty_buffer());
+
+                        return Ok(MigrationRequestStatus::StateReceived(state))
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE"))
                 }
@@ -200,7 +202,7 @@ impl ActiveMigration {
                 }
             },
         };
-        Ok(MigrationRequestStatus::Accepted)
+        Ok(MigrationRequestStatus::Ok)
     }
 
     pub fn initiate_migration(&mut self) {

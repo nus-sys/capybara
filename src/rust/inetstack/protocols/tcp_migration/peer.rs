@@ -5,40 +5,28 @@
 // Imports
 //==============================================================================
 
-use super::{segment::{
-        TcpMigHeader,
-        TcpMigSegment,
-    }, active::ActiveMigration};
+use super::{segment::TcpMigHeader, active::ActiveMigration};
 use crate::{
     inetstack::protocols::{
-            arp::ArpPeer,
-            ethernet2::{
-                EtherType2,
-                Ethernet2Header,
+            ipv4::Ipv4Header, 
+            tcp::{
+                segment::TcpHeader, peer::TcpState,
             },
-            ip::IpProtocol,
-            ipv4::Ipv4Header, tcp::{segment::TcpHeader, migration::TcpState, TcpPeer}, tcp_migration::{MigrationStage, active::MigrationRequestStatus},
+            tcp_migration::{
+                MigrationStage,
+                active::MigrationRequestStatus
+            },
         },
     runtime::{
         fail::Fail,
-        memory::{Buffer, DataBuffer},
+        memory::Buffer,
         network::{
             types::MacAddress,
             NetworkRuntime,
         },
-        QDesc,
-    },
-    scheduler::{
-        Scheduler,
-        SchedulerHandle,
     },
 };
-use ::libc::{
-    EAGAIN,
-    EBADF,
-    EEXIST,
-};
-use std::{cell::RefCell};
+use std::{cell::RefCell, collections::VecDeque};
 use ::std::{
     collections::HashMap,
     net::{
@@ -50,12 +38,6 @@ use ::std::{
 
 #[cfg(feature = "profiler")]
 use crate::timer;
-
-//======================================================================================================================
-// Constants
-//======================================================================================================================
-
-
 
 //======================================================================================================================
 // Structures
@@ -81,6 +63,11 @@ struct Inner {
     /// 
     /// key = (target, remote).
     origins: HashMap<(SocketAddrV4, SocketAddrV4), SocketAddrV4>,
+
+    /// Connections ready to be migrated-in.
+    /// 
+    /// key = local.
+    incoming_connections: HashMap<SocketAddrV4, VecDeque<TcpState>>,
 
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
@@ -139,7 +126,7 @@ impl TcpMigPeer {
     }
 
     /// Consumes the payload from a buffer.
-    pub fn receive(&mut self, tcp_peer: &mut TcpPeer, ipv4_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
+    pub fn receive(&mut self, ipv4_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         #[cfg(feature = "profiler")]
         timer!("tcpmig::receive");
 
@@ -176,9 +163,21 @@ impl TcpMigPeer {
             None => return Err(Fail::new(libc::EINVAL, "no such active migration")),
         };
 
-        if active.process_packet(tcp_peer, hdr, buf)? == MigrationRequestStatus::Rejected {
-            todo!("handle migration rejection");
-        }
+        match active.process_packet(hdr, buf)? {
+            MigrationRequestStatus::Rejected => todo!("handle migration rejection"),
+            MigrationRequestStatus::StateReceived(state) => {
+                use std::collections::hash_map::Entry::*;
+                match inner.incoming_connections.entry(state.local) {
+                    Occupied(mut entry) => {
+                        entry.get_mut().push_back(state);
+                    },
+                    Vacant(entry) => {
+                        entry.insert(VecDeque::new()).push_back(state);
+                    },
+                };
+            },
+            MigrationRequestStatus::Ok => (),
+        };
 
         Ok(())
     }
@@ -231,7 +230,7 @@ impl TcpMigPeer {
         }
     }
 
-    pub fn try_buffer_packet(&self, target: SocketAddrV4, remote: SocketAddrV4, ip_hdr: Ipv4Header, tcp_hdr: TcpHeader, buf: Buffer) -> Result<(), ()> {
+    pub fn try_buffer_packet(&mut self, target: SocketAddrV4, remote: SocketAddrV4, ip_hdr: Ipv4Header, tcp_hdr: TcpHeader, buf: Buffer) -> Result<(), ()> {
         let mut inner = self.inner.borrow_mut();
 
         let origin = match inner.origins.get(&(target, remote)) {
@@ -245,6 +244,32 @@ impl TcpMigPeer {
                 Ok(())
             },
             None => Err(()),
+        }
+    }
+
+    pub fn try_get_connection(&mut self, local: SocketAddrV4) -> Option<TcpState> {
+        let mut inner = self.inner.borrow_mut();
+        
+        match inner.incoming_connections.get_mut(&local) {
+            Some(queue) => match queue.pop_front() {
+                Some(state) => Some(state),
+                None => None,
+            },
+            None => None,
+        }
+    }
+
+    pub fn take_buffer_queue(&mut self, target: SocketAddrV4, remote: SocketAddrV4) -> Result<VecDeque<(Ipv4Header, TcpHeader, Buffer)>, Fail> {
+        let mut inner = self.inner.borrow_mut();
+
+        let origin = match inner.origins.get(&(target, remote)) {
+            Some(origin) => *origin,
+            None => return Err(Fail::new(libc::EINVAL, "no origin found")),
+        };
+
+        match inner.active_migrations.get_mut(&(origin, remote)) {
+            Some(active) => Ok(active.recv_queue.drain(..).collect()),
+            None => Err(Fail::new(libc::EINVAL, "no active migration found")),
         }
     }
 
@@ -275,6 +300,7 @@ impl Inner {
             local_ipv4_addr,
             active_migrations: HashMap::new(),
             origins: HashMap::new(),
+            incoming_connections: HashMap::new(),
             //background: handle,
         }
     }

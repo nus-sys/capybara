@@ -26,8 +26,7 @@ use crate::{
         },
         QDesc,
         QToken,
-    },
-    inetstack::{MigrationHandle, TcpMigrationLock},
+    }
 };
 use ::std::{
     env,
@@ -104,20 +103,6 @@ impl LibOS {
     pub fn wait2(&mut self, qt: QToken) -> Result<(QDesc, OperationResult), Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.wait2(qt),
-        }
-    }
-
-    /// Checks if an operation has completed and returns the result if it has.
-    pub fn trywait2(&mut self, qt: QToken) -> Result<Option<(QDesc, OperationResult)>, Fail> {
-        match self {
-            LibOS::NetworkLibOS(libos) => libos.trywait2(qt),
-        }
-    }
-
-    /// Waits for an I/O operation to complete or a timeout to expire.
-    pub fn timedwait2(&mut self, qt: QToken, abstime: Option<SystemTime>) -> Result<(QDesc, OperationResult), Fail> {
-        match self {
-            LibOS::NetworkLibOS(libos) => libos.timedwait2(qt, abstime),
         }
     }
 
@@ -236,64 +221,11 @@ impl LibOS {
         match self {
             LibOS::NetworkLibOS(libos) => libos.sgafree(sga),
         }
-    }
+    }    
+}
 
-    /// 
-    /// Initiates the process (through TCP communication) to migrate out a tcp connection,
-    /// provided the descriptor of a connection to the destination server.
-    /// 
-    /// `server_origin_listen`: Listening address for connection on origin server.
-    /// 
-    /// `server_dest_listen`: Listening address for connection on destination server.
-    /// 
-    pub fn initiate_tcp_migration_out(
-        &mut self,
-        server_target_fd: QDesc,
-        conn_fd: QDesc,
-        server_origin_listen: SocketAddrV4,
-        server_target_listen: SocketAddrV4,
-    ) -> Result<MigrationHandle, Fail> {
-        match self {
-            LibOS::NetworkLibOS(libos) => libos.initiate_tcp_migration_out(
-                server_target_fd,
-                conn_fd,
-                server_origin_listen,
-                server_target_listen
-            ),
-        }
-    }
-
-    pub fn try_complete_tcp_migration_out(&mut self, handle: MigrationHandle) -> Result<bool, Fail> {
-        match self {
-            LibOS::NetworkLibOS(libos) => libos.try_complete_tcp_migration_out(handle),
-        }
-    }
-
-    /// Performs the complete process (synchronously, through TCP communication) to migrate in a tcp connection,
-    /// provided the descriptor of a connection to the origin server.
-    pub fn perform_tcp_migration_in_sync(&mut self, server_origin_fd: QDesc) -> Result<QDesc, Fail> {
-        match self {
-            LibOS::NetworkLibOS(libos) => libos.perform_tcp_migration_in_sync(server_origin_fd),
-        }
-    }
-
-    /// Prevent migration of the connection represented by `qd` until `tcp_migration_unlock()` is called.
-    /// 
-    /// Returns the lock to use when the connection needs to be unlocked.
-    pub fn tcp_migration_lock(&mut self, qd: QDesc) -> Result<TcpMigrationLock, Fail> {
-        match self {
-            LibOS::NetworkLibOS(libos) => libos.tcp_migration_lock(qd),
-        }
-    }
-
-    /// Allow migration of the migration-locked connection represented by `lock`.
-    pub fn tcp_migration_unlock(&mut self, lock: TcpMigrationLock) -> Result<(), Fail> {
-        match self {
-            LibOS::NetworkLibOS(libos) => libos.tcp_migration_unlock(lock),
-        }
-    }
-
-    #[cfg(feature = "tcp-migration")]
+#[cfg(all(feature = "catnip-libos", feature = "tcp-migration"))]
+impl LibOS {
     /// Returns true if migration was done.
     pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<bool, Fail> {
         match self {

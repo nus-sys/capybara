@@ -132,48 +132,12 @@ impl Sender {
         }
     }
 
-    pub fn migrated_in(
-        unsent_seq_no: SeqNumber,
-        send_unacked: SeqNumber,
-        send_next: SeqNumber,
-        send_window: u32,
-        send_window_last_update_seq: SeqNumber,
-        send_window_last_update_ack: SeqNumber,
-        window_scale: u8,
-        mss: usize,
-        unacked_queue: VecDeque<UnackedSegment>,
-        unsent_queue: VecDeque<Buffer>,
-    ) -> Self {
-        Self {
-            send_unacked: WatchedValue::new(send_unacked),
-            unacked_queue: RefCell::new(unacked_queue),
-            send_next: WatchedValue::new(send_next),
-            unsent_queue: RefCell::new(unsent_queue),
-            unsent_seq_no: WatchedValue::new(unsent_seq_no),
-
-            send_window: WatchedValue::new(send_window),
-            send_window_last_update_seq: Cell::new(send_window_last_update_seq),
-            send_window_last_update_ack: Cell::new(send_window_last_update_ack),
-
-            window_scale,
-            mss,
-        }
-    }
-
     pub fn get_mss(&self) -> usize {
         self.mss
     }
 
     pub fn get_send_window(&self) -> (u32, WatchFuture<u32>) {
         self.send_window.watch()
-    }
-
-    pub fn get_send_window_last_update_seq(&self) -> SeqNumber {
-        self.send_window_last_update_seq.get()
-    }
-
-    pub fn get_send_window_last_update_ack(&self) -> SeqNumber {
-        self.send_window_last_update_ack.get()
     }
 
     pub fn get_send_unacked(&self) -> (SeqNumber, WatchFuture<SeqNumber>) {
@@ -419,6 +383,45 @@ impl Sender {
 
     pub fn remote_mss(&self) -> usize {
         self.mss
+    }
+}
+
+#[cfg(feature = "tcp-migration")]
+impl Sender {
+    pub fn migrated_in(
+        unsent_seq_no: SeqNumber,
+        send_unacked: SeqNumber,
+        send_next: SeqNumber,
+        send_window: u32,
+        send_window_last_update_seq: SeqNumber,
+        send_window_last_update_ack: SeqNumber,
+        window_scale: u8,
+        mss: usize,
+        unacked_queue: VecDeque<UnackedSegment>,
+        unsent_queue: VecDeque<Buffer>,
+    ) -> Self {
+        Self {
+            send_unacked: WatchedValue::new(send_unacked),
+            unacked_queue: RefCell::new(unacked_queue),
+            send_next: WatchedValue::new(send_next),
+            unsent_queue: RefCell::new(unsent_queue),
+            unsent_seq_no: WatchedValue::new(unsent_seq_no),
+
+            send_window: WatchedValue::new(send_window),
+            send_window_last_update_seq: Cell::new(send_window_last_update_seq),
+            send_window_last_update_ack: Cell::new(send_window_last_update_ack),
+
+            window_scale,
+            mss,
+        }
+    }
+    
+    pub fn get_send_window_last_update_seq(&self) -> SeqNumber {
+        self.send_window_last_update_seq.get()
+    }
+
+    pub fn get_send_window_last_update_ack(&self) -> SeqNumber {
+        self.send_window_last_update_ack.get()
     }
 
     pub fn get_window_scale(&self) -> u8 {

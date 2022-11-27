@@ -15,7 +15,6 @@ use crate::{
         QDesc,
         QToken,
     },
-    inetstack::{MigrationHandle, TcpMigrationLock},
 };
 use ::std::{
     net::SocketAddrV4,
@@ -84,34 +83,6 @@ impl NetworkLibOS {
             NetworkLibOS::Catcollar(libos) => libos.wait2(qt),
             #[cfg(feature = "catnip-libos")]
             NetworkLibOS::Catnip(libos) => libos.wait2(qt),
-        }
-    }
-
-    /// Checks if an operation has completed and returns the result if it has.
-    pub fn trywait2(&mut self, qt: QToken) -> Result<Option<(QDesc, OperationResult)>, Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(libos) => todo!("catpowder `trywait2()`"),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(libos) => todo!("catnap `trywait2()`"),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(libos) => todo!("catcollar `trywait2()`"),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.trywait2(qt),
-        }
-    }
-
-    /// Waits for an I/O operation to complete or a timeout to expire.
-    pub fn timedwait2(&mut self, qt: QToken, abstime: Option<SystemTime>) -> Result<(QDesc, OperationResult), Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(libos) => todo!("catpowder `timedwait2()`"),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(libos) => todo!("catnap `timedwait2()`"),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(libos) => todo!("catcollar `timedwait2()`"),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.timedwait2(qt, abstime),
         }
     }
 
@@ -343,96 +314,19 @@ impl NetworkLibOS {
             #[cfg(feature = "catnip-libos")]
             NetworkLibOS::Catnip(libos) => libos.sgafree(sga),
         }
-    }
-    
-    /// 
-    /// Initiates the process (through TCP communication) to migrate out a tcp connection,
-    /// provided the descriptor of a connection to the destination server.
-    /// 
-    /// `server_origin_listen`: Listening address for connection on origin server.
-    /// 
-    /// `server_dest_listen`: Listening address for connection on destination server.
-    /// 
-    pub fn initiate_tcp_migration_out(
-        &mut self,
-        _server_target_fd: QDesc,
-        _conn_fd: QDesc,
-        _server_origin_listen: SocketAddrV4,
-        _server_target_listen: SocketAddrV4,
-    ) -> Result<MigrationHandle, Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.initiate_tcp_migration_out(_server_target_fd, _conn_fd, _server_origin_listen, _server_target_listen),
-        }
-    }
+    }    
+}
 
-    pub fn try_complete_tcp_migration_out(&mut self, _handle: MigrationHandle) -> Result<bool, Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.try_complete_tcp_migration_out(_handle),
-        }
-    }
-
-    pub fn perform_tcp_migration_in_sync(&mut self, _server_origin_fd: QDesc) -> Result<QDesc, Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.perform_tcp_migration_in_sync(_server_origin_fd),
-        }
-    }
-
-    pub fn tcp_migration_lock(&mut self, _qd: QDesc) -> Result<TcpMigrationLock, Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.tcp_migration_lock(_qd),
-        }
-    }
-
-    pub fn tcp_migration_unlock(&mut self, _lock: TcpMigrationLock) -> Result<(), Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.tcp_migration_unlock(_lock),
-        }
-    }
-
-    #[cfg(feature = "tcp-migration")]
+#[cfg(all(feature = "catnip-libos", feature = "tcp-migration"))]
+impl NetworkLibOS {
     pub fn notify_migration_safety(&mut self, _fd: QDesc) -> Result<bool, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            NetworkLibOS::Catpowder(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
             #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            NetworkLibOS::Catnap(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
             #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_libos) => Err(Fail::new(libc::EOPNOTSUPP, "tcp migration only supported for catnip")),
+            NetworkLibOS::Catcollar(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
             #[cfg(feature = "catnip-libos")]
             NetworkLibOS::Catnip(libos) => libos.notify_migration_safety(_fd),
         }

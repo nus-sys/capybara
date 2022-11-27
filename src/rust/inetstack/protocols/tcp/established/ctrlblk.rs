@@ -129,14 +129,6 @@ impl Receiver {
         }
     }
 
-    pub fn migrated_in(reader_next: SeqNumber, receive_next: SeqNumber, recv_queue: VecDeque<Buffer>) -> Self{
-        Self {
-            reader_next: Cell::new(reader_next),
-            receive_next: Cell::new(receive_next),
-            recv_queue: RefCell::new(recv_queue),
-        }
-    }
-
     pub fn pop(&self) -> Option<Buffer> {
         let buf: Buffer = self.recv_queue.borrow_mut().pop_front()?;
         self.reader_next
@@ -150,12 +142,6 @@ impl Receiver {
         self.recv_queue.borrow_mut().push_back(buf);
         self.receive_next
             .set(self.receive_next.get() + SeqNumber::from(buf_len as u32));
-    }
-
-    pub fn take_receive_queue(&self) -> VecDeque<Buffer> {
-        let mut temp = VecDeque::<Buffer>::with_capacity(0);
-        std::mem::swap(&mut temp, &mut *self.recv_queue.borrow_mut());
-        temp
     }
 }
 
@@ -274,67 +260,6 @@ impl ControlBlock {
             retransmit_deadline: WatchedValue::new(None),
             rto: RefCell::new(RtoCalculator::new()),
         }
-    }
-
-    pub fn migrated_in(
-        local: SocketAddrV4,
-        remote: SocketAddrV4,
-        rt: Rc<dyn NetworkRuntime>,
-        scheduler: Scheduler,
-        clock: TimerRc,
-        local_link_addr: MacAddress,
-        tcp_config: TcpConfig,
-        arp: ArpPeer,
-        ack_delay_timeout: Duration,
-        receiver_window_size: u32,
-        receiver_window_scale: u32,
-        sender: Sender,
-        receiver: Receiver,
-        cc_constructor: CongestionControlConstructor,
-        congestion_control_options: Option<congestion_control::Options>,
-    ) -> Self {
-        let mss = sender.get_mss();
-        let seq_no = sender.get_send_unacked().0;
-        Self {
-            local,
-            remote,
-            rt,
-            scheduler,
-            clock,
-            local_link_addr,
-            tcp_config,
-            arp: Rc::new(arp),
-            sender,
-            state: Cell::new(State::Established),
-            ack_delay_timeout,
-            ack_deadline: WatchedValue::new(None),
-            receive_buffer_size: receiver_window_size,
-            window_scale: receiver_window_scale,
-            waker: RefCell::new(None),
-            out_of_order: RefCell::new(VecDeque::new()),
-            out_of_order_fin: Cell::new(Option::None),
-            receiver,
-            user_is_done_sending: Cell::new(false),
-            cc: cc_constructor(mss, seq_no, congestion_control_options),
-            retransmit_deadline: WatchedValue::new(None),
-            rto: RefCell::new(RtoCalculator::new()), // Check
-        }
-    }
-
-    pub fn get_receiver_window_scale(&self) -> u32 {
-        self.window_scale
-    }
-
-    pub fn get_receiver_max_window_size(&self) -> u32 {
-        self.receive_buffer_size
-    }
-
-    pub fn get_sender_window_scale(&self) -> u8 {
-        self.sender.get_window_scale()
-    }
-
-    pub fn get_state(&self) -> State {
-        self.state.get()
     }
 
     pub fn get_local(&self) -> SocketAddrV4 {
@@ -1164,6 +1089,89 @@ impl ControlBlock {
         }
 
         false
+    }
+
+    
+}
+
+#[cfg(feature = "tcp-migration")]
+impl Receiver{
+    pub fn migrated_in(reader_next: SeqNumber, receive_next: SeqNumber, recv_queue: VecDeque<Buffer>) -> Self{
+        Self {
+            reader_next: Cell::new(reader_next),
+            receive_next: Cell::new(receive_next),
+            recv_queue: RefCell::new(recv_queue),
+        }
+    }
+
+    pub fn take_receive_queue(&self) -> VecDeque<Buffer> {
+        let mut temp = VecDeque::<Buffer>::with_capacity(0);
+        std::mem::swap(&mut temp, &mut *self.recv_queue.borrow_mut());
+        temp
+    }
+}
+
+#[cfg(feature = "tcp-migration")]
+impl ControlBlock {
+    pub fn migrated_in(
+        local: SocketAddrV4,
+        remote: SocketAddrV4,
+        rt: Rc<dyn NetworkRuntime>,
+        scheduler: Scheduler,
+        clock: TimerRc,
+        local_link_addr: MacAddress,
+        tcp_config: TcpConfig,
+        arp: ArpPeer,
+        ack_delay_timeout: Duration,
+        receiver_window_size: u32,
+        receiver_window_scale: u32,
+        sender: Sender,
+        receiver: Receiver,
+        cc_constructor: CongestionControlConstructor,
+        congestion_control_options: Option<congestion_control::Options>,
+    ) -> Self {
+        let mss = sender.get_mss();
+        let seq_no = sender.get_send_unacked().0;
+        Self {
+            local,
+            remote,
+            rt,
+            scheduler,
+            clock,
+            local_link_addr,
+            tcp_config,
+            arp: Rc::new(arp),
+            sender,
+            state: Cell::new(State::Established),
+            ack_delay_timeout,
+            ack_deadline: WatchedValue::new(None),
+            receive_buffer_size: receiver_window_size,
+            window_scale: receiver_window_scale,
+            waker: RefCell::new(None),
+            out_of_order: RefCell::new(VecDeque::new()),
+            out_of_order_fin: Cell::new(Option::None),
+            receiver,
+            user_is_done_sending: Cell::new(false),
+            cc: cc_constructor(mss, seq_no, congestion_control_options),
+            retransmit_deadline: WatchedValue::new(None),
+            rto: RefCell::new(RtoCalculator::new()), // Check
+        }
+    }
+
+    pub fn get_state(&self) -> State {
+        self.state.get()
+    }
+
+    pub fn get_receiver_window_scale(&self) -> u32 {
+        self.window_scale
+    }
+
+    pub fn get_receiver_max_window_size(&self) -> u32 {
+        self.receive_buffer_size
+    }
+
+    pub fn get_sender_window_scale(&self) -> u8 {
+        self.sender.get_window_scale()
     }
 
     pub fn take_receive_queue(&self) -> VecDeque<Buffer> {

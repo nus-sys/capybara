@@ -15,7 +15,6 @@ use crate::{
                 PopFuture,
                 PushFuture,
             },
-            migration::{TcpMigrationSegment, TcpState},
         },
         udp::UdpPopFuture,
         Peer,
