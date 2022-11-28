@@ -165,17 +165,8 @@ impl TcpMigPeer {
 
         match active.process_packet(hdr, buf)? {
             MigrationRequestStatus::Rejected => todo!("handle migration rejection"),
-            MigrationRequestStatus::StateReceived(state) => {
-                use std::collections::hash_map::Entry::*;
-                match inner.incoming_connections.entry(state.local) {
-                    Occupied(mut entry) => {
-                        entry.get_mut().push_back(state);
-                    },
-                    Vacant(entry) => {
-                        entry.insert(VecDeque::new()).push_back(state);
-                    },
-                };
-            },
+            MigrationRequestStatus::StateReceived(state) =>
+                inner.incoming_connections.entry(state.local).or_insert(VecDeque::new()).push_back(state),
             MigrationRequestStatus::Ok => (),
         };
 
@@ -248,15 +239,9 @@ impl TcpMigPeer {
     }
 
     pub fn try_get_connection(&mut self, local: SocketAddrV4) -> Option<TcpState> {
-        let mut inner = self.inner.borrow_mut();
-        
-        match inner.incoming_connections.get_mut(&local) {
-            Some(queue) => match queue.pop_front() {
-                Some(state) => Some(state),
-                None => None,
-            },
-            None => None,
-        }
+        self.inner.borrow_mut()
+        .incoming_connections.get_mut(&local)?
+        .pop_front()
     }
 
     pub fn take_buffer_queue(&mut self, target: SocketAddrV4, remote: SocketAddrV4) -> Result<VecDeque<(Ipv4Header, TcpHeader, Buffer)>, Fail> {
