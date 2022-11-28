@@ -362,6 +362,7 @@ impl TcpPeer {
         while let Some(state) = inner.tcpmig.try_get_connection(local) {
             match inner.migrate_in_tcp_connection(new_qd, state) {
                 Ok(()) => {
+                    eprintln!("*** Accepted migrated connection ***");
                     return Poll::Ready(Ok(new_qd));
                 },
                 Err(e) => {
