@@ -131,7 +131,7 @@ impl Iterator for TcpMigFragmenter {
     type Item = TcpMigSegment;
 
     fn next(&mut self) -> Option<<Self as Iterator>::Item> {
-        if self.segment.data.len() == 0 {
+        if self.segment.data.len() == 0 && self.current_fragment != 0 {
             None
         } else {
             let ethernet2_hdr = self.segment.ethernet2_hdr.clone();
