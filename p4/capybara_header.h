@@ -5,8 +5,10 @@
 #define ETHERTYPE_IPV4  0x0800
 #define ETHERTYPE_ARP   0x0806
 #define ETHERTYPE_PKTGEN 16w0x7777
-#define IP_PROTOCOL_UDP 17
-#define IP_PROTOCOL_TCP 6
+#define IP_PROTOCOL_UDP 0x11
+#define IP_PROTOCOL_TCP 0x06
+#define IP_PROTOCOL_TCPMIG 0xC0
+
 
 #define IPV4_HOST_SIZE 1024
 
@@ -15,12 +17,18 @@
 const int MAC_TABLE_SIZE        = 65536;
 const bit<3> L2_LEARN_DIGEST = 1;
 const bit<3> TCP_MIGRATION_DIGEST = 2;
+const int register_size = 1 << 16;
 
 
 struct pair {
     bit<32>     first;
     bit<32>     second;
 }
+
+typedef bit<32> value32b_t;
+typedef bit<16> value16b_t;
+typedef bit<16> index_t;
+
 /*************************************************************************
  ***********************  H E A D E R S  *********************************
  *************************************************************************/
@@ -86,6 +94,23 @@ header tcp_h {
     bit<16>  checksum;
     bit<16>  urgent_ptr;
 } // 20
+
+header tcpmig_h {
+    bit<32>  origin_ip;
+    bit<16>  origin_port;
+    
+    bit<32>  client_ip;
+    bit<16>  client_port;
+
+    bit<16>  payload_len;
+    bit<16>  frag_offset;
+    
+    bit<8>  flag;
+    bit<8> unused;
+    bit<16> checksum;
+}
+
+
 
 header udp_h {
     bit<16>  src_port;
