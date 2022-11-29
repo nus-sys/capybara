@@ -86,6 +86,20 @@ impl NetworkLibOS {
         }
     }
 
+    /// Waits for an I/O operation to complete or a timeout to expire.
+    pub fn timedwait2(&mut self, qt: QToken, abstime: Option<SystemTime>) -> Result<(QDesc, OperationResult), Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(libos) => todo!("catpowder timedwait2()"),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(libos) => todo!("catnap timedwait2()"),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(libos) => todo!("catcollar timedwait2()"),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.timedwait2(qt, abstime),
+        }
+    }
+
     /// Creates a socket.
     pub fn socket(
         &mut self,

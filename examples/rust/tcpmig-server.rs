@@ -13,7 +13,7 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
-use std::time::{Instant, Duration};
+use std::time::{Instant, Duration, SystemTime};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -89,16 +89,29 @@ fn server(local: SocketAddrV4) -> Result<()> {
     };
 
     // Perform multiple ping-pong rounds.
-    for i in 0..nrounds {
+    let mut i = 0;
+    while i < nrounds {
+        // Notify migration safety before accepting a request.
+        match libos.notify_migration_safety(qd) {
+            Ok(true) => break,
+            Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
+            _ => (),
+        };
+
         // Pop data.
         let qtoken: QToken = match libos.pop(qd) {
             Ok(qt) => qt,
             Err(e) => panic!("pop failed: {:?}", e.cause),
         };
-        // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
-        let recvbuf = match libos.wait2(qtoken) {
+        
+        let recvbuf = match libos.timedwait2(qtoken, Some(SystemTime::now() + Duration::from_micros(100))) {
             Ok((_, OperationResult::Pop(_, buf))) => buf,
-            Err(e) => panic!("operation failed: {:?}", e.cause),
+            Err(e) => {
+                if e.errno == libc::ETIMEDOUT {
+                    continue;
+                }
+                panic!("operation failed: {:?}", e.cause)
+            },
             _ => unreachable!(),
         };
 
@@ -117,10 +130,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
         };
 
         println!("pong {:?}", i);
-
-        if libos.notify_migration_safety(qd)? {
-            break;
-        }
+        i += 1;
     }
 
     let qt: QToken = match libos.accept(sockqd) {
