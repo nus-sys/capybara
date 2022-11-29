@@ -358,25 +358,27 @@ impl TcpPeer {
             None => return Poll::Ready(Err(Fail::new(EBADF, "bad file descriptor"))),
         };
 
-        #[cfg(feature = "tcp-migration")]
-        while let Some(state) = inner.tcpmig.try_get_connection(local) {
-            match inner.migrate_in_tcp_connection(new_qd, state) {
-                Ok(()) => {
-                    eprintln!("*** Accepted migrated connection ***");
-                    return Poll::Ready(Ok(new_qd));
-                },
-                Err(e) => {
-                    warn!("Dropped migrated-in connection: {:?}", e);
-                }
-            };
-        };
-
         let passive: &mut PassiveSocket = inner.passive.get_mut(&local).expect("sockets/local inconsistency");
         let cb: ControlBlock = match passive.poll_accept(ctx) {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(Ok(e)) => e,
             Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
         };
+
+        #[cfg(feature = "tcp-migration")]
+        if inner.tcpmig.take_connection(cb.get_local(), cb.get_remote()) {
+            match inner.migrate_in_tcp_connection(new_qd, cb) {
+                Ok(()) => {
+                    eprintln!("*** Accepted migrated connection ***");
+                    return Poll::Ready(Ok(new_qd));
+                },
+                Err(e) => {
+                    warn!("Dropped migrated-in connection");
+                    return Poll::Ready(Err(e));
+                }
+            };
+        };
+
         let established: EstablishedSocket = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
         let key: (SocketAddrV4, SocketAddrV4) = (established.cb.get_local(), established.cb.get_remote());
 
@@ -741,6 +743,10 @@ impl TcpPeer {
 
         Ok(false)
     }
+
+    pub fn notify_passive(&mut self, state: TcpState) -> Result<(), Fail> {
+        self.inner.borrow_mut().notify_passive(state)
+    }
 }
 
 #[cfg(feature = "tcp-migration")]
@@ -846,9 +852,55 @@ impl Inner {
         Ok(state)
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, qd: QDesc, state: TcpState) -> Result<(), Fail> {
-        let local = state.local;
-        let remote = state.remote;
+    fn notify_passive(&mut self, state: TcpState) -> Result<(), Fail> {
+        let receiver = Receiver::migrated_in(
+            state.reader_next,
+            state.receive_next,
+            state.recv_queue,
+        );
+
+        let sender = Sender::migrated_in(
+            state.unsent_seq_no,
+            state.send_unacked,
+            state.send_next,
+            state.send_window,
+            state.send_window_last_update_seq,
+            state.send_window_last_update_ack,
+            state.window_scale,
+            state.mss,
+            state.unacked_queue,
+            state.unsent_queue,
+        );
+
+        let cb = ControlBlock::migrated_in(
+            state.local,
+            state.remote,
+            self.rt.clone(),
+            self.scheduler.clone(),
+            self.clock.clone(),
+            self.local_link_addr,
+            self.tcp_config.clone(),
+            self.arp.clone(),
+            self.tcp_config.get_ack_delay_timeout(),
+            state.receiver_window_size,
+            state.receiver_window_scale,
+            sender,
+            receiver,
+            congestion_control::None::new,
+            None,
+        );
+
+        match self.passive.get_mut(&state.local) {
+            Some(passive) => passive.push_migrated_in(cb),
+            None => return Err(Fail::new(libc::EBADF, "socket not listening")),
+        };
+
+        Ok(())
+    }
+
+    pub fn migrate_in_tcp_connection(&mut self, qd: QDesc, cb: ControlBlock) -> Result<(), Fail> {
+        let local = cb.get_local();
+        let remote = cb.get_remote();
 
         // Check if keys already exist first. This way we don't have to undo changes we make to
         // the state.
@@ -878,46 +930,6 @@ impl Inner {
             }
         }
 
-        // Take migrating queue.
-        let migrating_queue = self.tcpmig.take_buffer_queue(local, remote)?;
-
-        let receiver = Receiver::migrated_in(
-            state.reader_next,
-            state.receive_next,
-            state.recv_queue,
-        );
-
-        let sender = Sender::migrated_in(
-            state.unsent_seq_no,
-            state.send_unacked,
-            state.send_next,
-            state.send_window,
-            state.send_window_last_update_seq,
-            state.send_window_last_update_ack,
-            state.window_scale,
-            state.mss,
-            state.unacked_queue,
-            state.unsent_queue,
-        );
-
-        let cb = ControlBlock::migrated_in(
-            local,
-            remote,
-            self.rt.clone(),
-            self.scheduler.clone(),
-            self.clock.clone(),
-            self.local_link_addr,
-            self.tcp_config.clone(),
-            self.arp.clone(),
-            self.tcp_config.get_ack_delay_timeout(),
-            state.receiver_window_size,
-            state.receiver_window_scale,
-            sender,
-            receiver,
-            congestion_control::None::new,
-            None,
-        );
-
         let established = EstablishedSocket::new(cb, qd, self.dead_socket_tx.clone());
 
         if let Some(_) = self.established.insert((local, remote), established) {
@@ -925,8 +937,7 @@ impl Inner {
             unreachable!();
         }
 
-        dbg!(&migrating_queue.len());
-        for (ip_hdr, _, buf) in migrating_queue {
+        for (ip_hdr, _, buf) in self.tcpmig.take_buffer_queue(local, remote)? {
             /* let tcp_hdr_size = tcp_hdr.compute_size();
             let mut buf = vec![0u8; tcp_hdr_size + data.len()];
             tcp_hdr.serialize(&mut buf, &ip_hdr, &data, inner.tcp_config.get_rx_checksum_offload());

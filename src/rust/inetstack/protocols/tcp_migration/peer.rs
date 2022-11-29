@@ -10,7 +10,7 @@ use crate::{
     inetstack::protocols::{
             ipv4::Ipv4Header, 
             tcp::{
-                segment::TcpHeader, peer::TcpState,
+                segment::TcpHeader, peer::TcpState, TcpPeer,
             },
             tcp_migration::{
                 MigrationStage,
@@ -26,7 +26,7 @@ use crate::{
         },
     },
 };
-use std::{cell::RefCell, collections::VecDeque};
+use std::{cell::RefCell, collections::{VecDeque, HashSet}};
 use ::std::{
     collections::HashMap,
     net::{
@@ -66,8 +66,8 @@ struct Inner {
 
     /// Connections ready to be migrated-in.
     /// 
-    /// key = local.
-    incoming_connections: HashMap<SocketAddrV4, VecDeque<TcpState>>,
+    /// key = (local, remote).
+    incoming_connections: HashSet<(SocketAddrV4, SocketAddrV4)>,
 
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
@@ -126,7 +126,7 @@ impl TcpMigPeer {
     }
 
     /// Consumes the payload from a buffer.
-    pub fn receive(&mut self, ipv4_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
+    pub fn receive(&mut self, tcp_peer: &mut TcpPeer, ipv4_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         #[cfg(feature = "profiler")]
         timer!("tcpmig::receive");
 
@@ -165,8 +165,11 @@ impl TcpMigPeer {
 
         match active.process_packet(hdr, buf)? {
             MigrationRequestStatus::Rejected => todo!("handle migration rejection"),
-            MigrationRequestStatus::StateReceived(state) =>
-                inner.incoming_connections.entry(state.local).or_insert(VecDeque::new()).push_back(state),
+            MigrationRequestStatus::StateReceived(state) => {
+                let (local, remote) = (state.local, state.remote);
+                tcp_peer.notify_passive(state)?;
+                inner.incoming_connections.insert((local, remote));
+            },
             MigrationRequestStatus::Ok => (),
         };
 
@@ -238,10 +241,9 @@ impl TcpMigPeer {
         }
     }
 
-    pub fn try_get_connection(&mut self, local: SocketAddrV4) -> Option<TcpState> {
+    pub fn take_connection(&mut self, local: SocketAddrV4, remote: SocketAddrV4) -> bool {
         self.inner.borrow_mut()
-        .incoming_connections.get_mut(&local)?
-        .pop_front()
+        .incoming_connections.remove(&(local, remote))
     }
 
     pub fn take_buffer_queue(&mut self, target: SocketAddrV4, remote: SocketAddrV4) -> Result<VecDeque<(Ipv4Header, TcpHeader, Buffer)>, Fail> {
@@ -285,7 +287,7 @@ impl Inner {
             local_ipv4_addr,
             active_migrations: HashMap::new(),
             origins: HashMap::new(),
-            incoming_connections: HashMap::new(),
+            incoming_connections: HashSet::new(),
             //background: handle,
         }
     }

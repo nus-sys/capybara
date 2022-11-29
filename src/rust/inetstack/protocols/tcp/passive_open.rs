@@ -355,3 +355,10 @@ impl PassiveSocket {
         }
     }
 }
+
+#[cfg(feature = "tcp-migration")]
+impl PassiveSocket {
+    pub fn push_migrated_in(&mut self, cb: ControlBlock) {
+        self.ready.borrow_mut().push_ok(cb)
+    }
+}
