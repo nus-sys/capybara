@@ -10,7 +10,8 @@ struct my_ingress_headers_t {
     ethernet_h                  ethernet;
     ipv4_h                      ipv4;
     tcp_h                       tcp;
-    tcp_migration_header_h      tcp_migration_header;
+    tcpmig_h                    tcpmig;
+    // tcp_migration_header_h      tcp_migration_header;
 }
 
 struct my_ingress_metadata_t {
@@ -93,6 +94,7 @@ parser IngressParser(
         });
         transition select(hdr.ipv4.protocol){
             IP_PROTOCOL_TCP: parse_tcp;
+            IP_PROTOCOL_TCPMIG: parse_tcpmig;
             default: accept;
         }
     }
@@ -114,17 +116,24 @@ parser IngressParser(
 
         meta.l4_payload_checksum = tcp_checksum.get();
 
-        transition select(pkt.lookahead<bit<32>>()) {
-            MIGRATION_SIGNATURE: parse_tcp_migration_header;
-            default: accept;
-        }
+        transition accept;
+        // transition select(pkt.lookahead<bit<32>>()) {
+        //     MIGRATION_SIGNATURE: parse_tcp_migration_header;
+        //     default: accept;
+        // }
     }
 
-    state parse_tcp_migration_header {
-        pkt.extract(hdr.tcp_migration_header);
-        meta.load = hdr.tcp_migration_header.flag[0:0];
+    state parse_tcpmig {
+        pkt.extract(hdr.tcpmig);
+        meta.load = hdr.tcpmig.flag[0:0];
         transition accept;
     }
+
+    // state parse_tcp_migration_header {
+    //     pkt.extract(hdr.tcp_migration_header);
+    //     meta.load = hdr.tcp_migration_header.flag[0:0];
+    //     transition accept;
+    // }
 
 }
 
@@ -205,7 +214,7 @@ control Ingress(
     apply {
         
         ig_tm_md.bypass_egress = 1w1;
-        if(hdr.tcp.isValid()){
+        if(hdr.tcp.isValid() || hdr.tcpmig.isValid()){
             ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
             
             bit<48> target_mac;
@@ -231,7 +240,7 @@ control Ingress(
                 // meta.hash1 = hash1;
                 target_mac = hdr.ethernet.src_mac;
                 origin_mac = hdr.ethernet.dst_mac;
-                hash.apply(hdr.tcp_migration_header.client_ip, hdr.tcp_migration_header.client_port, hash1);
+                hash.apply(hdr.tcpmig.client_ip, hdr.tcpmig.client_port, hash1);
                 hash2 = hash1;    
             }else{
                 hash.apply(hdr.ipv4.src_ip, hdr.tcp.src_port, hash1);
@@ -263,26 +272,26 @@ control Ingress(
 
             target_mac_hi32_0.apply(hash1, target_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
             target_mac_lo16_0.apply(hash1, target_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
-            target_ip_0.apply(hash1, hdr.tcp_migration_header.target_ip, meta, hdr.ipv4.dst_ip);
-            target_port_0.apply(hash1, hdr.tcp_migration_header.target_port, meta, hdr.tcp.dst_port);
+            target_ip_0.apply(hash1, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
+            target_port_0.apply(hash1, hdr.tcpmig.origin_port, meta, hdr.tcp.dst_port);
 
 
             origin_mac_hi32_0.apply(hash2, origin_mac[47:16], meta, hdr.ethernet.src_mac[47:16]);
             origin_mac_lo16_0.apply(hash2, origin_mac[15:0], meta, hdr.ethernet.src_mac[15:0]);
-            origin_ip_0.apply(hash2, hdr.tcp_migration_header.origin_ip, meta, hdr.ipv4.src_ip);
-            origin_port_0.apply(hash2, hdr.tcp_migration_header.origin_port, meta, hdr.tcp.src_port);
+            origin_ip_0.apply(hash2, hdr.tcpmig.origin_ip, meta, hdr.ipv4.src_ip);
+            origin_port_0.apply(hash2, hdr.tcpmig.origin_port, meta, hdr.tcp.src_port);
 
 
             target_mac_hi32_1.apply(hash1, target_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
             target_mac_lo16_1.apply(hash1, target_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
-            target_ip_1.apply(hash1, hdr.tcp_migration_header.target_ip, meta, hdr.ipv4.dst_ip);
-            target_port_1.apply(hash1, hdr.tcp_migration_header.target_port, meta, hdr.tcp.dst_port);
+            target_ip_1.apply(hash1, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
+            target_port_1.apply(hash1, hdr.tcpmig.origin_port, meta, hdr.tcp.dst_port);
 
 
             origin_mac_hi32_1.apply(hash2, origin_mac[47:16], meta, hdr.ethernet.src_mac[47:16]);
             origin_mac_lo16_1.apply(hash2, origin_mac[15:0], meta, hdr.ethernet.src_mac[15:0]);
-            origin_ip_1.apply(hash2, hdr.tcp_migration_header.origin_ip, meta, hdr.ipv4.src_ip);
-            origin_port_1.apply(hash2, hdr.tcp_migration_header.origin_port, meta, hdr.tcp.src_port);
+            origin_ip_1.apply(hash2, hdr.tcpmig.origin_ip, meta, hdr.ipv4.src_ip);
+            origin_port_1.apply(hash2, hdr.tcpmig.origin_port, meta, hdr.tcp.src_port);
 
         }
 
@@ -333,7 +342,7 @@ control IngressDeparser(packet_out pkt,
         }
 
 
-        if (hdr.ipv4.isValid() && !hdr.tcp_migration_header.isValid()) {
+        if (hdr.tcp.isValid()) {
             hdr.ipv4.hdr_checksum = ipv4_checksum.update({
                 hdr.ipv4.version,
                 hdr.ipv4.ihl,

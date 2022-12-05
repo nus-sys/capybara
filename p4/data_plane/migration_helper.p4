@@ -13,7 +13,7 @@ control MigrationRequestIdentifier32b(
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value32b_t register_value, out bit<1> is_written) {
             if(register_value == 0){
-                register_value = hdr.tcp_migration_header.client_ip;
+                register_value = hdr.tcpmig.client_ip;
                 is_written = 1;
             }else{
                 is_written = 0;
@@ -71,7 +71,7 @@ control MigrationRequestIdentifier16b(
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value16b_t register_value, out bit<1> is_written) {
             if(register_value == 0){
-                register_value = hdr.tcp_migration_header.client_port;
+                register_value = hdr.tcpmig.client_port;
                 is_written = 1;
             }else{
                 is_written = 0;
@@ -129,7 +129,7 @@ control MigrationReplyIdentifier32b(
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value32b_t register_value, out bit<1> is_written) {
             if(register_value == 0){
-                register_value = hdr.tcp_migration_header.client_ip;
+                register_value = hdr.tcpmig.client_ip;
                 is_written = 1;
             }else{
                 is_written = 0;
@@ -187,7 +187,7 @@ control MigrationReplyIdentifier16b(
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value16b_t register_value, out bit<1> is_written) {
             if(register_value == 0){
-                register_value = hdr.tcp_migration_header.client_port;
+                register_value = hdr.tcpmig.client_port;
                 is_written = 1;
             }else{
                 is_written = 0;
