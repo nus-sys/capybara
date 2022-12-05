@@ -13,12 +13,13 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
-use std::time::{Instant, Duration};
+use std::{time::{Instant, Duration, SystemTime}, sync::Mutex};
 use ::std::{
     env,
     net::SocketAddrV4,
     panic,
     str::FromStr,
+    thread,
 };
 
 #[cfg(feature = "profiler")]
@@ -34,14 +35,8 @@ const BUFFER_SIZE: usize = 64;
 // mkbuf()
 //======================================================================================================================
 
-fn mkbuf(buffer_size: usize, fill_char: u8) -> Vec<u8> {
-    let mut data: Vec<u8> = Vec::<u8>::with_capacity(buffer_size);
-
-    for _ in 0..buffer_size {
-        data.push(fill_char);
-    }
-
-    data
+fn mkbuf(buffer_size: usize, fill: u8) -> Vec<u8> {
+    vec![fill; buffer_size]
 }
 
 //======================================================================================================================
@@ -57,9 +52,6 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         Ok(libos) => libos,
         Err(e) => panic!("failed to initialize libos: {:?}", e.cause),
     };
-    let fill_char: u8 = 'a' as u8;
-    let nrounds: usize = 1024;
-    let expectbuf: Vec<u8> = mkbuf(BUFFER_SIZE, fill_char);
 
     // Setup peer.
     let sockqd: QDesc = match libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0) {
@@ -67,7 +59,6 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         Err(e) => panic!("failed to create socket: {:?}", e.cause),
     };
 
-    let sendbuf: Vec<u8> = mkbuf(BUFFER_SIZE, fill_char);
     let qt: QToken = match libos.connect(sockqd, remote) {
         Ok(qt) => qt,
         Err(e) => panic!("connect failed: {:?}", e.cause),
@@ -78,12 +69,16 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         _ => unreachable!(),
     };
 
-    let mut instants = Vec::with_capacity(nrounds);
+    //let mut instants = Vec::with_capacity(nrounds);
+
+    const FREQ: Duration = Duration::from_micros(100);
+    let rounds = 128;
 
     // Issue n sends.
-    for i in 0..nrounds {
-        let begin = Instant::now();
-
+    for i in 1..=rounds {
+        //let begin = Instant::now();
+        
+        let sendbuf = mkbuf(BUFFER_SIZE, i);
         // Push data.
         let qt: QToken = match libos.push2(sockqd, &sendbuf[..]) {
             Ok(qt) => qt,
@@ -95,32 +90,36 @@ fn client(remote: SocketAddrV4) -> Result<()> {
             _ => unreachable!(),
         };
 
-        // Pop data.
-        let qtoken: QToken = match libos.pop(sockqd) {
-            Ok(qt) => qt,
-            Err(e) => panic!("pop failed: {:?}", e.cause),
-        };
-        // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
-        let recvbuf = match libos.wait2(qtoken) {
-            Ok((_, OperationResult::Pop(_, buf))) => buf,
-            Err(e) => panic!("operation failed: {:?}", e.cause),
-            _ => unreachable!(),
-        };
+        println!("ping {}", i);
 
-        instants.push((begin, Instant::now()));
+        thread::sleep(FREQ);
 
-        // Sanity check received data.
-        assert_eq!(expectbuf[..], recvbuf[..], "server expectbuf != recvbuf");
-
-        println!("ping {:?}", i);
+        //instants.push((begin, Instant::now()));
 
         #[cfg(feature = "profiler")]
         profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
     }
 
-    let instants = instants.iter()
+    for i in 1..=rounds {
+        // Pop data.
+        let qt: QToken = match libos.pop(sockqd) {
+            Ok(qt) => qt,
+            Err(e) => panic!("pop failed: {:?}", e.cause),
+        };
+        // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
+        let recvbuf = match libos.wait2(qt) {
+            Ok((_, OperationResult::Pop(_, buf))) => buf,
+            Err(e) if e.errno == libc::ETIMEDOUT => continue,
+            Err(e) => panic!("operation failed: {:?}", e.cause),
+            _ => unreachable!(),
+        };
+
+        println!("pong {}", recvbuf[0]);
+    }
+
+    /* let instants = instants.iter()
         .map(|e| (e.0 - instants[0].0, e.1 - instants[0].0))
-        .collect::<Vec<(Duration, Duration)>>();
+        .collect::<Vec<(Duration, Duration)>>(); */
     //benchmark(&instants);
 
     // TODO: close socket when we get close working properly in catnip.
