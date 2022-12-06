@@ -90,7 +90,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     // Perform multiple ping-pong rounds.
     let mut i = 0;
-    while i < nrounds {
+    loop {
         // Notify migration safety before accepting a request.
         match libos.notify_migration_safety(qd) {
             Ok(true) => break,
@@ -129,7 +129,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
             _ => unreachable!(),
         };
 
-        println!("pong {}", recvbuf[0]);
+        //println!("pkt {}", i);
         i += 1;
     }
 

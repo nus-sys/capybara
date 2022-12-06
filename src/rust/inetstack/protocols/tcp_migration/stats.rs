@@ -49,8 +49,9 @@ impl TcpMigStats {
     }
 
     pub fn update(&mut self, local: SocketAddrV4, remote: SocketAddrV4) {
-        self.global_incoming_traffic.update();
-        self.incoming_traffic.entry((local, remote)).or_insert(Stat::new()).update();
+        let instant = Instant::now();
+        self.global_incoming_traffic.update(instant);
+        self.incoming_traffic.entry((local, remote)).or_insert(Stat::new()).update(instant);
     }
 }
 
@@ -62,12 +63,12 @@ impl Stat {
         }
     }
 
-    fn update(&mut self) {
-        self.instants.push_back(Instant::now());
+    fn update(&mut self, instant: Instant) {
+        self.instants.push_back(instant);
         if self.instants.len() > WINDOW {
             self.instants.pop_front().unwrap();
             self.value = (WINDOW as f64) / (*self.instants.back().unwrap() - *self.instants.front().unwrap()).as_secs_f64();
         }
-        eprintln!("{}", self.value);
+        //eprintln!("{}", self.value);
     }
 }
