@@ -116,7 +116,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
         };
 
         // Sanity check received data.
-        assert_eq!(expectbuf[..], recvbuf[..], "server expectbuf != recvbuf");
+        //assert_eq!(expectbuf[..], recvbuf[..], "server expectbuf != recvbuf");
 
         // Push data.
         let qt: QToken = match libos.push2(qd, &recvbuf[..]) {
@@ -129,7 +129,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
             _ => unreachable!(),
         };
 
-        println!("pong {:?}", i);
+        println!("pong {}", recvbuf[0]);
         i += 1;
     }
 
