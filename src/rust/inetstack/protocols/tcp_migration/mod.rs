@@ -1,6 +1,7 @@
 pub mod segment;
 mod peer;
 mod active;
+pub mod stats;
 
 pub use peer::TcpMigPeer;
 

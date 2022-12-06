@@ -331,7 +331,7 @@ impl NetworkLibOS {
     }    
 }
 
-#[cfg(all(feature = "catnip-libos", feature = "tcp-migration"))]
+#[cfg(feature = "tcp-migration")]
 impl NetworkLibOS {
     pub fn notify_migration_safety(&mut self, _fd: QDesc) -> Result<bool, Fail> {
         match self {

@@ -231,7 +231,7 @@ impl LibOS {
     }    
 }
 
-#[cfg(all(feature = "catnip-libos", feature = "tcp-migration"))]
+#[cfg(feature = "tcp-migration")]
 impl LibOS {
     /// Returns true if migration was done.
     pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<bool, Fail> {

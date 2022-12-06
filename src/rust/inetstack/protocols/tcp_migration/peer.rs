@@ -5,7 +5,7 @@
 // Imports
 //==============================================================================
 
-use super::{segment::TcpMigHeader, active::ActiveMigration};
+use super::{segment::TcpMigHeader, active::ActiveMigration, stats::TcpMigStats};
 use crate::{
     inetstack::protocols::{
             ipv4::Ipv4Header, 
@@ -68,6 +68,8 @@ struct Inner {
     /// 
     /// key = (local, remote).
     incoming_connections: HashSet<(SocketAddrV4, SocketAddrV4)>,
+
+    stats: TcpMigStats,
 
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
@@ -260,6 +262,10 @@ impl TcpMigPeer {
         }
     }
 
+    pub fn update_stats(&mut self, local: SocketAddrV4, remote: SocketAddrV4) {
+        self.inner.borrow_mut().stats.update(local, remote);
+    }
+
 
 
     // TEMP
@@ -288,6 +294,7 @@ impl Inner {
             active_migrations: HashMap::new(),
             origins: HashMap::new(),
             incoming_connections: HashSet::new(),
+            stats: TcpMigStats::new(),
             //background: handle,
         }
     }
