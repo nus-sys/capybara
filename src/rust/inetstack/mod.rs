@@ -665,7 +665,7 @@ impl InetStack {
 
 #[cfg(feature = "tcp-migration")]
 impl InetStack {
-    pub fn notify_migration_safety(&mut self, fd: QDesc) -> Result<bool, Fail> {
-        self.ipv4.tcp.notify_migration_safety(fd)
+    pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
+        self.ipv4.tcp.notify_migration_safety(qd)
     }
 }
