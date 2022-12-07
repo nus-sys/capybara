@@ -13,88 +13,45 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
-use std::{time::{Instant, Duration, SystemTime}, sync::{Arc, Mutex, MutexGuard}};
 use ::std::{
     env,
     net::SocketAddrV4,
     panic,
     str::FromStr,
-    thread,
 };
 
 #[cfg(feature = "profiler")]
 use ::demikernel::perftools::profiler;
 
 //======================================================================================================================
-// Constants
-//======================================================================================================================
-
-const BUFFER_SIZE: usize = 64;
-
-//======================================================================================================================
-// LIBOS
-//======================================================================================================================
-
-static mut LIBOS: Option<Mutex<LibOS>> = None;
-
-fn lock_libos() -> MutexGuard<'static, LibOS> {
-    unsafe { LIBOS.as_ref().unwrap().lock().unwrap() }
-}
-
-//======================================================================================================================
-// mkbuf()
-//======================================================================================================================
-
-fn mkbuf(buffer_size: usize, fill_char: u8) -> Vec<u8> {
-    let mut data: Vec<u8> = Vec::<u8>::with_capacity(buffer_size);
-
-    for _ in 0..buffer_size {
-        data.push(fill_char);
-    }
-
-    data
-}
-
-//======================================================================================================================
 // server()
 //======================================================================================================================
 
-fn client_handler(qd: QDesc) {
-    loop {
-        // Notify migration safety before accepting a request.
-        match lock_libos().notify_migration_safety(qd) {
-            Ok(true) => break,
-            Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
-            _ => (),
-        };
+fn get_connection(libos: &mut LibOS, listen_qd: QDesc) -> QToken {
+    match libos.accept(listen_qd) {
+        Ok(qt) => qt,
+        Err(e) => panic!("accept failed: {:?}", e.cause),
+    }
+}
 
-        // Pop data.
-        let qtoken: QToken = match lock_libos().pop(qd) {
-            Ok(qt) => qt,
-            Err(e) => panic!("pop failed: {:?}", e.cause),
-        };
-        
-        let recvbuf = match lock_libos().timedwait2(qtoken, Some(SystemTime::now() + Duration::from_micros(100))) {
-            Ok((_, OperationResult::Pop(_, buf))) => buf,
-            Err(e) => {
-                if e.errno == libc::ETIMEDOUT {
-                    continue;
-                }
-                panic!("operation failed: {:?}", e.cause)
-            },
-            _ => unreachable!(),
-        };
+fn get_request(libos: &mut LibOS, qd: QDesc) -> Option<QToken> {
+    match libos.notify_migration_safety(qd) {
+        Ok(true) => return None,
+        Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
+        _ => (),
+    };
 
-        // Push data.
-        let qt: QToken = match lock_libos().push2(qd, &recvbuf[..]) {
-            Ok(qt) => qt,
-            Err(e) => panic!("push failed: {:?}", e.cause),
-        };
-        match lock_libos().wait2(qt) {
-            Ok((_, OperationResult::Push)) => (),
-            Err(e) => panic!("operation failed: {:?}", e.cause),
-            _ => unreachable!(),
-        };
+    let qt = match libos.pop(qd) {
+        Ok(qt) => qt,
+        Err(e) => panic!("pop failed: {:?}", e.cause),
+    };
+    Some(qt)
+}
+
+fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
+    match libos.push2(qd, data) {
+        Ok(qt) => qt,
+        Err(e) => panic!("push failed: {:?}", e.cause),
     }
 }
 
@@ -107,9 +64,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
         Ok(libos) => libos,
         Err(e) => panic!("failed to initialize libos: {:?}", e.cause),
     };
-    let fill_char: u8 = 'a' as u8;
-    let nrounds: usize = 1024;
-    let expectbuf: Vec<u8> = mkbuf(BUFFER_SIZE, fill_char);
 
     // Setup peer.
     let sockqd: QDesc = match libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0) {
@@ -127,23 +81,33 @@ fn server(local: SocketAddrV4) -> Result<()> {
         Err(e) => panic!("listen failed: {:?}", e.cause),
     };
 
-    unsafe { LIBOS = Some(Mutex::new(libos)); }
+    let mut qts = vec![get_connection(&mut libos, sockqd)];
 
     loop {
-        // Accept incoming connections.
-        let qt: QToken = match lock_libos().accept(sockqd) {
-            Ok(qt) => qt,
-            Err(e) => panic!("accept failed: {:?}", e.cause),
-        };
-        let qd: QDesc = match lock_libos().wait2(qt) {
-            Ok((_, OperationResult::Accept(qd))) => qd,
+        let (index, qd, result) = match libos.wait_any2(&qts) {
+            Ok(wait_result) => wait_result,
             Err(e) => panic!("operation failed: {:?}", e.cause),
-            _ => unreachable!(),
         };
 
-        thread::spawn(move || {
-            client_handler(qd);
-        });
+        qts.swap_remove(index);
+        match result {
+            OperationResult::Accept(new_qd) => {
+                if let Some(qt) = get_request(&mut libos, new_qd) {
+                    qts.push(qt);
+                }
+
+                qts.push(get_connection(&mut libos, qd));
+            },
+            OperationResult::Push => {
+                if let Some(qt) = get_request(&mut libos, qd) {
+                    qts.push(qt);
+                }
+            },
+            OperationResult::Pop(_, recvbuf) => {
+                qts.push(send_response(&mut libos, qd, &recvbuf));
+            },
+            _ => unreachable!(),
+        }
     }
 
     #[cfg(feature = "profiler")]
