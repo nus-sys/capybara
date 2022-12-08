@@ -386,7 +386,7 @@ impl TcpPeer {
             local: established.cb.get_local(),
             remote: established.cb.get_remote(),
         };
-
+        println!("CONNECTION ESTABLISHED (REMOTE: {:?})", established.cb.get_remote());
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         if inner.sockets.insert(new_qd, socket).is_some() {
             panic!("duplicate queue descriptor in sockets table");
