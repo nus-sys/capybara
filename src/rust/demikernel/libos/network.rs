@@ -100,6 +100,19 @@ impl NetworkLibOS {
         }
     }
 
+    pub fn trywait_any2(&mut self, qts: &[QToken]) -> Result<Option<(usize, QDesc, OperationResult)>, Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(libos) => todo!("catpowder timedwait2()"),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(libos) => todo!("catnap timedwait2()"),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(libos) => todo!("catcollar timedwait2()"),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.trywait_any2(qts),
+        }
+    }
+
     /// Creates a socket.
     pub fn socket(
         &mut self,

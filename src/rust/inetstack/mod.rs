@@ -560,6 +560,32 @@ impl InetStack {
         }
     }
 
+    pub fn trywait_any2(&mut self, qts: &[QToken]) -> Result<Option<(usize, QDesc, OperationResult)>, Fail> {
+        // Poll first, so as to give pending operations a chance to complete.
+        self.poll_bg_work();
+
+        // Search for any operation that has completed.
+        for (i, &qt) in qts.iter().enumerate() {
+            // Retrieve associated schedule handle.
+            // TODO: move this out of the loop.
+            let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
+                Some(handle) => handle,
+                None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
+            };
+
+            // Found one, so extract the result and return.
+            if handle.has_completed() {
+                let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
+                return Ok(Some((i, qd, r)));
+            }
+
+            // Return this operation to the scheduling queue by removing the associated key
+            // (which would otherwise cause the operation to be freed).
+            handle.take_key();
+        }
+        Ok(None)
+    }
+
     /// Given a handle representing a task in our scheduler. Return the results of this future
     /// and the file descriptor for this connection.
     ///

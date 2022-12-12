@@ -13,11 +13,13 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
+use std::{sync::mpsc::{self, Receiver, Sender}, collections::HashMap};
 use ::std::{
     env,
     net::SocketAddrV4,
     panic,
     str::FromStr,
+    thread,
 };
 
 #[cfg(feature = "profiler")]
@@ -55,6 +57,15 @@ fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     }
 }
 
+fn request_thread(rx: Receiver<Vec<u8>>, tx: Sender<Vec<u8>>) {
+    let mut msgs = rx.iter();
+    while let Some(buf) = msgs.next() {
+        // delay
+
+        tx.send(buf.to_vec()).unwrap();
+    }
+}
+
 fn server(local: SocketAddrV4) -> Result<()> {
     let libos_name: LibOSName = match LibOSName::from_env() {
         Ok(libos_name) => libos_name.into(),
@@ -82,31 +93,48 @@ fn server(local: SocketAddrV4) -> Result<()> {
     };
 
     let mut qts = vec![get_connection(&mut libos, sockqd)];
+    let mut channels: HashMap<QDesc, (Sender<Vec<u8>>, Receiver<Vec<u8>>)> = HashMap::new();
 
     loop {
-        let (index, qd, result) = match libos.wait_any2(&qts) {
+        let wait_result = match libos.trywait_any2(&qts) {
             Ok(wait_result) => wait_result,
             Err(e) => panic!("operation failed: {:?}", e.cause),
         };
 
-        qts.swap_remove(index);
-        match result {
-            OperationResult::Accept(new_qd) => {
-                if let Some(qt) = get_request(&mut libos, new_qd) {
-                    qts.push(qt);
-                }
+        if let Some((index, qd, result)) = wait_result {
+            qts.swap_remove(index);
+            match result {
+                OperationResult::Accept(new_qd) => {
+                    let (tx0, rx0) = mpsc::channel();
+                    let (tx1, rx1) = mpsc::channel();
 
-                qts.push(get_connection(&mut libos, qd));
-            },
-            OperationResult::Push => {
-                if let Some(qt) = get_request(&mut libos, qd) {
-                    qts.push(qt);
-                }
-            },
-            OperationResult::Pop(_, recvbuf) => {
-                qts.push(send_response(&mut libos, qd, &recvbuf));
-            },
-            _ => unreachable!(),
+                    thread::spawn(|| {
+                        request_thread(rx0, tx1)
+                    });
+                    channels.insert(new_qd, (tx0, rx1));
+
+                    if let Some(qt) = get_request(&mut libos, new_qd) {
+                        qts.push(qt);
+                    }
+
+                    qts.push(get_connection(&mut libos, qd));
+                },
+                OperationResult::Push => {
+                    if let Some(qt) = get_request(&mut libos, qd) {
+                        qts.push(qt);
+                    }
+                },
+                OperationResult::Pop(_, recvbuf) => {
+                    channels.get(&qd).unwrap().0.send(recvbuf.to_vec()).unwrap();
+                },
+                _ => unreachable!(),
+            }
+        }
+
+        for (&qd, (_, rx)) in channels.iter() {
+            if let Ok(buf) = rx.try_recv() {
+                qts.push(send_response(&mut libos, qd, &buf));
+            }
         }
     }
 
