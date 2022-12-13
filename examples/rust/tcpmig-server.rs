@@ -19,7 +19,7 @@ use ::std::{
     net::SocketAddrV4,
     panic,
     str::FromStr,
-    thread,
+    thread, time::Duration,
 };
 
 #[cfg(feature = "profiler")]
@@ -61,8 +61,9 @@ fn request_thread(rx: Receiver<Vec<u8>>, tx: Sender<Vec<u8>>) {
     let mut msgs = rx.iter();
     while let Some(buf) = msgs.next() {
         // delay
-
+        thread::sleep(Duration::from_micros(1));
         tx.send(buf.to_vec()).unwrap();
+        
     }
 }
 
