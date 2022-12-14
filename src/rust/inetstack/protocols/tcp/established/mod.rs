@@ -89,7 +89,7 @@ impl EstablishedSocket {
     }
 
     pub fn current_rto(&self) -> Duration {
-        self.cb.rto_estimate()
+        self.cb.rto()
     }
 
     pub fn endpoints(&self) -> (SocketAddrV4, SocketAddrV4) {
