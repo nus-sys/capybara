@@ -8,7 +8,10 @@ use ::std::{
     cell::RefCell,
     io,
     rc::Rc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{
+        Duration,
+        SystemTime,
+    },
 };
 
 #[cfg(feature = "auto-calibrate")]
@@ -307,27 +310,24 @@ impl Profiler {
         let total_duration = self.roots.iter().map(|root| root.borrow().duration_sum).sum();
 
         for root in self.roots.iter() {
-            root.borrow().write_recursive(out, total_duration, 0, max_depth, self.ns_per_cycle)?;
+            root.borrow()
+                .write_recursive(out, total_duration, 0, max_depth, self.ns_per_cycle)?;
         }
 
         out.flush()
     }
 
     fn measure_ns_per_cycle() -> f64 {
-        let start = SystemTime::now();
+        let start: SystemTime = SystemTime::now();
         let (start_cycle, _): (u64, u32) = unsafe { x86::time::rdtscp() };
-        
+
         test::black_box((0..10000).fold(0, |old, new| old ^ new)); // dummy calculations for measurement
 
         let (end_cycle, _): (u64, u32) = unsafe { x86::time::rdtscp() };
-        let since_the_epoch = SystemTime::now()
-            .duration_since(start)
-            .expect("Time went backwards");
-        let in_ns = since_the_epoch.as_secs() * 1_000_000_000 +
-            since_the_epoch.subsec_nanos() as u64;
+        let since_the_epoch: Duration = SystemTime::now().duration_since(start).expect("Time went backwards");
+        let in_ns: u64 = since_the_epoch.as_secs() * 1_000_000_000 + since_the_epoch.subsec_nanos() as u64;
 
-
-        in_ns as f64 / (end_cycle-start_cycle) as f64
+        in_ns as f64 / (end_cycle - start_cycle) as f64
     }
 
     #[cfg(feature = "auto-calibrate")]
