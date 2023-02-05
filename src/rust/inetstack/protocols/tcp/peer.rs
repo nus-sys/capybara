@@ -626,13 +626,13 @@ impl Inner {
                 self.tcpmig.update_stats(local, remote);
 
                 // Possible decision-making point.
-                /* if self.tcpmig.should_migrate() {
+                if self.tcpmig.should_migrate() {
                     eprintln!("*** Should Migrate ***");
                     self.tcpmig.initiate_migration(
                         tcp_hdr.dst_port,
                         SocketAddrV4::new(ip_hdr.get_src_addr(),tcp_hdr.src_port)
                     );
-                } */
+                }
             }
 
             s.receive(&mut tcp_hdr, data);

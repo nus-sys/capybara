@@ -13,7 +13,6 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
-use std::{sync::mpsc::{self, Receiver, Sender}, collections::HashMap};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -54,16 +53,6 @@ fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     match libos.push2(qd, data) {
         Ok(qt) => qt,
         Err(e) => panic!("push failed: {:?}", e.cause),
-    }
-}
-
-fn request_thread(rx: Receiver<Vec<u8>>, tx: Sender<Vec<u8>>) {
-    let mut msgs = rx.iter();
-    while let Some(buf) = msgs.next() {
-        // delay
-        thread::sleep(Duration::from_micros(1));
-        tx.send(buf.to_vec()).unwrap();
-        
     }
 }
 
