@@ -94,48 +94,34 @@ fn server(local: SocketAddrV4) -> Result<()> {
     };
 
     let mut qts = vec![get_connection(&mut libos, sockqd)];
-    let mut channels: HashMap<QDesc, (Sender<Vec<u8>>, Receiver<Vec<u8>>)> = HashMap::new();
 
     loop {
-        let wait_result = match libos.trywait_any2(&qts) {
+        let (index, qd, result) = match libos.wait_any2(&qts) {
             Ok(wait_result) => wait_result,
             Err(e) => panic!("operation failed: {:?}", e.cause),
         };
 
-        if let Some((index, qd, result)) = wait_result {
-            qts.swap_remove(index);
-            match result {
-                OperationResult::Accept(new_qd) => {
-                    let (tx0, rx0) = mpsc::channel();
-                    let (tx1, rx1) = mpsc::channel();
+        qts.swap_remove(index);
+        match result {
+            OperationResult::Accept(new_qd) => {
+                if let Some(qt) = get_request(&mut libos, new_qd) {
+                    qts.push(qt);
+                }
 
-                    thread::spawn(|| {
-                        request_thread(rx0, tx1)
-                    });
-                    channels.insert(new_qd, (tx0, rx1));
+                qts.push(get_connection(&mut libos, qd));
+            },
+            OperationResult::Push => {
+                if let Some(qt) = get_request(&mut libos, qd) {
+                    qts.push(qt);
+                }
+            },
+            OperationResult::Pop(_, recvbuf) => {
+                // Request Processing Delay
+                thread::sleep(Duration::from_micros(1));
 
-                    if let Some(qt) = get_request(&mut libos, new_qd) {
-                        qts.push(qt);
-                    }
-
-                    qts.push(get_connection(&mut libos, qd));
-                },
-                OperationResult::Push => {
-                    if let Some(qt) = get_request(&mut libos, qd) {
-                        qts.push(qt);
-                    }
-                },
-                OperationResult::Pop(_, recvbuf) => {
-                    channels.get(&qd).unwrap().0.send(recvbuf.to_vec()).unwrap();
-                },
-                _ => unreachable!(),
-            }
-        }
-
-        for (&qd, (_, rx)) in channels.iter() {
-            if let Ok(buf) = rx.try_recv() {
-                qts.push(send_response(&mut libos, qd, &buf));
-            }
+                qts.push(send_response(&mut libos, qd, &recvbuf));
+            },
+            _ => unreachable!(),
         }
     }
 
