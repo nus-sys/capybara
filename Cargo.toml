@@ -133,6 +133,10 @@ path = "examples/rust/tcpmig-server.rs"
 name = "tcpmig-client"
 path = "examples/rust/tcpmig-client.rs"
 
+[[example]]
+name = "http-server"
+path = "examples/rust/http-server.rs"
+
 #=======================================================================================================================
 # Features
 #=======================================================================================================================
