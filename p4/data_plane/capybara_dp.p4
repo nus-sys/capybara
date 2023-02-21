@@ -273,7 +273,7 @@ control Ingress(
             target_mac_hi32_0.apply(hash1, target_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
             target_mac_lo16_0.apply(hash1, target_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
             target_ip_0.apply(hash1, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
-            target_port_0.apply(hash1, hdr.tcpmig.origin_port, meta, hdr.tcp.dst_port);
+            target_port_0.apply(hash1, hdr.tcpmig.origin_port, meta, hdr.tcp.dst_port); // Assumption: target uses the same port as origin to serve client 
 
 
             origin_mac_hi32_0.apply(hash2, origin_mac[47:16], meta, hdr.ethernet.src_mac[47:16]);
