@@ -135,3 +135,22 @@ header tcp_migration_header_h {
     bit<8>  flag;
     bit<8> checksum;
 }
+
+
+// PRISM HEADERS
+
+header prism_add_req_h {
+    bit<8>  type;
+    bit<16>  status;
+
+    bit<32>  peer_addr;
+    bit<16>  peer_port;
+    bit<32>  virtual_addr;
+    bit<16>  virtual_port;
+    bit<32>  owner_addr;
+    bit<16>  owner_port;
+    bit<48> owner_mac;
+
+    bit<8> lock;
+}
+
