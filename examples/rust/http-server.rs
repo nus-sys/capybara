@@ -39,7 +39,7 @@ fn main() -> ! {
     };
 
     // Create listening socket (a QDesc in Demikernel).
-    let local_addr: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 7878);
+    let local_addr: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 22222);
     let listening_qd: QDesc = match create_listening_socket(&mut libos, local_addr) {
         Ok(qd) => qd,
         Err(e) => panic!("create_listening_socket failed: {:?}", e.cause),
