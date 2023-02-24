@@ -34,6 +34,9 @@ struct my_ingress_metadata_t {
     bit<1> result13;
 
     bit<48> dst_mac;
+    bit<32> dst_ip;
+    bit<16> dst_port;
+          
 }
 
 /***********************  P A R S E R  **************************/
@@ -45,6 +48,7 @@ parser IngressParser(
 
     Checksum() ipv4_checksum;
     Checksum() tcp_checksum;
+    // Checksum() udp_checksum;
 
     /* This is a mandatory state, required by Tofino Architecture */
     state start {
@@ -84,7 +88,7 @@ parser IngressParser(
         pkt.extract(hdr.ipv4);
         
         // meta.src_ip = hdr.ipv4.src_ip;
-        // meta.dst_ip = hdr.ipv4.dst_ip;
+        meta.dst_ip = hdr.ipv4.dst_ip;
 
 
         tcp_checksum.subtract({
@@ -92,6 +96,12 @@ parser IngressParser(
             hdr.ipv4.dst_ip,
             8w0, hdr.ipv4.protocol
         });
+        // udp_checksum.subtract({
+        //     hdr.ipv4.src_ip,
+        //     hdr.ipv4.dst_ip,
+        //     8w0, hdr.ipv4.protocol
+        // });
+        
         transition select(hdr.ipv4.protocol){
             IP_PROTOCOL_TCP: parse_tcp;
             IP_PROTOCOL_UDP: parse_udp;
@@ -124,6 +134,15 @@ parser IngressParser(
     }
     state parse_udp {
         pkt.extract(hdr.udp);
+        meta.dst_port = hdr.udp.dst_port;
+        /* Calculate Payload checksum */
+        // udp_checksum.subtract({
+        //     hdr.udp.src_port,
+        //     hdr.udp.dst_port,
+        //     // hdr.udp.len, Do not subtract the length!!!!
+        //     hdr.udp.checksum
+        // });
+        // meta.l4_payload_checksum = udp_checksum.get();
 
         transition select(pkt.lookahead<bit<8>>()) {
             0: parse_prism_add_req;
@@ -282,6 +301,19 @@ control Ingress(
     action exec_check_val_7(){
         check_val_7.execute(0);
     }
+
+    action prism_reply() {
+        // ig_tm_md.ucast_egress_port = ig_intr_md.ingress_port;
+        // hdr.udp.checksum = 0;
+        hdr.ethernet.dst_mac = hdr.ethernet.src_mac;
+        hdr.ethernet.src_mac = meta.dst_mac;
+        hdr.ipv4.dst_ip = hdr.ipv4.src_ip;
+        hdr.ipv4.src_ip = meta.dst_ip;
+        hdr.udp.dst_port = hdr.udp.src_port;
+        hdr.udp.src_port = meta.dst_port;
+    }
+
+
     apply {
         
         ig_tm_md.bypass_egress = 1w1;
@@ -295,7 +327,7 @@ control Ingress(
             exec_check_val_6();
             exec_check_val_7();
 
-            drop();
+            prism_reply();
         }
         // if(hdr.tcp.isValid() || hdr.tcpmig.isValid()){
         //     ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
@@ -415,6 +447,7 @@ control IngressDeparser(packet_out pkt,
 
     Checksum()  ipv4_checksum;
     Checksum()  tcp_checksum;
+    // Checksum()  udp_checksum;
     apply {
         if (ig_dprsr_md.digest_type == TCP_MIGRATION_DIGEST) {
             migration_digest.pack({
@@ -454,6 +487,31 @@ control IngressDeparser(packet_out pkt,
                 meta.l4_payload_checksum
             });
         }
+
+        // if (hdr.udp.isValid()) {
+        //     hdr.ipv4.hdr_checksum = ipv4_checksum.update({
+        //         hdr.ipv4.version,
+        //         hdr.ipv4.ihl,
+        //         hdr.ipv4.diffserv,
+        //         hdr.ipv4.total_len,
+        //         hdr.ipv4.identification,
+        //         hdr.ipv4.flags,
+        //         hdr.ipv4.frag_offset,
+        //         hdr.ipv4.ttl,
+        //         hdr.ipv4.protocol,
+        //         hdr.ipv4.src_ip,
+        //         hdr.ipv4.dst_ip
+        //     });
+        //     hdr.udp.checksum = udp_checksum.update({
+        //         hdr.ipv4.src_ip,
+        //         hdr.ipv4.dst_ip,
+        //         8w0, hdr.ipv4.protocol,
+        //         hdr.udp.src_port,
+        //         hdr.udp.dst_port,
+        //         /* Any headers past TCP */
+        //         meta.l4_payload_checksum
+        //     });
+        // }
 
         pkt.emit(hdr);
     }
