@@ -92,15 +92,6 @@ fn client(remote: SocketAddrV4) -> Result<()> {
 
         println!("ping {}", i);
 
-        thread::sleep(FREQ);
-
-        //instants.push((begin, Instant::now()));
-
-        #[cfg(feature = "profiler")]
-        profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
-    }
-
-    for i in 1..=rounds {
         // Pop data.
         let qt: QToken = match libos.pop(sockqd) {
             Ok(qt) => qt,
@@ -115,6 +106,13 @@ fn client(remote: SocketAddrV4) -> Result<()> {
         };
 
         println!("pong {}", recvbuf[0]);
+
+        thread::sleep(FREQ);
+
+        //instants.push((begin, Instant::now()));
+
+        #[cfg(feature = "profiler")]
+        profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
     }
 
     /* let instants = instants.iter()
