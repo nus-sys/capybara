@@ -12,6 +12,8 @@ struct my_ingress_headers_t {
     tcp_h                       tcp;
     udp_h                       udp;
     prism_add_req_h             prism_add_req;
+    prism_delete_req_h          prism_delete_req;
+    prism_chown_req_h           prism_chown_req;
 }
 
 struct my_ingress_metadata_t {
@@ -144,13 +146,23 @@ parser IngressParser(
         // });
         // meta.l4_payload_checksum = udp_checksum.get();
 
-        transition select(pkt.lookahead<bit<8>>()) {
-            0: parse_prism_add_req;
+        transition select(pkt.lookahead<bit<24>>()) { // type & status (assumption: psw msgs' status is always 0)
+            0x000000: parse_prism_add_req;
+            0x010000: parse_prism_delete_req;
+            0x020000: parse_prism_chown_req;
             default: accept;
         }
     }
     state parse_prism_add_req {
         pkt.extract(hdr.prism_add_req);
+        transition accept;
+    }
+    state parse_prism_delete_req {
+        pkt.extract(hdr.prism_delete_req);
+        transition accept;
+    }
+    state parse_prism_chown_req {
+        pkt.extract(hdr.prism_chown_req);
         transition accept;
     }
 }
@@ -222,7 +234,7 @@ control Ingress(
     RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check_1)
     check_val_1 = {
         void apply(inout bit<32> register_data, out bit<32> return_data) {
-            register_data = hdr.prism_add_req.peer_addr;
+            register_data = hdr.prism_delete_req.peer_addr;
             return_data = register_data;
         }
     };
@@ -234,7 +246,7 @@ control Ingress(
     RegisterAction< bit<16>, bit<8>, bit<16> >(reg_check_2)
     check_val_2 = {
         void apply(inout bit<16> register_data, out bit<16> return_data) {
-            register_data = hdr.prism_add_req.peer_port;
+            register_data = hdr.prism_delete_req.peer_port;
             return_data = register_data;
         }
     };
@@ -242,65 +254,65 @@ control Ingress(
         check_val_2.execute(0);
     }
 
-    Register< bit<32>, _ >(1) reg_check_3;  // value, key
-    RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check_3)
-    check_val_3 = {
-        void apply(inout bit<32> register_data, out bit<32> return_data) {
-            register_data = hdr.prism_add_req.virtual_addr;
-            return_data = register_data;
-        }
-    };
-    action exec_check_val_3(){
-        check_val_3.execute(0);
-    }
+    // Register< bit<32>, _ >(1) reg_check_3;  // value, key
+    // RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check_3)
+    // check_val_3 = {
+    //     void apply(inout bit<32> register_data, out bit<32> return_data) {
+    //         register_data = hdr.prism_delete_req.virtual_addr;
+    //         return_data = register_data;
+    //     }
+    // };
+    // action exec_check_val_3(){
+    //     check_val_3.execute(0);
+    // }
 
-    Register< bit<16>, _ >(1) reg_check_4;  // value, key
-    RegisterAction< bit<16>, bit<8>, bit<16> >(reg_check_4)
-    check_val_4 = {
-        void apply(inout bit<16> register_data, out bit<16> return_data) {
-            register_data = hdr.prism_add_req.virtual_port;
-            return_data = register_data;
-        }
-    };
-    action exec_check_val_4(){
-        check_val_4.execute(0);
-    }
+    // Register< bit<16>, _ >(1) reg_check_4;  // value, key
+    // RegisterAction< bit<16>, bit<8>, bit<16> >(reg_check_4)
+    // check_val_4 = {
+    //     void apply(inout bit<16> register_data, out bit<16> return_data) {
+    //         register_data = hdr.prism_delete_req.virtual_port;
+    //         return_data = register_data;
+    //     }
+    // };
+    // action exec_check_val_4(){
+    //     check_val_4.execute(0);
+    // }
 
-    Register< bit<32>, _ >(1) reg_check_5;  // value, key
-    RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check_5)
-    check_val_5 = {
-        void apply(inout bit<32> register_data, out bit<32> return_data) {
-            register_data = hdr.prism_add_req.owner_addr;
-            return_data = register_data;
-        }
-    };
-    action exec_check_val_5(){
-        check_val_5.execute(0);
-    }
+    // Register< bit<32>, _ >(1) reg_check_5;  // value, key
+    // RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check_5)
+    // check_val_5 = {
+    //     void apply(inout bit<32> register_data, out bit<32> return_data) {
+    //         register_data = hdr.prism_delete_req.owner_addr;
+    //         return_data = register_data;
+    //     }
+    // };
+    // action exec_check_val_5(){
+    //     check_val_5.execute(0);
+    // }
 
-    Register< bit<16>, _ >(1) reg_check_6;  // value, key
-    RegisterAction< bit<16>, bit<8>, bit<16> >(reg_check_6)
-    check_val_6 = {
-        void apply(inout bit<16> register_data, out bit<16> return_data) {
-            register_data = hdr.prism_add_req.owner_port;
-            return_data = register_data;
-        }
-    };
-    action exec_check_val_6(){
-        check_val_6.execute(0);
-    }
+    // Register< bit<16>, _ >(1) reg_check_6;  // value, key
+    // RegisterAction< bit<16>, bit<8>, bit<16> >(reg_check_6)
+    // check_val_6 = {
+    //     void apply(inout bit<16> register_data, out bit<16> return_data) {
+    //         register_data = hdr.prism_delete_req.owner_port;
+    //         return_data = register_data;
+    //     }
+    // };
+    // action exec_check_val_6(){
+    //     check_val_6.execute(0);
+    // }
 
-    Register< bit<32>, _ >(1) reg_check_7;  // value, key
-    RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check_7)
-    check_val_7 = {
-        void apply(inout bit<32> register_data, out bit<32> return_data) {
-            register_data = hdr.prism_add_req.owner_mac[31:0];
-            return_data = register_data;
-        }
-    };
-    action exec_check_val_7(){
-        check_val_7.execute(0);
-    }
+    // Register< bit<32>, _ >(1) reg_check_7;  // value, key
+    // RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check_7)
+    // check_val_7 = {
+    //     void apply(inout bit<32> register_data, out bit<32> return_data) {
+    //         register_data = hdr.prism_delete_req.owner_mac[31:0];
+    //         return_data = register_data;
+    //     }
+    // };
+    // action exec_check_val_7(){
+    //     check_val_7.execute(0);
+    // }
 
     action prism_reply() {
         // ig_tm_md.ucast_egress_port = ig_intr_md.ingress_port;
@@ -318,14 +330,38 @@ control Ingress(
         
         ig_tm_md.bypass_egress = 1w1;
         if(hdr.prism_add_req.isValid()){
+            // counter_update.execute(0);
+            // exec_check_val_1();
+            // exec_check_val_2();
+            // exec_check_val_3();
+            // exec_check_val_4();
+            // exec_check_val_5();
+            // exec_check_val_6();
+            // exec_check_val_7();
+
+            prism_reply();
+        }
+        else if(hdr.prism_delete_req.isValid()){
             counter_update.execute(0);
             exec_check_val_1();
             exec_check_val_2();
-            exec_check_val_3();
-            exec_check_val_4();
-            exec_check_val_5();
-            exec_check_val_6();
-            exec_check_val_7();
+            // exec_check_val_3();
+            // exec_check_val_4();
+            // exec_check_val_5();
+            // exec_check_val_6();
+            // exec_check_val_7();
+
+            prism_reply();
+        }
+        else if(hdr.prism_chown_req.isValid()){
+            // counter_update.execute(0);
+            // exec_check_val_1();
+            // exec_check_val_2();
+            // exec_check_val_3();
+            // exec_check_val_4();
+            // exec_check_val_5();
+            // exec_check_val_6();
+            // exec_check_val_7();
 
             prism_reply();
         }
