@@ -211,7 +211,7 @@ impl TcpMigPeer {
         let key = (origin, remote);
         let inner = self.inner.borrow();
         if let Some(active) = inner.active_migrations.get(&key) {
-            if dbg!(active.is_prepared()) {
+            if active.is_prepared() {
                 return Some(MigrationHandle { origin, remote })
             }
         }
