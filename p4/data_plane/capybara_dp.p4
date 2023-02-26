@@ -34,6 +34,8 @@ struct my_ingress_metadata_t {
     bit<1> result13;
 
     bit<48> dst_mac;
+
+    bit<32> time;
 }
 
 /***********************  P A R S E R  **************************/
@@ -200,22 +202,26 @@ control Ingress(
         }
     };
 
-    Register< bit<16>, _ >(1) reg_check;  // value, key
-    RegisterAction< bit<16>, bit<8>, bit<16> >(reg_check)
+    Register< bit<32>, bit<8> >(256) reg_check;  // value, key
+    RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check)
     check_val = {
-        void apply(inout bit<16> register_data, out bit<16> return_data) {
-            register_data = (bit<16>)meta.result01;
-            return_data = register_data;
+        void apply(inout bit<32> register_data, out bit<32> return_data) {
+            register_data = meta.time;
         }
     };
     action exec_check_val(){
-        check_val.execute(0);
+        check_val.execute(hdr.tcpmig.flag);
     }
     apply {
         
         ig_tm_md.bypass_egress = 1w1;
-        if(hdr.tcp.isValid() || hdr.tcpmig.isValid()){
-            ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+        if(hdr.tcp.isValid() || meta.load == 1){
+            if(hdr.tcpmig.isValid()){
+                meta.time = ig_prsr_md.global_tstamp[31:0];
+                exec_check_val();
+            }
+            
+            // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
             
             bit<48> target_mac;
             bit<48> origin_mac;
@@ -268,12 +274,12 @@ control Ingress(
             meta.result11 = holder_1b_11;
             meta.result12 = holder_1b_12;
             meta.result13 = holder_1b_13;
-            // exec_check_val();
+            
 
             target_mac_hi32_0.apply(hash1, target_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
             target_mac_lo16_0.apply(hash1, target_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
             target_ip_0.apply(hash1, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
-            target_port_0.apply(hash1, hdr.tcpmig.origin_port, meta, hdr.tcp.dst_port);
+            target_port_0.apply(hash1, hdr.tcpmig.origin_port, meta, hdr.tcp.dst_port); // Assumption: target uses the same port as origin to serve client 
 
 
             origin_mac_hi32_0.apply(hash2, origin_mac[47:16], meta, hdr.ethernet.src_mac[47:16]);

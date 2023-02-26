@@ -126,8 +126,12 @@ name = "tcp-migration-ping-pong"
 path = "examples/rust/tcp-migration-ping-pong.rs"
 
 [[example]]
-name = "tcpmig-server"
-path = "examples/rust/tcpmig-server.rs"
+name = "tcpmig-server-multi"
+path = "examples/rust/tcpmig-server-multi.rs"
+
+[[example]]
+name = "tcpmig-server-single"
+path = "examples/rust/tcpmig-server-single.rs"
 
 [[example]]
 name = "tcpmig-client"
