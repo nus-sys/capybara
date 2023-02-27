@@ -216,16 +216,17 @@ class prism():
             # dst_port         =   digest["dst_port"];
             # meta_ip         =   digest["meta_ip"];
             # meta_port         =   digest["meta_port"];
-
-            # hash_digest1         =   digest["hash_digest1"];
+            base_type           = digest["type"];
+            meta_type           = digest["meta_type"];
+            hash_digest1         =   digest["hash_digest1"];
             # hash_digest         =   digest["hash_digest"];
 
             # print("Hash: {}\n".format(hash_digest), end="", flush=True)
             # print("src: {}:{}, dst: {}:{}, meta: {},{}\nHash1: {} and Hash2: {}\n".format(
             #     ip(src_ip), src_port, ip(dst_ip), dst_port, ip(meta_ip), meta_port, hash_digest1, hash_digest2), end="", flush=True)
 
-            print("\n{}:{} => {}:{} \n".format(
-                mac(src_mac), ip(src_ip), mac(dst_mac), ip(dst_ip)), end="", flush=True)
+            print("\n{}:{} => {}:{} , hash1: {}, type: {}, meta_type: {}\n".format(
+                mac(src_mac), ip(src_ip), mac(dst_mac), ip(dst_ip), hash_digest1, base_type, meta_type), end="", flush=True)
 
 
             # Since we do not have access to self, we have to use

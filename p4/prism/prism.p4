@@ -11,8 +11,8 @@ struct my_ingress_headers_t {
     ipv4_h                      ipv4;
     tcp_h                       tcp;
     udp_h                       udp;
+    prism_req_base_h            prism_req_base;
     prism_add_req_h             prism_add_req;
-    prism_delete_req_h          prism_delete_req;
     prism_chown_req_h           prism_chown_req;
 }
 
@@ -23,9 +23,8 @@ struct my_ingress_metadata_t {
     
     bit<16> hash1;
     bit<16> hash2;
-    bit<16> hash3;
     
-    bit<1> load;
+    bit<8> type;
     bit<1> result00;
     bit<1> result01;
     bit<1> result02;
@@ -38,7 +37,14 @@ struct my_ingress_metadata_t {
     bit<48> dst_mac;
     bit<32> dst_ip;
     bit<16> dst_port;
-          
+
+    bit<48> owner_mac;
+    bit<32> owner_ip;
+    bit<16> owner_port;
+    
+    // bit<32> peer_ip;
+    // bit<16> peer_port;
+    
 }
 
 /***********************  P A R S E R  **************************/
@@ -63,7 +69,7 @@ parser IngressParser(
         meta.ingress_port = ig_intr_md.ingress_port;
         meta.egress_port = 0;
         meta.l4_payload_checksum  = 0;
-        meta.load = 0;
+        meta.type = 0; // types are 0 - 4 (i.e., 5 means it's not a psw udp packet)
         meta.result00 = 0;
         meta.result01 = 0;
         meta.result02 = 0;
@@ -72,6 +78,13 @@ parser IngressParser(
         meta.result11 = 0;
         meta.result12 = 0;
         meta.result13 = 0;
+
+        meta.owner_ip = 0;
+        meta.owner_ip = 0;
+        meta.owner_port = 0;
+
+        // meta.peer_ip = 0;
+        // meta.peer_port = 0;
         
         
         transition parse_ethernet;
@@ -113,7 +126,7 @@ parser IngressParser(
 
     state parse_tcp {
         pkt.extract(hdr.tcp);
-
+        meta.type = 5;
         /* Calculate Payload checksum */
         tcp_checksum.subtract({
             hdr.tcp.src_port,
@@ -147,29 +160,45 @@ parser IngressParser(
         // meta.l4_payload_checksum = udp_checksum.get();
 
         transition select(pkt.lookahead<bit<24>>()) { // type & status (assumption: psw msgs' status is always 0)
-            0x000000: parse_prism_add_req;
-            0x010000: parse_prism_delete_req;
-            0x020000: parse_prism_chown_req;
+            0x000000 &&& 0x00FFFF: parse_prism_req_base;
+            default: accept;
+        }
+    }
+    state parse_prism_req_base {
+        pkt.extract(hdr.prism_req_base);
+        meta.type = hdr.prism_req_base.type;
+        // meta.peer_ip = hdr.prism_req_base.peer_addr;
+        // meta.peer_port = hdr.prism_req_base.peer_port;
+        
+        transition select(hdr.prism_req_base.type){
+            0: parse_prism_add_req;
+            2: parse_prism_chown_req;
             default: accept;
         }
     }
     state parse_prism_add_req {
         pkt.extract(hdr.prism_add_req);
-        transition accept;
-    }
-    state parse_prism_delete_req {
-        pkt.extract(hdr.prism_delete_req);
+        
+        meta.owner_mac = hdr.prism_add_req.owner_mac;
+        meta.owner_ip = hdr.prism_add_req.owner_addr;
+        meta.owner_port = hdr.prism_add_req.owner_port;
+        
         transition accept;
     }
     state parse_prism_chown_req {
         pkt.extract(hdr.prism_chown_req);
+
+        meta.owner_mac = hdr.prism_chown_req.owner_mac;
+        meta.owner_ip = hdr.prism_chown_req.owner_addr;
+        meta.owner_port = hdr.prism_chown_req.owner_port;
+
         transition accept;
     }
 }
 
 /***************** M A T C H - A C T I O N  *********************/
-// #include "../capybara_hash.p4"
-// #include "migration_helper.p4"
+#include "../capybara_hash.p4"
+#include "migration_helper.p4"
 control Ingress(
     /* User */
     inout my_ingress_headers_t                       hdr,
@@ -182,46 +211,43 @@ control Ingress(
 {
 
     #include "../forwarding.p4"
-    // calc_hash(CRCPolynomial<bit<32>>(
-    //         coeff=32w0x04C11DB7, reversed=true, msb=false, extended=false,
-    //         init=32w0xFFFFFFFF, xor=32w0xFFFFFFFF)) hash;
+    calc_hash(CRCPolynomial<bit<32>>(
+            coeff=32w0x04C11DB7, reversed=true, msb=false, extended=false,
+            init=32w0xFFFFFFFF, xor=32w0xFFFFFFFF)) hash;
     
 
-    // MigrationRequestIdentifier32b() request_client_ip_0;
-    // MigrationRequestIdentifier16b() request_client_port_0;
-    // MigrationReplyIdentifier32b() reply_client_ip_0;
-    // MigrationReplyIdentifier16b() reply_client_port_0;
+    MigrationRequestIdentifier32b() request_client_ip_0;
+    MigrationRequestIdentifier16b() request_client_port_0;
+    MigrationReplyIdentifier32b() reply_client_ip_0;
+    MigrationReplyIdentifier16b() reply_client_port_0;
 
-    // MigrationRequestIdentifier32b() request_client_ip_1;
-    // MigrationRequestIdentifier16b() request_client_port_1;
-    // MigrationReplyIdentifier32b() reply_client_ip_1;
-    // MigrationReplyIdentifier16b() reply_client_port_1;
-
-
-    // MigrationRequest32b0() target_mac_hi32_0;
-    // MigrationRequest16b0() target_mac_lo16_0;
-    // MigrationRequest32b0() target_ip_0;
-    // MigrationRequest16b0() target_port_0;
-
-    // MigrationReply32b0() origin_mac_hi32_0;
-    // MigrationReply16b0() origin_mac_lo16_0;
-    // MigrationReply32b0() origin_ip_0;
-    // MigrationReply16b0() origin_port_0;
-
-    // MigrationRequest32b1() target_mac_hi32_1;
-    // MigrationRequest16b1() target_mac_lo16_1;
-    // MigrationRequest32b1() target_ip_1;
-    // MigrationRequest16b1() target_port_1;
-
-    // MigrationReply32b1() origin_mac_hi32_1;
-    // MigrationReply16b1() origin_mac_lo16_1;
-    // MigrationReply32b1() origin_ip_1;
-    // MigrationReply16b1() origin_port_1;
+    MigrationRequestIdentifier32b() request_client_ip_1;
+    MigrationRequestIdentifier16b() request_client_port_1;
+    MigrationReplyIdentifier32b() reply_client_ip_1;
+    MigrationReplyIdentifier16b() reply_client_port_1;
 
 
+    MigrationRequest32b0() target_mac_hi32_0;
+    MigrationRequest16b0() target_mac_lo16_0;
+    MigrationRequest32b0() target_ip_0;
+    MigrationRequest16b0() target_port_0;
+
+    MigrationReply32b0() origin_mac_hi32_0;
+    MigrationReply16b0() origin_mac_lo16_0;
+    MigrationReply32b0() origin_ip_0;
+    MigrationReply16b0() origin_port_0;
+
+    MigrationRequest32b1() target_mac_hi32_1;
+    MigrationRequest16b1() target_mac_lo16_1;
+    MigrationRequest32b1() target_ip_1;
+    MigrationRequest16b1() target_port_1;
+
+    MigrationReply32b1() origin_mac_hi32_1;
+    MigrationReply16b1() origin_mac_lo16_1;
+    MigrationReply32b1() origin_ip_1;
+    MigrationReply16b1() origin_port_1;
 
 
-    
     Register<bit<32>, _> (32w1) counter;
     RegisterAction<bit<32>, _, bit<32>>(counter) counter_update = {
         void apply(inout bit<32> val, out bit<32> rv) {
@@ -230,90 +256,18 @@ control Ingress(
         }
     };
 
-    Register< bit<32>, _ >(1) reg_check_1;  // value, key
-    RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check_1)
-    check_val_1 = {
+    Register< bit<32>, bit<8> >(256) reg_check;  // value, key
+    RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check)
+    check_val = {
         void apply(inout bit<32> register_data, out bit<32> return_data) {
-            register_data = hdr.prism_delete_req.peer_addr;
-            return_data = register_data;
+            register_data = (bit<32>)meta.owner_ip;
         }
     };
-    action exec_check_val_1(){
-        check_val_1.execute(0);
+    action exec_check_val(){
+        check_val.execute(0);
     }
 
-    Register< bit<16>, _ >(1) reg_check_2;  // value, key
-    RegisterAction< bit<16>, bit<8>, bit<16> >(reg_check_2)
-    check_val_2 = {
-        void apply(inout bit<16> register_data, out bit<16> return_data) {
-            register_data = hdr.prism_delete_req.peer_port;
-            return_data = register_data;
-        }
-    };
-    action exec_check_val_2(){
-        check_val_2.execute(0);
-    }
-
-    // Register< bit<32>, _ >(1) reg_check_3;  // value, key
-    // RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check_3)
-    // check_val_3 = {
-    //     void apply(inout bit<32> register_data, out bit<32> return_data) {
-    //         register_data = hdr.prism_delete_req.virtual_addr;
-    //         return_data = register_data;
-    //     }
-    // };
-    // action exec_check_val_3(){
-    //     check_val_3.execute(0);
-    // }
-
-    // Register< bit<16>, _ >(1) reg_check_4;  // value, key
-    // RegisterAction< bit<16>, bit<8>, bit<16> >(reg_check_4)
-    // check_val_4 = {
-    //     void apply(inout bit<16> register_data, out bit<16> return_data) {
-    //         register_data = hdr.prism_delete_req.virtual_port;
-    //         return_data = register_data;
-    //     }
-    // };
-    // action exec_check_val_4(){
-    //     check_val_4.execute(0);
-    // }
-
-    // Register< bit<32>, _ >(1) reg_check_5;  // value, key
-    // RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check_5)
-    // check_val_5 = {
-    //     void apply(inout bit<32> register_data, out bit<32> return_data) {
-    //         register_data = hdr.prism_delete_req.owner_addr;
-    //         return_data = register_data;
-    //     }
-    // };
-    // action exec_check_val_5(){
-    //     check_val_5.execute(0);
-    // }
-
-    // Register< bit<16>, _ >(1) reg_check_6;  // value, key
-    // RegisterAction< bit<16>, bit<8>, bit<16> >(reg_check_6)
-    // check_val_6 = {
-    //     void apply(inout bit<16> register_data, out bit<16> return_data) {
-    //         register_data = hdr.prism_delete_req.owner_port;
-    //         return_data = register_data;
-    //     }
-    // };
-    // action exec_check_val_6(){
-    //     check_val_6.execute(0);
-    // }
-
-    // Register< bit<32>, _ >(1) reg_check_7;  // value, key
-    // RegisterAction< bit<32>, bit<8>, bit<32> >(reg_check_7)
-    // check_val_7 = {
-    //     void apply(inout bit<32> register_data, out bit<32> return_data) {
-    //         register_data = hdr.prism_delete_req.owner_mac[31:0];
-    //         return_data = register_data;
-    //     }
-    // };
-    // action exec_check_val_7(){
-    //     check_val_7.execute(0);
-    // }
-
+    
     action prism_reply() {
         // ig_tm_md.ucast_egress_port = ig_intr_md.ingress_port;
         // hdr.udp.checksum = 0;
@@ -329,121 +283,141 @@ control Ingress(
     apply {
         
         ig_tm_md.bypass_egress = 1w1;
-        if(hdr.prism_add_req.isValid()){
-            // counter_update.execute(0);
-            // exec_check_val_1();
-            // exec_check_val_2();
-            // exec_check_val_3();
-            // exec_check_val_4();
-            // exec_check_val_5();
-            // exec_check_val_6();
-            // exec_check_val_7();
 
-            prism_reply();
-        }
-        else if(hdr.prism_delete_req.isValid()){
-            counter_update.execute(0);
-            exec_check_val_1();
-            exec_check_val_2();
-            // exec_check_val_3();
-            // exec_check_val_4();
-            // exec_check_val_5();
-            // exec_check_val_6();
-            // exec_check_val_7();
-
-            prism_reply();
-        }
-        else if(hdr.prism_chown_req.isValid()){
-            // counter_update.execute(0);
-            // exec_check_val_1();
-            // exec_check_val_2();
-            // exec_check_val_3();
-            // exec_check_val_4();
-            // exec_check_val_5();
-            // exec_check_val_6();
-            // exec_check_val_7();
-
-            prism_reply();
-        }
-        // if(hdr.tcp.isValid() || hdr.tcpmig.isValid()){
+        // if(hdr.prism_req_base.isValid()){
+        //     // meta.type = hdr.prism_req_base.type;
+        //     counter_update.execute(0);
         //     ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+        //     exec_check_val();
+        // }
+        if(hdr.tcp.isValid() || hdr.prism_req_base.isValid()){
+            exec_check_val();
+            bit<48> owner_mac;
+            bit<32> owner_ip;
+            bit<16> owner_port;
             
-        //     bit<48> target_mac;
-        //     bit<48> origin_mac;
-        //     bit<16> hash1;
-        //     bit<16> hash2;
-        //     // bit<16> hash3;
+            bit<16> hash1;
+            bit<16> hash2;
 
-        //     bit<1> holder_1b_00;
-        //     bit<1> holder_1b_01;
-        //     bit<1> holder_1b_02;
-        //     bit<1> holder_1b_03;
+            bit<1> holder_1b_00;
+            bit<1> holder_1b_01;
+            bit<1> holder_1b_02;
+            bit<1> holder_1b_03;
 
-        //     bit<1> holder_1b_10;
-        //     bit<1> holder_1b_11;
-        //     bit<1> holder_1b_12;
-        //     bit<1> holder_1b_13;
+            bit<1> holder_1b_10;
+            bit<1> holder_1b_11;
+            bit<1> holder_1b_12;
+            bit<1> holder_1b_13;
 
-            
-        //     if(meta.load == 1){
-        //         counter_update.execute(0);
-        //         // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
-        //         // meta.hash1 = hash1;
-        //         target_mac = hdr.ethernet.src_mac;
-        //         origin_mac = hdr.ethernet.dst_mac;
-        //         hash.apply(hdr.tcpmig.client_ip, hdr.tcpmig.client_port, hash1);
-        //         hash2 = hash1;    
-        //     }else{
-        //         hash.apply(hdr.ipv4.src_ip, hdr.tcp.src_port, hash1);
-        //         hash.apply(hdr.ipv4.dst_ip, hdr.tcp.dst_port, hash2);
-        //     }
-        //     // hash.apply(hdr, meta.load, hash1, hash2);
+            if(hdr.prism_req_base.isValid()){
+                counter_update.execute(0);
+                ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+                
+                owner_mac = meta.owner_mac;
+                owner_ip = meta.owner_ip;
+                owner_port = meta.owner_port;
+                
+                hash.apply(hdr.prism_req_base.peer_addr, hdr.prism_req_base.peer_port, hash1);
+                hash2 = hash1;
+                meta.hash1 = hash1;
+                prism_reply();
+            }else{
+                hash.apply(hdr.ipv4.src_ip, hdr.tcp.src_port, hash1);
+                hash.apply(hdr.ipv4.dst_ip, hdr.tcp.dst_port, hash2);
 
-        //     request_client_ip_0.apply(hash1, hdr, meta, holder_1b_00);
-        //     request_client_port_0.apply(hash1, hdr, meta, holder_1b_01);
-        //     reply_client_ip_0.apply(hash2, hdr, meta, holder_1b_02);
-        //     reply_client_port_0.apply(hash2, hdr, meta, holder_1b_03);
+                meta.hash1 = hash2;
+                ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+            }
 
-        //     meta.result00 = holder_1b_00;
+            request_client_ip_0.apply(hash1, hdr, meta, holder_1b_00);
+            request_client_port_0.apply(hash1, hdr, meta, holder_1b_01);
+            reply_client_ip_0.apply(hash2, hdr, meta, holder_1b_02);
+            reply_client_port_0.apply(hash2, hdr, meta, holder_1b_03);
 
-        //     request_client_ip_1.apply(hash1, hdr, meta, holder_1b_10);
-        //     request_client_port_1.apply(hash1, hdr, meta, holder_1b_11);
-        //     reply_client_ip_1.apply(hash2, hdr, meta, holder_1b_12);
-        //     reply_client_port_1.apply(hash2, hdr, meta, holder_1b_13);
+            meta.result00 = holder_1b_00;
+            meta.result01 = holder_1b_01;
+            meta.result02 = holder_1b_02;
+            meta.result03 = holder_1b_03;
 
-        //     //TODO: return value no need for identifier, so remove it
-        //     meta.result01 = holder_1b_01;
-        //     meta.result02 = holder_1b_02;
-        //     meta.result03 = holder_1b_03;
-        //     meta.result10 = holder_1b_10;
-        //     meta.result11 = holder_1b_11;
-        //     meta.result12 = holder_1b_12;
-        //     meta.result13 = holder_1b_13;
-        //     // exec_check_val();
+            request_client_ip_1.apply(hash1, hdr, meta, holder_1b_10);
+            request_client_port_1.apply(hash1, hdr, meta, holder_1b_11);
+            reply_client_ip_1.apply(hash2, hdr, meta, holder_1b_12);
+            reply_client_port_1.apply(hash2, hdr, meta, holder_1b_13);
 
-        //     target_mac_hi32_0.apply(hash1, target_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
-        //     target_mac_lo16_0.apply(hash1, target_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
-        //     target_ip_0.apply(hash1, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
-        //     target_port_0.apply(hash1, hdr.tcpmig.origin_port, meta, hdr.tcp.dst_port);
+            meta.result10 = holder_1b_10;
+            meta.result11 = holder_1b_11;
+            meta.result12 = holder_1b_12;
+            meta.result13 = holder_1b_13;
 
-
-        //     origin_mac_hi32_0.apply(hash2, origin_mac[47:16], meta, hdr.ethernet.src_mac[47:16]);
-        //     origin_mac_lo16_0.apply(hash2, origin_mac[15:0], meta, hdr.ethernet.src_mac[15:0]);
-        //     origin_ip_0.apply(hash2, hdr.tcpmig.origin_ip, meta, hdr.ipv4.src_ip);
-        //     origin_port_0.apply(hash2, hdr.tcpmig.origin_port, meta, hdr.tcp.src_port);
+            target_mac_hi32_0.apply(hash1, owner_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
+            target_mac_lo16_0.apply(hash1, owner_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
+            target_ip_0.apply(hash1, owner_ip, meta, hdr.ipv4.dst_ip);
+            target_port_0.apply(hash1, owner_port, meta, hdr.tcp.dst_port); // Assumption: target uses the same port as origin to serve client 
 
 
-        //     target_mac_hi32_1.apply(hash1, target_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
-        //     target_mac_lo16_1.apply(hash1, target_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
-        //     target_ip_1.apply(hash1, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
-        //     target_port_1.apply(hash1, hdr.tcpmig.origin_port, meta, hdr.tcp.dst_port);
+            origin_mac_hi32_0.apply(hash2, owner_mac[47:16], meta, hdr.ethernet.src_mac[47:16]);
+            origin_mac_lo16_0.apply(hash2, owner_mac[15:0], meta, hdr.ethernet.src_mac[15:0]);
+            origin_ip_0.apply(hash2, owner_ip, meta, hdr.ipv4.src_ip);
+            origin_port_0.apply(hash2, owner_port, meta, hdr.tcp.src_port);
 
 
-        //     origin_mac_hi32_1.apply(hash2, origin_mac[47:16], meta, hdr.ethernet.src_mac[47:16]);
-        //     origin_mac_lo16_1.apply(hash2, origin_mac[15:0], meta, hdr.ethernet.src_mac[15:0]);
-        //     origin_ip_1.apply(hash2, hdr.tcpmig.origin_ip, meta, hdr.ipv4.src_ip);
-        //     origin_port_1.apply(hash2, hdr.tcpmig.origin_port, meta, hdr.tcp.src_port);
+            target_mac_hi32_1.apply(hash1, owner_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
+            target_mac_lo16_1.apply(hash1, owner_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
+            target_ip_1.apply(hash1, owner_ip, meta, hdr.ipv4.dst_ip);
+            target_port_1.apply(hash1, owner_port, meta, hdr.tcp.dst_port);
 
+
+            origin_mac_hi32_1.apply(hash2, owner_mac[47:16], meta, hdr.ethernet.src_mac[47:16]);
+            origin_mac_lo16_1.apply(hash2, owner_mac[15:0], meta, hdr.ethernet.src_mac[15:0]);
+            origin_ip_1.apply(hash2, owner_ip, meta, hdr.ipv4.src_ip);
+            origin_port_1.apply(hash2, owner_port, meta, hdr.tcp.src_port);
+        }
+    
+
+
+
+
+
+
+
+
+
+
+        // if(hdr.prism_add_req.isValid()){
+        //     // counter_update.execute(0);
+        //     // exec_check_val_1();
+        //     // exec_check_val_2();
+        //     // exec_check_val_3();
+        //     // exec_check_val_4();
+        //     // exec_check_val_5();
+        //     // exec_check_val_6();
+        //     // exec_check_val_7();
+
+        //     prism_reply();
+        // }
+        // else if(hdr.prism_delete_req.isValid()){
+        //     // counter_update.execute(0);
+        //     // exec_check_val_1();
+        //     // exec_check_val_2();
+        //     // exec_check_val_3();
+        //     // exec_check_val_4();
+        //     // exec_check_val_5();
+        //     // exec_check_val_6();
+        //     // exec_check_val_7();
+
+        //     prism_reply();
+        // }
+        // else if(hdr.prism_chown_req.isValid()){
+        //     // counter_update.execute(0);
+        //     // exec_check_val_1();
+        //     // exec_check_val_2();
+        //     // exec_check_val_3();
+        //     // exec_check_val_4();
+        //     // exec_check_val_5();
+        //     // exec_check_val_6();
+        //     // exec_check_val_7();
+
+        //     prism_reply();
         // }
 
         l2_forwarding.apply();
@@ -466,8 +440,10 @@ struct migration_digest_t {
     // bit<16>  dst_port;
     // bit<32>  meta_ip;
     // bit<16>  meta_port;
-
-    // bit<16>  hash_digest1;
+    bit<8>  type;
+    bit<8>  meta_type;
+    
+    bit<16>  hash_digest1;
     // bit<16>  hash_digest2;
     // bit<16>  hash_digest;
 }
@@ -490,7 +466,10 @@ control IngressDeparser(packet_out pkt,
                     hdr.ethernet.src_mac,
                     hdr.ethernet.dst_mac,
                     hdr.ipv4.src_ip,
-                    hdr.ipv4.dst_ip});
+                    hdr.ipv4.dst_ip,
+                    hdr.prism_req_base.type,
+                    meta.type,
+                    meta.hash1});
         }
 
 

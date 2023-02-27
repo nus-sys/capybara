@@ -139,12 +139,15 @@ header tcp_migration_header_h {
 
 // PRISM HEADERS
 
-header prism_add_req_h {
+header prism_req_base_h {
     bit<8>  type;
     bit<16>  status;
 
     bit<32>  peer_addr; // peer: client
     bit<16>  peer_port;
+}
+
+header prism_add_req_h {
     bit<32>  virtual_addr; // virtual: frontend
     bit<16>  virtual_port;
     bit<32>  owner_addr; // owner: frontend
@@ -155,21 +158,16 @@ header prism_add_req_h {
 }
 
 
-header prism_delete_req_h {
-    bit<8>  type;
-    bit<16>  status;
+// header prism_delete_req_h {
+//     bit<8>  type;
+//     bit<16>  status;
 
-    bit<32>  peer_addr; // peer: client
-    bit<16>  peer_port;
-}
+//     bit<32>  peer_addr; // peer: client
+//     bit<16>  peer_port;
+// }
 
 
 header prism_chown_req_h {
-    bit<8>  type;
-    bit<16>  status;
-
-    bit<32>  peer_addr; // peer: client
-    bit<16>  peer_port;
     bit<32>  owner_addr; // owner: backend http server
     bit<16>  owner_port;
     bit<48> owner_mac;
