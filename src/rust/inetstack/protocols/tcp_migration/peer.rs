@@ -40,6 +40,12 @@ use ::std::{
 use crate::timer;
 
 //======================================================================================================================
+// Constants
+//======================================================================================================================
+
+const BASE_RX_TX_THRESHOLD: f64 = 2.0;
+
+//======================================================================================================================
 // Structures
 //======================================================================================================================
 
@@ -118,6 +124,7 @@ impl TcpMigPeer {
                 ))
             },
         }; */
+
         let inner = Inner::new(
             rt.clone(),
             local_link_addr,
@@ -262,19 +269,19 @@ impl TcpMigPeer {
         }
     }
 
-    pub fn update_stats(&mut self, local: SocketAddrV4, remote: SocketAddrV4) {
-        self.inner.borrow_mut().stats.update(local, remote);
+    pub fn update_incoming_stats(&mut self, local: SocketAddrV4, remote: SocketAddrV4, recv_queue_len: usize) {
+        self.inner.borrow_mut().stats.update_incoming(local, remote, recv_queue_len);
     }
 
+    pub fn update_outgoing_stats(&mut self) {
+        self.inner.borrow_mut().stats.update_outgoing();
+    }
 
-
-    // TEMP
     pub fn should_migrate(&self) -> bool {
-        static mut FLAG: i32 = 0;
-        unsafe {
-            FLAG += 1;
-            FLAG == 12
-        }
+        let threshold = BASE_RX_TX_THRESHOLD;
+
+        let inner = self.inner.borrow();
+        inner.stats.get_rx_tx_ratio() > threshold
     }
 }
 

@@ -143,6 +143,10 @@ impl Receiver {
         self.receive_next
             .set(self.receive_next.get() + SeqNumber::from(buf_len as u32));
     }
+
+    pub fn recv_queue_len(&self) -> usize {
+        self.recv_queue.borrow().len()
+    }
 }
 
 /// Transmission control block for representing our TCP connection.

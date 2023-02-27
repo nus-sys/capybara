@@ -490,16 +490,23 @@ impl TcpPeer {
     }
 
     fn send(&self, fd: QDesc, buf: Buffer) -> Result<(), Fail> {
-        let inner = self.inner.borrow_mut();
+        let mut inner = self.inner.borrow_mut();
         let key = match inner.sockets.get(&fd) {
             Some(Socket::Established { local, remote }) => (*local, *remote),
             Some(..) => return Err(Fail::new(ENOTCONN, "connection not established")),
             None => return Err(Fail::new(EBADF, "bad queue descriptor")),
         };
-        match inner.established.get(&key) {
+        let send_result = match inner.established.get(&key) {
             Some(ref s) => s.send(buf),
             None => Err(Fail::new(ENOTCONN, "connection not established")),
+        };
+
+        #[cfg(feature = "tcp-migration")]
+        {
+            inner.tcpmig.update_outgoing_stats();
         }
+
+        send_result
     }
 
     /// Closes a TCP socket.
@@ -623,7 +630,7 @@ impl Inner {
 
             #[cfg(feature = "tcp-migration")]
             {
-                self.tcpmig.update_stats(local, remote);
+                self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
 
                 // Possible decision-making point.
                 if self.tcpmig.should_migrate() {
