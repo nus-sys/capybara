@@ -4,7 +4,7 @@
 #=======================================================================================================================
 # Default Paths
 #=======================================================================================================================
-
+export HOME := /homes/inho
 export PREFIX ?= $(HOME)
 export INSTALL_PREFIX ?= $(HOME)
 export PKG_CONFIG_PATH ?= $(shell find $(PREFIX)/lib/ -name '*pkgconfig*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
@@ -50,7 +50,7 @@ export LIBS := $(DEMIKERNEL_LIB)
 # Build Parameters
 #=======================================================================================================================
 
-export LIBOS ?= catnap
+export LIBOS ?= catnip
 export CARGO_FEATURES := --features=$(LIBOS)-libos
 
 # Switch for DPDK
@@ -192,4 +192,118 @@ test-unit-c: $(BINDIR)/syscalls.elf
 
 # Rust unit tests.
 test-unit-rust:
-	$(CARGO) test --lib $(CARGO_FLAGS) $(CARGO_FEATURES) -- --nocapture $(UNIT_TEST)
+# 	$(CARGO) test --lib $(CARGO_FLAGS) $(CARGO_FEATURES) -- --nocapture $(UNIT_TEST)
+	$(CARGO) test tcp_migration --lib $(CARGO_FLAGS) $(CARGO_FEATURES) -- --nocapture $(UNIT_TEST)
+
+
+server-test:
+	CONFIG_PATH=/homes/inho/Capybara/config/s1_config.yaml timeout 30 /homes/inho/Capybara/capybara/bin/examples/rust/tcp-push-pop.elf --server 20.0.0.2:22222
+
+http-server:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/http-server.elf 
+
+tcp-echo:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-echo.elf \
+	--peer server --local 10.0.1.8:22222 --bufsize 1024
+
+tcpmig-client:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/c1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-client.elf \
+	10.0.1.8:22222
+tcpmig-single-origin:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-single.elf \
+	10.0.1.8:22222
+tcpmig-single-target:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s2_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-single.elf \
+	10.0.1.9:22222
+
+tcpmig-multi-origin:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-multi.elf \
+	10.0.1.8:22222
+tcpmig-multi-target:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s2_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-multi.elf \
+	10.0.1.9:22222
+
+tcp-migration-client:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/c1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration.elf \
+	--client 10.0.1.8:22222
+tcp-migration-origin:
+	# sudo -E echo $(PKG_CONFIG_PATH)
+	# sudo -E echo $(LD_LIBRARY_PATH)
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration.elf \
+	--server 10.0.1.8:22222 10.0.1.8:22223 10.0.1.9:22222
+tcp-migration-dest:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s2_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration.elf \
+	--dest 10.0.1.9:22222
+
+# to enable debug logging: RUST_LOG="debug" 
+tcp-migration-ping-pong-client:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/c1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration-ping-pong.elf \
+	--client 10.0.1.8:22222
+tcp-migration-ping-pong-origin:
+#	sudo -E echo $(PKG_CONFIG_PATH)
+#	sudo -E echo $(LD_LIBRARY_PATH)
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration-ping-pong.elf \
+	--server 10.0.1.8:22222 10.0.1.8:22223 10.0.1.9:22222
+tcp-migration-ping-pong-dest:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s2_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration-ping-pong.elf \
+	--dest 10.0.1.9:22222
+
+tcp-ping-pong-server:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-ping-pong.elf \
+	--server 10.0.1.8:22222
+
+tcp-ping-pong-client:
+	sudo -E RUST_BACKTRACE=1 LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/c1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	timeout 10 /homes/inho/Capybara/capybara/bin/examples/rust/tcp-ping-pong.elf \
+	--client 10.0.1.8:22222
+
+tcp-pushpop:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	timeout 10 /homes/inho/Capybara/capybara/bin/examples/rust/tcp-push-pop.elf \
+	--server 10.0.1.8:22222
