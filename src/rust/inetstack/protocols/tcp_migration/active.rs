@@ -53,6 +53,7 @@ pub enum MigrationRequestStatus {
     Ok,
     Rejected,
     StateReceived(TcpState),
+    MigrationCompleted,
 }
 
 pub struct ActiveMigration {
@@ -197,6 +198,8 @@ impl ActiveMigration {
                         eprintln!("*** Migration completed ***");
 
                         // TODO: Start closing the active migration.
+
+                        return Ok(MigrationRequestStatus::MigrationCompleted);
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE_ACK"))
                 }

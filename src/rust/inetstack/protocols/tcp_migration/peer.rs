@@ -77,6 +77,8 @@ struct Inner {
 
     stats: TcpMigStats,
 
+    is_currently_migrating: bool,
+
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
     #[allow(unused)]
@@ -179,6 +181,9 @@ impl TcpMigPeer {
                 tcp_peer.notify_passive(state)?;
                 inner.incoming_connections.insert((local, remote));
             },
+            MigrationRequestStatus::MigrationCompleted => {
+                inner.is_currently_migrating = false;
+            },
             MigrationRequestStatus::Ok => (),
         };
 
@@ -212,6 +217,7 @@ impl TcpMigPeer {
         };
 
         active.initiate_migration();
+        inner.is_currently_migrating = true;
     }
 
     pub fn can_migrate_out(&self, origin: SocketAddrV4, remote: SocketAddrV4) -> Option<MigrationHandle> {
@@ -281,6 +287,8 @@ impl TcpMigPeer {
         let threshold = BASE_RX_TX_THRESHOLD;
 
         let inner = self.inner.borrow();
+        if inner.is_currently_migrating { return false; }
+
         inner.stats.get_rx_tx_ratio() > threshold
     }
 }
@@ -302,6 +310,7 @@ impl Inner {
             origins: HashMap::new(),
             incoming_connections: HashSet::new(),
             stats: TcpMigStats::new(),
+            is_currently_migrating: false,
             //background: handle,
         }
     }
