@@ -36,6 +36,7 @@ fn get_connection(libos: &mut LibOS, listen_qd: QDesc) -> QToken {
 }
 
 fn get_request(libos: &mut LibOS, qd: QDesc) -> Option<QToken> {
+    #[cfg(feature = "tcp-migration")]
     match libos.notify_migration_safety(qd) {
         Ok(true) => return None,
         Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
