@@ -24,6 +24,20 @@ control MigrationRequestIdentifier32b(
         discriminator_out = write_value.execute(index);
     }
 
+    RegisterAction< value32b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value32b_t register_value, out bit<1> is_deleted) {
+            if(register_value == hdr.prism_req_base.peer_addr){
+                register_value = 0;
+                is_deleted = 1;
+            }else{
+                is_deleted = 0;
+            }
+        }
+    };
+    action exec_delete_value() {
+        discriminator_out = delete_value.execute(index);
+    }
+
     RegisterAction< value32b_t, index_t, bit<1> >(reg) check_value = {
         void apply(inout value32b_t register_value, out bit<1> is_matched) {
             if(register_value == hdr.ipv4.src_ip){
@@ -45,12 +59,14 @@ control MigrationRequestIdentifier32b(
         }
         actions = {
             exec_check_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (2, 0) : exec_write_value();
+            (1, _) : exec_delete_value();
             (5, _) : exec_check_value();
         }
         const default_action = NoAction();
@@ -82,6 +98,20 @@ control MigrationRequestIdentifier16b(
         discriminator_out = write_value.execute(index);
     }
 
+    RegisterAction< value16b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value16b_t register_value, out bit<1> is_deleted) {
+            if(register_value == hdr.prism_req_base.peer_port){
+                register_value = 0;
+                is_deleted = 1;
+            }else{
+                is_deleted = 0;
+            }
+        }
+    };
+    action exec_delete_value() {
+        discriminator_out = delete_value.execute(index);
+    }
+
     RegisterAction< value16b_t, index_t, bit<1> >(reg) check_value = {
         void apply(inout value16b_t register_value, out bit<1> is_matched) {
             if(register_value == hdr.tcp.src_port){
@@ -99,16 +129,18 @@ control MigrationRequestIdentifier16b(
     table tbl_action_selection {
         key = {
             meta.type           : ternary;
-            meta.result00       : ternary;
+            meta.result01       : ternary;
         }
         actions = {
             exec_check_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (2, 0) : exec_write_value();
+            (1, _) : exec_delete_value();
             (5, _) : exec_check_value();
         }
         const default_action = NoAction();
@@ -140,6 +172,20 @@ control MigrationReplyIdentifier32b(
         discriminator_out = write_value.execute(index);
     }
 
+    RegisterAction< value32b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value32b_t register_value, out bit<1> is_deleted) {
+            if(register_value == hdr.prism_req_base.peer_addr){
+                register_value = 0;
+                is_deleted = 1;
+            }else{
+                is_deleted = 0;
+            }
+        }
+    };
+    action exec_delete_value() {
+        discriminator_out = delete_value.execute(index);
+    }
+
     RegisterAction< value32b_t, index_t, bit<1> >(reg) check_value = {
         void apply(inout value32b_t register_value, out bit<1> is_matched) {
             if(register_value == hdr.ipv4.dst_ip){
@@ -157,16 +203,18 @@ control MigrationReplyIdentifier32b(
     table tbl_action_selection {
         key = {
             meta.type           : ternary;
-            meta.result00       : ternary;
+            meta.result02       : ternary;
         }
         actions = {
             exec_check_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (0, 0) : exec_write_value();
+            (1, _) : exec_delete_value();
             (5, _) : exec_check_value();
         }
         const default_action = NoAction();
@@ -198,6 +246,20 @@ control MigrationReplyIdentifier16b(
         discriminator_out = write_value.execute(index);
     }
 
+    RegisterAction< value16b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value16b_t register_value, out bit<1> is_deleted) {
+            if(register_value == hdr.prism_req_base.peer_port){
+                register_value = 0;
+                is_deleted = 1;
+            }else{
+                is_deleted = 0;
+            }
+        }
+    };
+    action exec_delete_value() {
+        discriminator_out = delete_value.execute(index);
+    }
+
     RegisterAction< value16b_t, index_t, bit<1> >(reg) check_value = {
         void apply(inout value16b_t register_value, out bit<1> is_matched) {
             if(register_value == hdr.tcp.dst_port){
@@ -215,16 +277,18 @@ control MigrationReplyIdentifier16b(
     table tbl_action_selection {
         key = {
             meta.type           : ternary;
-            meta.result00       : ternary;
+            meta.result03       : ternary;
         }
         actions = {
             exec_check_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (0, 0) : exec_write_value();
+            (1, _) : exec_delete_value();
             (5, _) : exec_check_value();
         }
         const default_action = NoAction();
@@ -251,6 +315,15 @@ control MigrationRequest32b0(
         write_value.execute(index);
     }
 
+    RegisterAction< value32b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value32b_t register_value, out bit<1> null) {
+            register_value = 0;
+        }
+    };
+    action exec_delete_value() {
+        delete_value.execute(index);
+    }
+
     RegisterAction< value32b_t, index_t, value32b_t >(reg) read_value = {
         void apply(inout value32b_t register_value, out value32b_t rv) {
             rv = register_value;
@@ -269,12 +342,14 @@ control MigrationRequest32b0(
         }
         actions = {
             exec_read_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (2, 1, 1) : exec_write_value();
+            (1, 1, 1) : exec_delete_value();
             (5, 1, 1) : exec_read_value();
         }
         const default_action = NoAction();
@@ -301,6 +376,15 @@ control MigrationRequest16b0(
         write_value.execute(index);
     }
 
+    RegisterAction< value16b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value16b_t register_value, out bit<1> null) {
+            register_value = 0;
+        }
+    };
+    action exec_delete_value() {
+        delete_value.execute(index);
+    }
+
     RegisterAction< value16b_t, index_t, value16b_t >(reg) read_value = {
         void apply(inout value16b_t register_value, out value16b_t rv) {
             rv = register_value;
@@ -319,12 +403,14 @@ control MigrationRequest16b0(
         }
         actions = {
             exec_read_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (2, 1, 1) : exec_write_value();
+            (1, 1, 1) : exec_delete_value();
             (5, 1, 1) : exec_read_value();
         }
         const default_action = NoAction();
@@ -351,6 +437,15 @@ control MigrationReply32b0(
         write_value.execute(index);
     }
 
+    RegisterAction< value32b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value32b_t register_value, out bit<1> null) {
+            register_value = 0;
+        }
+    };
+    action exec_delete_value() {
+        delete_value.execute(index);
+    }
+
     RegisterAction< value32b_t, index_t, value32b_t >(reg) read_value = {
         void apply(inout value32b_t register_value, out value32b_t rv) {
             rv = register_value;
@@ -369,12 +464,14 @@ control MigrationReply32b0(
         }
         actions = {
             exec_read_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (0, 1, 1) : exec_write_value();
+            (1, 1, 1) : exec_delete_value();
             (5, 1, 1) : exec_read_value();
         }
         const default_action = NoAction();
@@ -401,6 +498,15 @@ control MigrationReply16b0(
         write_value.execute(index);
     }
 
+    RegisterAction< value16b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value16b_t register_value, out bit<1> null) {
+            register_value = 0;
+        }
+    };
+    action exec_delete_value() {
+        delete_value.execute(index);
+    }
+
     RegisterAction< value16b_t, index_t, value16b_t >(reg) read_value = {
         void apply(inout value16b_t register_value, out value16b_t rv) {
             rv = register_value;
@@ -419,12 +525,14 @@ control MigrationReply16b0(
         }
         actions = {
             exec_read_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (0, 1, 1) : exec_write_value();
+            (1, 1, 1) : exec_delete_value();
             (5, 1, 1) : exec_read_value();
         }
         const default_action = NoAction();
@@ -451,6 +559,15 @@ control MigrationRequest32b1(
         write_value.execute(index);
     }
 
+    RegisterAction< value32b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value32b_t register_value, out bit<1> null) {
+            register_value = 0;
+        }
+    };
+    action exec_delete_value() {
+        delete_value.execute(index);
+    }
+
     RegisterAction< value32b_t, index_t, value32b_t >(reg) read_value = {
         void apply(inout value32b_t register_value, out value32b_t rv) {
             rv = register_value;
@@ -469,12 +586,14 @@ control MigrationRequest32b1(
         }
         actions = {
             exec_read_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (2, 1, 1) : exec_write_value();
+            (1, 1, 1) : exec_delete_value();
             (5, 1, 1) : exec_read_value();
         }
         const default_action = NoAction();
@@ -501,6 +620,15 @@ control MigrationRequest16b1(
         write_value.execute(index);
     }
 
+    RegisterAction< value16b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value16b_t register_value, out bit<1> null) {
+            register_value = 0;
+        }
+    };
+    action exec_delete_value() {
+        delete_value.execute(index);
+    }
+
     RegisterAction< value16b_t, index_t, value16b_t >(reg) read_value = {
         void apply(inout value16b_t register_value, out value16b_t rv) {
             rv = register_value;
@@ -519,12 +647,14 @@ control MigrationRequest16b1(
         }
         actions = {
             exec_read_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (2, 1, 1) : exec_write_value();
+            (1, 1, 1) : exec_delete_value();
             (5, 1, 1) : exec_read_value();
         }
         const default_action = NoAction();
@@ -551,6 +681,15 @@ control MigrationReply32b1(
         write_value.execute(index);
     }
 
+    RegisterAction< value32b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value32b_t register_value, out bit<1> null) {
+            register_value = 0;
+        }
+    };
+    action exec_delete_value() {
+        delete_value.execute(index);
+    }
+
     RegisterAction< value32b_t, index_t, value32b_t >(reg) read_value = {
         void apply(inout value32b_t register_value, out value32b_t rv) {
             rv = register_value;
@@ -569,12 +708,14 @@ control MigrationReply32b1(
         }
         actions = {
             exec_read_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (0, 1, 1) : exec_write_value();
+            (1, 1, 1) : exec_delete_value();
             (5, 1, 1) : exec_read_value();
         }
         const default_action = NoAction();
@@ -601,6 +742,15 @@ control MigrationReply16b1(
         write_value.execute(index);
     }
 
+    RegisterAction< value16b_t, index_t, bit<1> >(reg) delete_value = {
+        void apply(inout value16b_t register_value, out bit<1> null) {
+            register_value = 0;
+        }
+    };
+    action exec_delete_value() {
+        delete_value.execute(index);
+    }
+
     RegisterAction< value16b_t, index_t, value16b_t >(reg) read_value = {
         void apply(inout value16b_t register_value, out value16b_t rv) {
             rv = register_value;
@@ -619,12 +769,14 @@ control MigrationReply16b1(
         }
         actions = {
             exec_read_value;
+            exec_delete_value;
             exec_write_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (0, 1, 1) : exec_write_value();
+            (1, 1, 1) : exec_delete_value();
             (5, 1, 1) : exec_read_value();
         }
         const default_action = NoAction();
