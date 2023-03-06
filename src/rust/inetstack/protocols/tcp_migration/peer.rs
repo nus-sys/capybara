@@ -279,6 +279,15 @@ impl TcpMigPeer {
 
     pub fn update_incoming_stats(&mut self, local: SocketAddrV4, remote: SocketAddrV4, recv_queue_len: usize) {
         self.inner.borrow_mut().stats.update_incoming(local, remote, recv_queue_len);
+
+        unsafe {
+            static mut TMP: i32 = 0;
+            TMP += 1;
+            if TMP == 5 {
+                TMP = 0;
+                println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
+            }
+        }
     }
 
     pub fn update_outgoing_stats(&mut self) {
