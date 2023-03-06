@@ -112,21 +112,7 @@ impl Ord for Fragment {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        inetstack::protocols::{
-            ethernet2::{
-                EtherType2,
-                ETHERNET2_HEADER_SIZE,
-            },
-            ip::IpProtocol,
-            ipv4::IPV4_HEADER_DEFAULT_SIZE,
-        },
-        runtime::{
-            memory::DataBuffer,
-            network::types::MacAddress,
-        },
-    };
-    use ::std::net::Ipv4Addr;
+    use crate::runtime::memory::DataBuffer;
     use std::{net::SocketAddrV4, str::FromStr};
 
     fn tcpmig_header(fragment_offset: u16, flag_next_fragment: bool) -> TcpMigHeader {

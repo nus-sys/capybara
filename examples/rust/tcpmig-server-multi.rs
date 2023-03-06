@@ -139,6 +139,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         let index = qts.iter().position(|&qt| qt == pop_qt).expect("`pop_qt` should be in `qts`");
                         qts.swap_remove(index);
                         qd_to_remove = Some(qd);
+                        break;
                     },
                     Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
                     _ => (),

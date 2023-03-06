@@ -43,7 +43,7 @@ use crate::timer;
 // Constants
 //======================================================================================================================
 
-const BASE_RX_TX_THRESHOLD: f64 = 2.0;
+const BASE_RX_TX_THRESHOLD_RATIO: f64 = 2.0;
 
 //======================================================================================================================
 // Structures
@@ -78,6 +78,8 @@ struct Inner {
     stats: TcpMigStats,
 
     is_currently_migrating: bool,
+
+    tx_rx_threshold_ratio: f64,
 
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
@@ -284,12 +286,10 @@ impl TcpMigPeer {
     }
 
     pub fn should_migrate(&self) -> bool {
-        let threshold = BASE_RX_TX_THRESHOLD;
-
         let inner = self.inner.borrow();
         if inner.is_currently_migrating { return false; }
 
-        inner.stats.get_rx_tx_ratio() > threshold
+        inner.stats.get_rx_tx_ratio() > inner.tx_rx_threshold_ratio
     }
 }
 
@@ -311,6 +311,10 @@ impl Inner {
             incoming_connections: HashSet::new(),
             stats: TcpMigStats::new(),
             is_currently_migrating: false,
+            tx_rx_threshold_ratio: match std::env::var("TX_RX_RATIO") {
+                Ok(val) => val.parse().expect("TX_RX_RATIO should be a number"),
+                Err(..) => BASE_RX_TX_THRESHOLD_RATIO,
+            },
             //background: handle,
         }
     }

@@ -18,7 +18,6 @@ use ::std::{
     net::SocketAddrV4,
     panic,
     str::FromStr,
-    thread, time::Duration,
 };
 
 #[cfg(feature = "profiler")]
@@ -27,27 +26,6 @@ use ::demikernel::perftools::profiler;
 //======================================================================================================================
 // server()
 //======================================================================================================================
-
-fn get_request(libos: &mut LibOS, qd: QDesc) -> Option<QToken> {
-    match libos.notify_migration_safety(qd) {
-        Ok(true) => return None,
-        Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
-        _ => (),
-    };
-
-    let qt = match libos.pop(qd) {
-        Ok(qt) => qt,
-        Err(e) => panic!("pop failed: {:?}", e.cause),
-    };
-    Some(qt)
-}
-
-fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
-    match libos.push2(qd, data) {
-        Ok(qt) => qt,
-        Err(e) => panic!("push failed: {:?}", e.cause),
-    }
-}
 
 fn server(local: SocketAddrV4) -> Result<()> {
     let libos_name: LibOSName = match LibOSName::from_env() {
@@ -137,7 +115,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
 
     // TODO: close socket when we get close working properly in catnip.
-    Ok(())
 }
 
 //======================================================================================================================

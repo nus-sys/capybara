@@ -293,7 +293,6 @@ mod test {
 
         // Build fake TCPMig header.
         let origin = SocketAddrV4::from_str("198.0.0.1:20000").unwrap();
-        let target = SocketAddrV4::from_str("198.0.0.2:20000").unwrap();
         let remote = SocketAddrV4::from_str("18.45.32.67:19465").unwrap();
         let hdr = HDR_BYTES;
 
