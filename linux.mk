@@ -67,6 +67,7 @@ endif
 
 CARGO_FEATURES += $(FEATURES)
 
+export TX_RX_RATIO ?= 10
 #=======================================================================================================================
 
 all: all-libs all-tests all-examples

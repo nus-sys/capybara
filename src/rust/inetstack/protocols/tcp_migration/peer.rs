@@ -134,6 +134,7 @@ impl TcpMigPeer {
             local_link_addr,
             local_ipv4_addr,
         );
+        println!("TX_RX_RATIO: {}", inner.tx_rx_threshold_ratio);
 
         Ok(Self{inner: Rc::new(RefCell::new(inner))})
     }
