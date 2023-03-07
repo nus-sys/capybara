@@ -24,6 +24,9 @@ struct PacketRate {
     instants: VecDeque<Instant>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+struct RollingAverageResult(f64);
+
 struct RollingAverage {
     values: VecDeque<usize>,
     sum: usize,
@@ -37,6 +40,18 @@ pub struct TcpMigStats {
     /// 
     /// (local, remote) -> requests per milli-second.
     recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
+}
+
+//======================================================================================================================
+// Standard Library Trait Implementations
+//======================================================================================================================
+
+impl std::cmp::Eq for RollingAverageResult {}
+
+impl std::cmp::Ord for RollingAverageResult {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).expect("RollingAverageResult should never be NaN")
+    }
 }
 
 //======================================================================================================================
@@ -65,6 +80,12 @@ impl TcpMigStats {
 
     pub fn get_rx_tx_ratio(&self) -> f64 {
         self.global_incoming_traffic.get() / self.global_outgoing_traffic.get()
+    }
+
+    pub fn get_connection_to_migrate_out(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
+        self.recv_queue_lengths.iter()
+        .max_by_key(|(_, v)| v.get())
+        .and_then(|(k, _)| Some(*k))
     }
 }
 
@@ -111,12 +132,12 @@ impl RollingAverage {
         //eprintln!("{}", self.value);
     }
 
-    fn get(&self) -> f64 {
+    fn get(&self) -> RollingAverageResult {
         if self.values.len() < WINDOW {
-            0.0
+            RollingAverageResult(0.0)
         }
         else {
-            (self.sum as f64) / (WINDOW as f64)
+            RollingAverageResult((self.sum as f64) / (WINDOW as f64))
         }
     }
 }

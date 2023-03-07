@@ -193,11 +193,16 @@ impl TcpMigPeer {
         Ok(())
     }
 
-    pub fn initiate_migration(&mut self, origin_port: u16, remote: SocketAddrV4) {
+    pub fn initiate_migration(&mut self) {
         let mut inner = self.inner.borrow_mut();
 
-        let origin = SocketAddrV4::new(inner.local_ipv4_addr, origin_port);
-        let target = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), origin_port); // TEMP
+        let (origin, remote) = match inner.stats.get_connection_to_migrate_out() {
+            Some(conn) => conn,
+            None => return,
+        };
+
+        //let origin = SocketAddrV4::new(inner.local_ipv4_addr, origin_port);
+        let target = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), origin.port()); // TEMP
         let key = (origin, remote);
 
         let active = ActiveMigration::new(
@@ -299,7 +304,8 @@ impl TcpMigPeer {
         let inner = self.inner.borrow();
         if inner.is_currently_migrating { return false; }
 
-        inner.stats.get_rx_tx_ratio() > inner.tx_rx_threshold_ratio
+        let ratio = inner.stats.get_rx_tx_ratio();
+        ratio.is_finite() && ratio > inner.tx_rx_threshold_ratio
     }
 }
 
