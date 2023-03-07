@@ -12,7 +12,7 @@ control MigrationRequestIdentifier32b(
     Register< value32b_t, index_t >(register_size) reg;
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value32b_t register_value, out bit<1> is_written) {
-            if(register_value == 0){
+            if(register_value == 0 || register_value == hdr.prism_req_base.peer_addr){
                 register_value = hdr.prism_req_base.peer_addr;
                 is_written = 1;
             }else{
@@ -86,7 +86,7 @@ control MigrationRequestIdentifier16b(
     Register< value16b_t, index_t >(register_size) reg;
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value16b_t register_value, out bit<1> is_written) {
-            if(register_value == 0){
+            if(register_value == 0 || register_value == hdr.prism_req_base.peer_port){
                 register_value = hdr.prism_req_base.peer_port;
                 is_written = 1;
             }else{

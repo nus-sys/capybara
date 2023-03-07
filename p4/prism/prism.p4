@@ -311,7 +311,7 @@ control Ingress(
 
             if(hdr.prism_req_base.isValid()){
                 counter_update.execute(0);
-                ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+                // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
                 
                 owner_mac = meta.owner_mac;
                 owner_ip = meta.owner_ip;
@@ -326,7 +326,7 @@ control Ingress(
                 hash.apply(hdr.ipv4.dst_ip, hdr.tcp.dst_port, hash2);
 
                 meta.hash1 = hash2;
-                ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+                // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
             }
 
             request_client_ip_0.apply(hash1, hdr, meta, holder_1b_00);
