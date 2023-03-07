@@ -87,6 +87,10 @@ impl TcpMigStats {
         .max_by_key(|(_, v)| v.get())
         .and_then(|(k, _)| Some(*k))
     }
+
+    pub fn stop_tracking_connection(&mut self, local: SocketAddrV4, remote: SocketAddrV4) {
+        self.recv_queue_lengths.remove(&(local, remote)).expect("connection should have been tracked");
+    }
 }
 
 impl PacketRate {

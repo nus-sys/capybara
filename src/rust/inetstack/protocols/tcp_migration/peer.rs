@@ -79,7 +79,7 @@ struct Inner {
 
     is_currently_migrating: bool,
 
-    tx_rx_threshold_ratio: f64,
+    rx_tx_threshold_ratio: f64,
 
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
@@ -134,7 +134,7 @@ impl TcpMigPeer {
             local_link_addr,
             local_ipv4_addr,
         );
-        println!("TX_RX_RATIO: {}", inner.tx_rx_threshold_ratio);
+        println!("RX_TX_RATIO: {}", inner.rx_tx_threshold_ratio);
 
         Ok(Self{inner: Rc::new(RefCell::new(inner))})
     }
@@ -183,8 +183,12 @@ impl TcpMigPeer {
                 let (local, remote) = (state.local, state.remote);
                 tcp_peer.notify_passive(state)?;
                 inner.incoming_connections.insert((local, remote));
+                inner.active_migrations.remove(&(hdr.origin, hdr.remote)).expect("active migration should exist");
             },
             MigrationRequestStatus::MigrationCompleted => {
+                let (local, remote) = (hdr.origin, hdr.remote);
+                inner.active_migrations.remove(&(local, remote)).expect("active migration should exist");
+                inner.stats.stop_tracking_connection(local, remote);
                 inner.is_currently_migrating = false;
             },
             MigrationRequestStatus::Ok => (),
@@ -305,7 +309,7 @@ impl TcpMigPeer {
         if inner.is_currently_migrating { return false; }
 
         let ratio = inner.stats.get_rx_tx_ratio();
-        ratio.is_finite() && ratio > inner.tx_rx_threshold_ratio
+        ratio.is_finite() && ratio > inner.rx_tx_threshold_ratio
     }
 }
 
@@ -327,8 +331,8 @@ impl Inner {
             incoming_connections: HashSet::new(),
             stats: TcpMigStats::new(),
             is_currently_migrating: false,
-            tx_rx_threshold_ratio: match std::env::var("TX_RX_RATIO") {
-                Ok(val) => val.parse().expect("TX_RX_RATIO should be a number"),
+            rx_tx_threshold_ratio: match std::env::var("RX_TX_RATIO") {
+                Ok(val) => val.parse().expect("RX_TX_RATIO should be a number"),
                 Err(..) => BASE_RX_TX_THRESHOLD_RATIO,
             },
             //background: handle,
