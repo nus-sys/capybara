@@ -67,7 +67,6 @@ endif
 
 CARGO_FEATURES += $(FEATURES)
 
-export TX_RX_RATIO ?= 10
 #=======================================================================================================================
 
 all: all-libs all-tests all-examples
@@ -233,13 +232,13 @@ tcpmig-single-target:
 	10.0.1.9:22222
 
 tcpmig-multi-origin:
-	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s1_config.yaml \
+	sudo -E RX_TX_RATIO=10 LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s1_config.yaml \
 	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
 	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
 	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-multi.elf \
 	10.0.1.8:22222
 tcpmig-multi-target:
-	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s2_config.yaml \
+	sudo -E RX_TX_RATIO=10 LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s2_config.yaml \
 	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
 	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
 	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-multi.elf \
