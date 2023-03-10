@@ -205,6 +205,8 @@ impl TcpMigPeer {
             None => return,
         };
 
+        eprintln!("initiate migration for connection {} <-> {}", origin, remote);
+
         //let origin = SocketAddrV4::new(inner.local_ipv4_addr, origin_port);
         let target = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), origin.port()); // TEMP
         let key = (origin, remote);
