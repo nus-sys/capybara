@@ -295,7 +295,7 @@ impl TcpMigPeer {
         unsafe {
             static mut TMP: i32 = 0;
             TMP += 1;
-            if TMP == 5 {
+            if TMP == 50 {
                 TMP = 0;
                 println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
             }
@@ -312,6 +312,12 @@ impl TcpMigPeer {
 
         let ratio = inner.stats.get_rx_tx_ratio();
         ratio.is_finite() && ratio > inner.rx_tx_threshold_ratio
+    }
+
+    pub fn print_stats(&self) {
+        let inner = self.inner.borrow();
+        println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
+        println!("TCPMig stats: {:?}", inner.stats);
     }
 }
 

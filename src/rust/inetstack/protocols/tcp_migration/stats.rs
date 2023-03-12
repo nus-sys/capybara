@@ -7,7 +7,8 @@
 
 use std::{
     collections::{HashMap, VecDeque},
-    net::SocketAddrV4, time::Instant
+    net::SocketAddrV4, time::Instant,
+    fmt,
 };
 
 //======================================================================================================================
@@ -24,12 +25,34 @@ struct PacketRate {
     instants: VecDeque<Instant>,
 }
 
+impl fmt::Debug for PacketRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut prev_time = None;
+        let mut idx: i32 = 1;
+        writeln!(f, "")?;
+        for time in &self.instants {
+            if let Some(prev) = prev_time {
+                let time_diff = time.duration_since(prev);
+                writeln!(f, "GAP#{}: {:?}", idx, time_diff)?;
+                idx+=1;
+            }
+            prev_time = Some(*time);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 struct RollingAverageResult(f64);
 
 struct RollingAverage {
     values: VecDeque<usize>,
     sum: usize,
+}
+impl fmt::Debug for RollingAverage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "\nvalues: {:?}\nsum: {}\naverage: {:?}\n", self.values, self.sum, self.get())
+    }
 }
 
 pub struct TcpMigStats {
@@ -40,6 +63,16 @@ pub struct TcpMigStats {
     /// 
     /// (local, remote) -> requests per milli-second.
     recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
+}
+
+impl fmt::Debug for TcpMigStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TcpMigStats")
+            .field("\nglobal_incoming_traffic", &self.global_incoming_traffic)
+            .field("\nglobal_outgoing_traffic", &self.global_outgoing_traffic)
+            .field("\nrecv_queue_lengths\n", &self.recv_queue_lengths)
+            .finish()
+    }
 }
 
 //======================================================================================================================

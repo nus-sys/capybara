@@ -635,6 +635,7 @@ impl Inner {
                 // Possible decision-making point.
                 if self.tcpmig.should_migrate() {
                     eprintln!("*** Should Migrate ***");
+                    // self.tcpmig.print_stats();
                     self.tcpmig.initiate_migration();
                     /* self.tcpmig.initiate_migration(
                         tcp_hdr.dst_port,
