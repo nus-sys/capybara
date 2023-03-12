@@ -127,7 +127,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                     qts.push(send_response(&mut libos, qd, &recvbuf));
                 },
-                _ => unreachable!(),
+                _ => {
+                    println!("RESULT: {:?}", result);
+                    unreachable!();
+                },
             }
         }
 
