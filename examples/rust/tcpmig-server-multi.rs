@@ -12,7 +12,9 @@ use ::demikernel::{
     OperationResult,
     QDesc,
     QToken,
+    runtime::logging,
 };
+use log::debug;
 use std::collections::HashMap;
 use ::std::{
     env,
@@ -177,6 +179,7 @@ fn usage(program_name: &String) {
 //======================================================================================================================
 
 pub fn main() -> Result<()> {
+    logging::initialize();
     let args: Vec<String> = env::args().collect();
 
     if args.len() >= 2 {
