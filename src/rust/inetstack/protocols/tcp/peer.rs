@@ -914,7 +914,6 @@ impl Inner {
     pub fn migrate_in_tcp_connection(&mut self, qd: QDesc, cb: ControlBlock) -> Result<(), Fail> {
         let local = cb.get_local();
         let remote = cb.get_remote();
-
         // Check if keys already exist first. This way we don't have to undo changes we make to
         // the state.
         if self.established.contains_key(&(local, remote)) {
@@ -961,7 +960,7 @@ impl Inner {
             let buf = Buffer::Heap(crate::runtime::memory::DataBuffer::from_slice(&buf)); */
             self.receive(&ip_hdr, buf)?;
         }
-
+        self.tcpmig.complete_migrating_in(local, remote);
         Ok(())
     }
 }

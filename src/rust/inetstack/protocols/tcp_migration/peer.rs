@@ -183,7 +183,8 @@ impl TcpMigPeer {
                 let (local, remote) = (state.local, state.remote);
                 tcp_peer.notify_passive(state)?;
                 inner.incoming_connections.insert((local, remote));
-                inner.active_migrations.remove(&(hdr.origin, hdr.remote)).expect("active migration should exist");
+                // inner.active_migrations.remove(&(hdr.origin, hdr.remote)).expect("active migration should exist"); 
+                // Shouldn't be removed yet. Should be after processing migration queue.
             },
             MigrationRequestStatus::MigrationCompleted => {
                 let (local, remote) = (hdr.origin, hdr.remote);
@@ -289,13 +290,23 @@ impl TcpMigPeer {
         }
     }
 
+    pub fn complete_migrating_in(&mut self, target: SocketAddrV4, remote: SocketAddrV4) {
+        let mut inner = self.inner.borrow_mut();
+
+        let origin = match inner.origins.get(&(target, remote)) {
+            Some(origin) => *origin,
+            None => panic!("no origin found for connection: ({:?}, {:?})", target, remote),
+        };
+        inner.active_migrations.remove(&(origin, remote)).expect("active migration should exist");
+    }
+
     pub fn update_incoming_stats(&mut self, local: SocketAddrV4, remote: SocketAddrV4, recv_queue_len: usize) {
         self.inner.borrow_mut().stats.update_incoming(local, remote, recv_queue_len);
 
         unsafe {
             static mut TMP: i32 = 0;
             TMP += 1;
-            if TMP == 50 {
+            if TMP == 500 {
                 TMP = 0;
                 println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
             }
