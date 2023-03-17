@@ -49,6 +49,7 @@ use crate::runtime::{
         RTE_ETHER_MAX_LEN,
         RTE_ETH_DEV_NO_OWNER,
         RTE_PKTMBUF_HEADROOM,
+        rte_eal_process_type,
     },
     network::{
         config::{
@@ -173,6 +174,8 @@ impl DPDKRuntime {
         std::env::set_var("MLX5_SHUT_UP_BF", "1");
         std::env::set_var("MLX5_SINGLE_THREADED", "1");
         std::env::set_var("MLX4_SINGLE_THREADED", "1");
+        
+        
         let eal_init_refs = eal_init_args.iter().map(|s| s.as_ptr() as *mut u8).collect::<Vec<_>>();
         let ret: libc::c_int = unsafe { rte_eal_init(eal_init_refs.len() as i32, eal_init_refs.as_ptr() as *mut _) };
         if ret < 0 {
@@ -184,7 +187,8 @@ impl DPDKRuntime {
             bail!("No ethernet ports available");
         }
         eprintln!("DPDK reports that {} ports (interfaces) are available.", nb_ports);
-
+        
+        let proc_type = unsafe {rte_eal_process_type()};
         let max_body_size: usize = if use_jumbo_frames {
             (RTE_ETHER_MAX_JUMBO_FRAME_LEN + RTE_PKTMBUF_HEADROOM) as usize
         } else {
@@ -195,14 +199,20 @@ impl DPDKRuntime {
 
         let owner: u64 = RTE_ETH_DEV_NO_OWNER as u64;
         let port_id: u16 = unsafe { rte_eth_find_next_owned_by(0, owner) as u16 };
-        Self::initialize_dpdk_port(
-            port_id,
-            &memory_manager,
-            use_jumbo_frames,
-            mtu,
-            tcp_checksum_offload,
-            udp_checksum_offload,
-        )?;
+        
+        match proc_type {
+            0 => {
+                Self::initialize_dpdk_port(
+                    port_id,
+                    &memory_manager,
+                    use_jumbo_frames,
+                    mtu,
+                    tcp_checksum_offload,
+                    udp_checksum_offload,
+                )?;
+            },
+            _ => ()
+        }
 
         // TODO: Where is this function?
         // if unsafe { rte_lcore_count() } > 1 {

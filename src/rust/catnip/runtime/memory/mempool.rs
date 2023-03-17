@@ -15,6 +15,8 @@ use crate::runtime::{
         rte_pktmbuf_free,
         rte_pktmbuf_pool_create,
         rte_socket_id,
+        rte_eal_process_type,
+        rte_mempool_lookup,
     },
 };
 use ::std::ffi::CString;
@@ -38,16 +40,33 @@ pub struct MemoryPool {
 impl MemoryPool {
     /// Creates a new memory pool.
     pub fn new(name: CString, data_room_size: usize, pool_size: usize, cache_size: usize) -> Result<Self, Fail> {
-        let pool: *mut rte_mempool = unsafe {
-            rte_pktmbuf_pool_create(
-                name.as_ptr(),
-                pool_size as u32,
-                cache_size as u32,
-                0,
-                data_room_size as u16,
-                rte_socket_id() as i32,
-            )
-        };
+        let pool: *mut rte_mempool;
+        let proc_type = unsafe {rte_eal_process_type()};
+        match proc_type {
+            0 => {
+                println!("Running as primary process");
+                unsafe{ println!("name: {:?}\npool_size: {:?}\ncache_size: {:?}\ndata_room_size: {:?}\nrte_socket_id: {:?}\n", 
+                name, pool_size, cache_size, data_room_size, rte_socket_id()) };
+                pool = unsafe {
+                    rte_pktmbuf_pool_create(
+                        name.as_ptr(),
+                        pool_size as u32,
+                        cache_size as u32,
+                        0,
+                        data_room_size as u16,
+                        rte_socket_id() as i32,
+                    )
+                    // ... do something for primary process
+                }
+            }
+            1 => {
+                println!("Running as secondary process");
+                pool = unsafe {rte_mempool_lookup(name.as_ptr())}
+                // ... do something for secondary process
+            },
+            _ => panic!("Unknown process type"),
+        }
+            
 
         // Failed to create memory pool.
         if pool.is_null() {

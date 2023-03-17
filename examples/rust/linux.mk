@@ -22,6 +22,7 @@ all: all-examples
 	cp -f $(BUILD_DIR)/examples/tcpmig-client $(BINDIR)/examples/rust/tcpmig-client.$(EXEC_SUFFIX)
 	cp -f $(BUILD_DIR)/examples/tcpmig-server-multi $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
 	cp -f $(BUILD_DIR)/examples/tcpmig-server-single $(BINDIR)/examples/rust/tcpmig-server-single.$(EXEC_SUFFIX)
+	cp -f $(BUILD_DIR)/examples/dpdk-ctrl $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
 	
 
 all-examples:
@@ -35,6 +36,8 @@ all-examples:
 	$(CARGO) build --example tcpmig-server-single $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration
 	@echo "$(CARGO) build --example tcpmig-client $(CARGO_FEATURES) $(CARGO_FLAGS)"
 	$(CARGO) build --example tcpmig-client $(CARGO_FEATURES) $(CARGO_FLAGS)
+	@echo "$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)"
+	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
 		
 
 
@@ -55,5 +58,6 @@ clean:
 	@rm -rf $(BINDIR)/examples/rust/tcpmig-client.$(EXEC_SUFFIX)
 	@rm -rf $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
 	@rm -rf $(BINDIR)/examples/rust/tcpmig-server-client.$(EXEC_SUFFIX)
+	@rm -rf $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
 	
 	

@@ -243,6 +243,12 @@ tcpmig-multi-target:
 	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
 	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-multi.elf \
 	10.0.1.9:22222
+dpdk-ctrl:
+	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s2_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/dpdk-ctrl.elf \
+	--num_cores 3
 
 tcp-migration-client:
 	sudo -E LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/c1_config.yaml \

@@ -137,6 +137,11 @@ path = "examples/rust/tcpmig-server-single.rs"
 name = "tcpmig-client"
 path = "examples/rust/tcpmig-client.rs"
 
+[[example]]
+name = "dpdk-ctrl"
+path = "examples/rust/dpdk-ctrl.rs"
+
+
 #=======================================================================================================================
 # Features
 #=======================================================================================================================
