@@ -50,6 +50,20 @@ use crate::runtime::{
         RTE_ETH_DEV_NO_OWNER,
         RTE_PKTMBUF_HEADROOM,
         rte_eal_process_type,
+        rte_flow_error,
+        rte_flow_attr,
+        rte_flow_item,
+        rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH,
+        rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4,
+        rte_flow_item_type_RTE_FLOW_ITEM_TYPE_TCP,
+        rte_tcp_hdr,
+        rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END,
+        rte_flow_action,
+        rte_flow_validate,
+        rte_flow_create,
+        rte_flow_action_queue,
+        rte_flow_action_type_RTE_FLOW_ACTION_TYPE_END,
+        rte_flow_action_type_RTE_FLOW_ACTION_TYPE_QUEUE,
     },
     network::{
         config::{
@@ -72,6 +86,7 @@ use ::std::{
     mem::MaybeUninit,
     net::Ipv4Addr,
     time::Duration,
+    mem,
 };
 
 //==============================================================================
@@ -210,6 +225,12 @@ impl DPDKRuntime {
                     tcp_checksum_offload,
                     udp_checksum_offload,
                 )?;
+                let num_servers: u16 = match std::env::var("NUM_SERVERS") {
+                    Ok(val) => val.parse::<u16>().unwrap(),
+                    Err(_) => panic!("LIBOS environment variable is not set"),
+                };
+                println!("num_servers: {}", num_servers);
+                Self::flow_affinity(num_servers);
             },
             _ => ()
         }
@@ -380,6 +401,36 @@ impl DPDKRuntime {
 
         Ok(())
     }
+    fn flow_affinity(nr_queues: u16) {
+        unsafe {
+            for i in 0..nr_queues {
+                let mut err: rte_flow_error = mem::zeroed();
+                let mut attr: rte_flow_attr = mem::zeroed();
+                attr.set_egress(0);
+                attr.set_ingress(1);
+                let mut pattern: Vec<rte_flow_item> = vec![mem::zeroed(); 4];
+                pattern[0].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH;
+                pattern[1].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4;
+                pattern[2].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_TCP;
+                let mut flow_tcp: rte_tcp_hdr = mem::zeroed();
+                let mut flow_tcp_mask: rte_tcp_hdr = mem::zeroed();
+                flow_tcp.src_port = u16::to_be(i + 1);
+                flow_tcp_mask.src_port = u16::MAX;
+                pattern[2].spec = &mut flow_tcp as *mut _ as *mut std::os::raw::c_void;
+                pattern[2].mask = &mut flow_tcp_mask as *mut _ as *mut std::os::raw::c_void;
+                pattern[3].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;
+                let mut action: Vec<rte_flow_action> = vec![mem::zeroed(); 2];
+                action[0].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_QUEUE;
+                let mut queue_action: rte_flow_action_queue = mem::zeroed();
+                queue_action.index = i;
+                action[0].conf = &mut queue_action as *mut _ as *mut std::os::raw::c_void;
+                action[1].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_END;
+                rte_flow_validate(0, &attr, pattern.as_ptr(), action.as_ptr(), &mut err);
+                rte_flow_create(0, &attr, pattern.as_ptr(), action.as_ptr(), &mut err);
+            }
+        }
+    }
+    
 }
 
 //==============================================================================

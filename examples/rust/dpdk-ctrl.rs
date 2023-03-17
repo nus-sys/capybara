@@ -32,7 +32,7 @@ use clap::{App, Arg};
 //======================================================================================================================
 
 
-fn setup_dpdk(num_cores: i32) -> Result<()> {
+fn setup_dpdk() -> Result<()> {
     let libos_env_var = match env::var("LIBOS") {
         Ok(val) => val,
         Err(_) => panic!("LIBOS environment variable is not set"),
@@ -79,29 +79,29 @@ fn usage(program_name: &String) {
 
 pub fn main() -> Result<()> {
     logging::initialize();
-    let args: Vec<String> = env::args().collect();
+    // let args: Vec<String> = env::args().collect();
 
-    let matches = App::new("My Program")
-        .arg(
-            Arg::with_name("num_cores")
-                .short('n')
-                .long("num_cores")
-                .value_name("NUM")
-                .help("Sets the number of cores")
-                .takes_value(true)
-                .required(true),
-        )
-        .get_matches();
+    // let matches = App::new("My Program")
+    //     .arg(
+    //         Arg::with_name("num_cores")
+    //             .short('n')
+    //             .long("num_cores")
+    //             .value_name("NUM")
+    //             .help("Sets the number of cores")
+    //             .takes_value(true)
+    //             .required(true),
+    //     )
+    //     .get_matches();
 
-    let num_cores = matches
-        .value_of("num_cores")
-        .unwrap()
-        .parse::<i32>()
-        .unwrap();
+    // let num_cores = matches
+    //     .value_of("num_cores")
+    //     .unwrap()
+    //     .parse::<i32>()
+    //     .unwrap();
 
-    println!("num_cores: {}", num_cores);
+    // println!("num_cores: {}", num_cores);
     
-    return setup_dpdk(num_cores);
+    return setup_dpdk();
     // if args.len() >= 2 {
     //     let n_cores: SocketAddrV4 = SocketAddrV4::from_str(&args[1])?;
     //     return server(sockaddr);
