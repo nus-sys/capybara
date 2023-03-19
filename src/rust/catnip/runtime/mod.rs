@@ -56,7 +56,10 @@ use crate::runtime::{
         rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH,
         rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4,
         rte_flow_item_type_RTE_FLOW_ITEM_TYPE_TCP,
+        rte_flow_item_type_RTE_FLOW_ITEM_TYPE_UDP,
         rte_tcp_hdr,
+        rte_udp_hdr,
+        rte_ether_hdr,
         rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END,
         rte_flow_action,
         rte_flow_validate,
@@ -64,6 +67,7 @@ use crate::runtime::{
         rte_flow_action_queue,
         rte_flow_action_type_RTE_FLOW_ACTION_TYPE_END,
         rte_flow_action_type_RTE_FLOW_ACTION_TYPE_QUEUE,
+        rte_flow_action_type_RTE_FLOW_ACTION_TYPE_DROP,
         ETH_RSS_NONFRAG_IPV4_TCP,
     },
     network::{
@@ -254,7 +258,8 @@ impl DPDKRuntime {
                     Err(_) => panic!("NUM_CORES environment variable is not set"),
                 };
                 println!("num_cores: {}", num_cores);
-                Self::flow_affinity(num_cores);
+                Self::init_flow_rules();
+                Self::generate_flow_rules(num_cores);
             },
             _ => ()
         }
@@ -429,32 +434,104 @@ impl DPDKRuntime {
 
         Ok(())
     }
-    fn flow_affinity(nr_queues: u16) {
+    fn init_flow_rules() {
+        unsafe {
+            
+            let mut err: rte_flow_error = mem::zeroed();
+            let mut attr: rte_flow_attr = mem::zeroed();
+            attr.priority = 1; // FLOW_DEFAULT_PRIORITY: 1
+            // attr.set_egress(0);
+            attr.set_ingress(1);
+            
+            let mut pattern: Vec<rte_flow_item> = vec![mem::zeroed(); 2];
+            let mut eth_spec: rte_ether_hdr = mem::zeroed();
+            let mut eth_mask: rte_ether_hdr = mem::zeroed();
+            pattern[0].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH;
+            pattern[0].spec = &mut eth_spec as *mut _ as *mut std::os::raw::c_void;
+            pattern[0].mask = &mut eth_mask as *mut _ as *mut std::os::raw::c_void;
+            pattern[1].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;
+            
+            let mut action: Vec<rte_flow_action> = vec![mem::zeroed(); 2];
+            action[0].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_DROP;
+            action[1].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_END;
+
+            
+
+            let error = rte_flow_validate(0, &attr, pattern.as_ptr(), action.as_ptr(), &mut err);
+            let flow = rte_flow_create(0, &attr, pattern.as_ptr(), action.as_ptr(), &mut err);
+            if error != 0 {
+                panic!("Default flow rule is not valid, code {:?}", error);
+            }
+            if flow.is_null() {
+                panic!("rte_flow_create failed");
+            }
+            println!("Default flow (dropping) created: {:?}", flow);
+        }
+    }
+
+    fn generate_flow_rules(nr_queues: u16) {
         unsafe {
             for i in 0..nr_queues {
+                let port: u16 = i + 10001;
                 let mut err: rte_flow_error = mem::zeroed();
                 let mut attr: rte_flow_attr = mem::zeroed();
+                attr.priority = 0; // FLOW_TRANSPORT_PRIORITY: 0
                 attr.set_egress(0);
                 attr.set_ingress(1);
-                let mut pattern: Vec<rte_flow_item> = vec![mem::zeroed(); 4];
-                pattern[0].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH;
-                pattern[1].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4;
-                pattern[2].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_TCP;
+
+                let mut tcp_pattern: Vec<rte_flow_item> = vec![mem::zeroed(); 4];
+                tcp_pattern[0].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH;
+                tcp_pattern[1].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4;
+                tcp_pattern[2].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_TCP;
+                tcp_pattern[3].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;                
+
                 let mut flow_tcp: rte_tcp_hdr = mem::zeroed();
                 let mut flow_tcp_mask: rte_tcp_hdr = mem::zeroed();
-                flow_tcp.dst_port = u16::to_be(i + 10001);
+                flow_tcp.dst_port = u16::to_be(port);
                 flow_tcp_mask.dst_port = u16::MAX;
-                pattern[2].spec = &mut flow_tcp as *mut _ as *mut std::os::raw::c_void;
-                pattern[2].mask = &mut flow_tcp_mask as *mut _ as *mut std::os::raw::c_void;
-                pattern[3].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;
+                tcp_pattern[2].spec = &mut flow_tcp as *mut _ as *mut std::os::raw::c_void;
+                tcp_pattern[2].mask = &mut flow_tcp_mask as *mut _ as *mut std::os::raw::c_void;
+ 
+
+                let mut udp_pattern: Vec<rte_flow_item> = vec![mem::zeroed(); 4];
+                udp_pattern[0].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH;
+                udp_pattern[1].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4;
+                udp_pattern[2].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_UDP;
+                udp_pattern[3].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;    
+
+                let mut flow_udp: rte_udp_hdr = mem::zeroed();
+                let mut flow_udp_mask: rte_udp_hdr = mem::zeroed();
+                flow_udp.dst_port = u16::to_be(port);
+                flow_udp_mask.dst_port = u16::MAX;
+                udp_pattern[2].spec = &mut flow_udp as *mut _ as *mut std::os::raw::c_void;
+                udp_pattern[2].mask = &mut flow_udp_mask as *mut _ as *mut std::os::raw::c_void;
+
+
                 let mut action: Vec<rte_flow_action> = vec![mem::zeroed(); 2];
                 action[0].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_QUEUE;
                 let mut queue_action: rte_flow_action_queue = mem::zeroed();
                 queue_action.index = i;
                 action[0].conf = &mut queue_action as *mut _ as *mut std::os::raw::c_void;
                 action[1].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_END;
-                rte_flow_validate(0, &attr, pattern.as_ptr(), action.as_ptr(), &mut err);
-                rte_flow_create(0, &attr, pattern.as_ptr(), action.as_ptr(), &mut err);
+
+                let tcp_error = rte_flow_validate(0, &attr, tcp_pattern.as_ptr(), action.as_ptr(), &mut err);
+                let tcp_flow = rte_flow_create(0, &attr, tcp_pattern.as_ptr(), action.as_ptr(), &mut err);
+                if tcp_error != 0 {
+                    panic!("Default flow rule is not valid, code {:?}", tcp_error);
+                }
+                if tcp_flow.is_null() {
+                    panic!("rte_flow_create failed");
+                }
+                println!("TCP Flow (port: {:?} => queue: {:?}) created: {:?}", port, i,  tcp_flow);
+                let udp_error = rte_flow_validate(0, &attr, udp_pattern.as_ptr(), action.as_ptr(), &mut err);
+                let udp_flow = rte_flow_create(0, &attr, udp_pattern.as_ptr(), action.as_ptr(), &mut err);
+                if udp_error != 0 {
+                    panic!("Default flow rule is not valid, code {:?}", udp_error);
+                }
+                if udp_flow.is_null() {
+                    panic!("rte_flow_create failed");
+                }
+                println!("UDP Flow (port: {:?} => queue: {:?}) created: {:?}", port, i, udp_flow);
             }
         }
     }
