@@ -160,7 +160,7 @@ impl NetworkRuntime for DPDKRuntime {
             #[cfg(feature = "profiler")]
             timer!("catnip_libos::receive::rte_eth_rx_burst");
 
-            rte_eth_rx_burst(self.port_id, 0, packets.as_mut_ptr(), RECEIVE_BATCH_SIZE as u16)
+            rte_eth_rx_burst(self.port_id, self.core_id, packets.as_mut_ptr(), RECEIVE_BATCH_SIZE as u16)
         };
         assert!(nb_rx as usize <= RECEIVE_BATCH_SIZE);
 

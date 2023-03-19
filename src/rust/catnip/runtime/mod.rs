@@ -64,6 +64,7 @@ use crate::runtime::{
         rte_flow_action_queue,
         rte_flow_action_type_RTE_FLOW_ACTION_TYPE_END,
         rte_flow_action_type_RTE_FLOW_ACTION_TYPE_QUEUE,
+        ETH_RSS_NONFRAG_IPV4_TCP,
     },
     network::{
         config::{
@@ -113,6 +114,7 @@ macro_rules! expect_zero {
 pub struct DPDKRuntime {
     mm: MemoryManager,
     port_id: u16,
+    core_id: u16,
     pub link_addr: MacAddress,
     pub ipv4_addr: Ipv4Addr,
     pub arp_options: ArpConfig,
@@ -137,6 +139,27 @@ impl DPDKRuntime {
         tcp_checksum_offload: bool,
         udp_checksum_offload: bool,
     ) -> DPDKRuntime {
+        let mut l_flag_value: Option<u16> = None;
+        for (i, arg) in eal_init_args.iter().enumerate() {
+            if arg.to_str().unwrap() == "-l" {
+                if let Some(value) = eal_init_args.get(i + 1) {
+                    if let Ok(u) = value.to_str().unwrap().parse::<u16>() {
+                        l_flag_value = Some(u);
+                    }
+                }
+            }
+        }
+
+        if let Some(value) = l_flag_value {
+            // use the value here
+            println!("The value for -l flag is: {}", value);
+        }
+
+        let core_id: u16 = match l_flag_value {
+            Some(val) => val,
+            None => panic!("-l flag is not set in config"),
+        };
+        println!("core_id: {}", core_id); 
         let (mm, port_id, link_addr) = Self::initialize_dpdk(
             eal_init_args,
             use_jumbo_frames,
@@ -170,6 +193,7 @@ impl DPDKRuntime {
         Self {
             mm,
             port_id,
+            core_id,
             link_addr,
             ipv4_addr,
             arp_options,
@@ -225,12 +249,12 @@ impl DPDKRuntime {
                     tcp_checksum_offload,
                     udp_checksum_offload,
                 )?;
-                let num_servers: u16 = match std::env::var("NUM_SERVERS") {
+                let num_cores: u16 = match std::env::var("NUM_CORES") {
                     Ok(val) => val.parse::<u16>().unwrap(),
-                    Err(_) => panic!("LIBOS environment variable is not set"),
+                    Err(_) => panic!("NUM_CORES environment variable is not set"),
                 };
-                println!("num_servers: {}", num_servers);
-                Self::flow_affinity(num_servers);
+                println!("num_cores: {}", num_cores);
+                Self::flow_affinity(num_cores);
             },
             _ => ()
         }
@@ -262,8 +286,12 @@ impl DPDKRuntime {
         tcp_checksum_offload: bool,
         udp_checksum_offload: bool,
     ) -> Result<(), Error> {
-        let rx_rings = 1;
-        let tx_rings = 1;
+        let num_cores: u16 = match std::env::var("NUM_CORES") {
+            Ok(val) => val.parse::<u16>().unwrap(),
+            Err(_) => panic!("NUM_CORES environment variable is not set"),
+        };
+        let rx_rings = num_cores;
+        let tx_rings = num_cores;
         let rx_ring_size = 2048;
         let tx_ring_size = 2048;
         let nb_rxd = rx_ring_size;
@@ -309,7 +337,7 @@ impl DPDKRuntime {
             port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_JUMBO_FRAME as u64;
         }
         port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
-        port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IP as u64 | dev_info.flow_type_rss_offloads;
+        port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_NONFRAG_IPV4_TCP as u64;
 
         port_conf.txmode.mq_mode = ETH_MQ_TX_NONE;
         if tcp_checksum_offload {
@@ -414,8 +442,8 @@ impl DPDKRuntime {
                 pattern[2].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_TCP;
                 let mut flow_tcp: rte_tcp_hdr = mem::zeroed();
                 let mut flow_tcp_mask: rte_tcp_hdr = mem::zeroed();
-                flow_tcp.src_port = u16::to_be(i + 1);
-                flow_tcp_mask.src_port = u16::MAX;
+                flow_tcp.dst_port = u16::to_be(i + 10001);
+                flow_tcp_mask.dst_port = u16::MAX;
                 pattern[2].spec = &mut flow_tcp as *mut _ as *mut std::os::raw::c_void;
                 pattern[2].mask = &mut flow_tcp_mask as *mut _ as *mut std::os::raw::c_void;
                 pattern[3].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;

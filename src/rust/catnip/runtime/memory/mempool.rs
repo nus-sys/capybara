@@ -44,13 +44,17 @@ impl MemoryPool {
         let proc_type = unsafe {rte_eal_process_type()};
         match proc_type {
             0 => {
-                println!("Running as primary process");
-                unsafe{ println!("name: {:?}\npool_size: {:?}\ncache_size: {:?}\ndata_room_size: {:?}\nrte_socket_id: {:?}\n", 
-                name, pool_size, cache_size, data_room_size, rte_socket_id()) };
+                let num_cores: usize = match std::env::var("NUM_CORES") {
+                    Ok(val) => val.parse::<usize>().unwrap(),
+                    Err(_) => panic!("NUM_CORES environment variable is not set"),
+                };
+                println!("Running as primary process, n_cores: {}", num_cores);
+                unsafe{ println!("name: {:?}\npool_size * num_cores: {:?}\ncache_size: {:?}\ndata_room_size: {:?}\nrte_socket_id: {:?}\n", 
+                name, pool_size*num_cores, cache_size, data_room_size, rte_socket_id()) };
                 pool = unsafe {
                     rte_pktmbuf_pool_create(
                         name.as_ptr(),
-                        pool_size as u32,
+                        (pool_size * num_cores) as u32,
                         cache_size as u32,
                         0,
                         data_room_size as u16,
