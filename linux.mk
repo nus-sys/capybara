@@ -237,14 +237,35 @@ tcpmig-multi-origin:
 	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
 	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-multi.elf \
 	10.0.1.8:22222
-tcpmig-multi-target:
-	sudo -E RX_TX_RATIO=10 LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s2_config.yaml \
+tcpmig-multi-target1:
+	sudo -E PORT_ID=1 RUST_LOG="debug" NUM_CORES=4 RX_TX_RATIO=10 LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/be1_config.yaml \
 	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
 	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
 	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-multi.elf \
-	10.0.1.9:22222
+	10.0.1.9:10001
+tcpmig-multi-target2:
+	sudo -E PORT_ID=1 RUST_LOG="debug" NUM_CORES=4 RX_TX_RATIO=10 LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/be2_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-multi.elf \
+	10.0.1.9:10002
+
+udp-echo1:
+	sudo -E RUST_LOG="debug" NUM_CORES=4 LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/be1_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/udp-echo.elf \
+	--local 10.0.1.9:10001
+
+udp-echo2:
+	sudo -E RUST_LOG="debug" NUM_CORES=4 LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/be2_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/udp-echo.elf \
+	--local 10.0.1.9:10002
+
 dpdk-ctrl:
-	sudo -E NUM_SERVERS=4 LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s2_config.yaml \
+	sudo -E PORT_ID=1 RUST_LOG="debug" NUM_CORES=4 LIBOS=catnip CONFIG_PATH=/homes/inho/Capybara/config/s2_config.yaml \
 	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
 	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
 	/homes/inho/Capybara/capybara/bin/examples/rust/dpdk-ctrl.elf
