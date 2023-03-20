@@ -71,7 +71,6 @@ use crate::runtime::{
         ETH_RSS_NONFRAG_IPV4_TCP,
         RTE_ETHER_TYPE_IPV4,
         rte_ipv4_hdr,
-        rte_eth_dev_socket_id,
     },
     network::{
         config::{
@@ -381,10 +380,9 @@ impl DPDKRuntime {
             ))?;
         }
 
-
+        let socket_id = 0;
 
         unsafe {
-            let socket_id = rte_eth_dev_socket_id(port_id) as u32;
             for i in 0..rx_rings {
                 expect_zero!(rte_eth_rx_queue_setup(
                     port_id,
