@@ -69,6 +69,8 @@ use crate::runtime::{
         rte_flow_action_type_RTE_FLOW_ACTION_TYPE_QUEUE,
         rte_flow_action_type_RTE_FLOW_ACTION_TYPE_DROP,
         ETH_RSS_NONFRAG_IPV4_TCP,
+        RTE_ETHER_TYPE_IPV4,
+        rte_ipv4_hdr,
     },
     network::{
         config::{
@@ -132,6 +134,10 @@ pub struct DPDKRuntime {
 
 /// Associate Functions for DPDK Runtime
 impl DPDKRuntime {
+    // Constants
+    const FLOW_IPV4_PROTO_UDP: u8 = 0x11;
+    const FLOW_IPV4_PROTO_TCP: u8 = 0x06;
+
     pub fn new(
         ipv4_addr: Ipv4Addr,
         eal_init_args: &[CString],
@@ -479,32 +485,55 @@ impl DPDKRuntime {
                 attr.set_egress(0);
                 attr.set_ingress(1);
 
+                let mut eth_spec: rte_ether_hdr = mem::zeroed();
+                let mut eth_mask: rte_ether_hdr = mem::zeroed();
+                eth_spec.ether_type = u16::to_be(RTE_ETHER_TYPE_IPV4 as u16);
+                eth_mask.ether_type = u16::MAX;
+
+                let mut ip_spec_tcp: rte_ipv4_hdr = mem::zeroed();
+                let mut ip_spec_udp: rte_ipv4_hdr = mem::zeroed();
+                let mut ip_mask: rte_ipv4_hdr = mem::zeroed();
+                ip_spec_tcp.next_proto_id = u8::to_be(Self::FLOW_IPV4_PROTO_TCP as u8);
+                ip_spec_udp.next_proto_id = u8::to_be(Self::FLOW_IPV4_PROTO_UDP as u8);
+                ip_mask.next_proto_id = u8::MAX;
+
                 let mut tcp_pattern: Vec<rte_flow_item> = vec![mem::zeroed(); 4];
                 tcp_pattern[0].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH;
+                tcp_pattern[0].spec = &mut eth_spec as *mut _ as *mut std::os::raw::c_void;
+                tcp_pattern[0].mask = &mut eth_mask as *mut _ as *mut std::os::raw::c_void;
+                
                 tcp_pattern[1].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4;
+                tcp_pattern[1].spec = &mut ip_spec_tcp as *mut _ as *mut std::os::raw::c_void;
+                tcp_pattern[1].mask = &mut ip_mask as *mut _ as *mut std::os::raw::c_void;
+                
                 tcp_pattern[2].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_TCP;
-                tcp_pattern[3].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;                
-
                 let mut flow_tcp: rte_tcp_hdr = mem::zeroed();
                 let mut flow_tcp_mask: rte_tcp_hdr = mem::zeroed();
                 flow_tcp.dst_port = u16::to_be(port);
                 flow_tcp_mask.dst_port = u16::MAX;
                 tcp_pattern[2].spec = &mut flow_tcp as *mut _ as *mut std::os::raw::c_void;
                 tcp_pattern[2].mask = &mut flow_tcp_mask as *mut _ as *mut std::os::raw::c_void;
- 
+                
+                tcp_pattern[3].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;
 
                 let mut udp_pattern: Vec<rte_flow_item> = vec![mem::zeroed(); 4];
                 udp_pattern[0].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH;
-                udp_pattern[1].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4;
-                udp_pattern[2].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_UDP;
-                udp_pattern[3].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;    
+                udp_pattern[0].spec = &mut eth_spec as *mut _ as *mut std::os::raw::c_void;
+                udp_pattern[0].mask = &mut eth_mask as *mut _ as *mut std::os::raw::c_void;
 
+                udp_pattern[1].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4;
+                udp_pattern[1].spec = &mut ip_spec_udp as *mut _ as *mut std::os::raw::c_void;
+                udp_pattern[1].mask = &mut ip_mask as *mut _ as *mut std::os::raw::c_void;
+
+                udp_pattern[2].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_UDP;
                 let mut flow_udp: rte_udp_hdr = mem::zeroed();
                 let mut flow_udp_mask: rte_udp_hdr = mem::zeroed();
                 flow_udp.dst_port = u16::to_be(port);
                 flow_udp_mask.dst_port = u16::MAX;
                 udp_pattern[2].spec = &mut flow_udp as *mut _ as *mut std::os::raw::c_void;
                 udp_pattern[2].mask = &mut flow_udp_mask as *mut _ as *mut std::os::raw::c_void;
+
+                udp_pattern[3].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;    
 
 
                 let mut action: Vec<rte_flow_action> = vec![mem::zeroed(); 2];
