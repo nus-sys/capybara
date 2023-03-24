@@ -247,6 +247,9 @@ control Ingress(
     MigrationReply32b1() origin_ip_1;
     MigrationReply16b1() origin_port_1;
 
+    Blocker0() blocker0;
+    Blocker1() blocker1;
+
 
     Register<bit<32>, _> (32w1) counter;
     RegisterAction<bit<32>, _, bit<32>>(counter) counter_update = {
@@ -371,6 +374,9 @@ control Ingress(
             origin_mac_lo16_1.apply(hash2, owner_mac[15:0], meta, hdr.ethernet.src_mac[15:0]);
             origin_ip_1.apply(hash2, owner_ip, meta, hdr.ipv4.src_ip);
             origin_port_1.apply(hash2, owner_port, meta, hdr.tcp.src_port);
+
+            blocker0.apply(hash1, meta, ig_dprsr_md.drop_ctl[0:0]);
+            blocker1.apply(hash1, meta, ig_dprsr_md.drop_ctl[0:0]);
         }
     
 

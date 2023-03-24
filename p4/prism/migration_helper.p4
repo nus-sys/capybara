@@ -51,6 +51,18 @@ control MigrationRequestIdentifier32b(
         discriminator_out = check_value.execute(index);
     }
 
+    RegisterAction< value32b_t, index_t, bit<1> >(reg) check_block_entry = {
+        void apply(inout value32b_t register_value, out bit<1> is_matched) {
+            if(register_value == hdr.prism_req_base.peer_addr){
+                is_matched = 1;
+            }else{
+                is_matched = 0;
+            }
+        }
+    };
+    action exec_check_block_entry() {
+        discriminator_out = check_block_entry.execute(index);
+    }
 
     table tbl_action_selection {
         key = {
@@ -61,6 +73,7 @@ control MigrationRequestIdentifier32b(
             exec_check_value;
             exec_delete_value;
             exec_write_value;
+            exec_check_block_entry;
             NoAction;
         }
         size = 16;
@@ -68,6 +81,7 @@ control MigrationRequestIdentifier32b(
             (2, 0) : exec_write_value();
             (1, _) : exec_delete_value();
             (5, _) : exec_check_value();
+            (3, _) : exec_check_block_entry();
         }
         const default_action = NoAction();
     }
@@ -125,6 +139,18 @@ control MigrationRequestIdentifier16b(
         discriminator_out = check_value.execute(index);
     }
 
+    RegisterAction< value16b_t, index_t, bit<1> >(reg) check_block_entry = {
+        void apply(inout value16b_t register_value, out bit<1> is_matched) {
+            if(register_value == hdr.prism_req_base.peer_port){
+                is_matched = 1;
+            }else{
+                is_matched = 0;
+            }
+        }
+    };
+    action exec_check_block_entry() {
+        discriminator_out = check_block_entry.execute(index);
+    }
 
     table tbl_action_selection {
         key = {
@@ -135,6 +161,7 @@ control MigrationRequestIdentifier16b(
             exec_check_value;
             exec_delete_value;
             exec_write_value;
+            exec_check_block_entry;
             NoAction;
         }
         size = 16;
@@ -142,6 +169,7 @@ control MigrationRequestIdentifier16b(
             (2, 0) : exec_write_value();
             (1, _) : exec_delete_value();
             (5, _) : exec_check_value();
+            (3, _) : exec_check_block_entry();
         }
         const default_action = NoAction();
     }
@@ -778,6 +806,126 @@ control MigrationReply16b1(
             (0, 1, 1) : exec_write_value();
             (1, 1, 1) : exec_delete_value();
             (5, 1, 1) : exec_read_value();
+        }
+        const default_action = NoAction();
+    }
+
+    apply {
+        tbl_action_selection.apply();
+    }
+}
+
+// ============================     BLOCKING     ============================== //
+control Blocker0(
+    in index_t index,
+    in my_ingress_metadata_t meta,
+    out bit<1> return_value) {
+
+    Register< bit<1>, index_t >(register_size) reg;
+    RegisterAction< bit<1>, index_t, bit<1> >(reg) block = {
+        void apply(inout bit<1> register_value, out bit<1> null) {
+            register_value = 1;
+        }
+    };
+    action exec_block() {
+        block.execute(index);
+    }
+    RegisterAction< bit<1>, index_t, bit<1> >(reg) unblock = {
+        void apply(inout bit<1> register_value, out bit<1> null) {
+            register_value = 0;
+        }
+    };
+    action exec_unblock() {
+        unblock.execute(index);
+    }
+
+    RegisterAction< bit<1>, index_t, bit<1> >(reg) check_block = {
+        void apply(inout bit<1> register_value, out bit<1> is_blocked) {
+            is_blocked = register_value;
+        }
+    };
+    action exec_check_block() {
+        return_value = check_block.execute(index);
+    }
+
+    table tbl_action_selection {
+        key = {
+            meta.type           : ternary;
+            meta.result00       : ternary;
+            meta.result01       : ternary;
+        }
+        actions = {
+            exec_block;
+            exec_unblock;
+            exec_check_block;
+            NoAction;
+        }
+        size = 16;
+        const entries = {
+            (0, 1, 1) : exec_block();
+            (3, 1, 1) : exec_block();
+            (1, 1, 1) : exec_unblock(); // delete
+            (2, 1, 1) : exec_unblock(); // chown
+            (5, 1, 1) : exec_check_block();
+        }
+        const default_action = NoAction();
+    }
+
+    apply {
+        tbl_action_selection.apply();
+    }
+}
+control Blocker1(
+    in index_t index,
+    in my_ingress_metadata_t meta,
+    out bit<1> return_value) {
+
+    Register< bit<1>, index_t >(register_size) reg;
+    RegisterAction< bit<1>, index_t, bit<1> >(reg) block = {
+        void apply(inout bit<1> register_value, out bit<1> null) {
+            register_value = 1;
+        }
+    };
+    action exec_block() {
+        block.execute(index);
+    }
+    RegisterAction< bit<1>, index_t, bit<1> >(reg) unblock = {
+        void apply(inout bit<1> register_value, out bit<1> null) {
+            register_value = 0;
+        }
+    };
+    action exec_unblock() {
+        unblock.execute(index);
+    }
+
+    RegisterAction< bit<1>, index_t, bit<1> >(reg) check_block = {
+        void apply(inout bit<1> register_value, out bit<1> is_blocked) {
+            is_blocked = register_value;
+        }
+    };
+    action exec_check_block() {
+        return_value = check_block.execute(index);
+    }
+
+    table tbl_action_selection {
+        key = {
+            meta.type           : ternary;
+            meta.result10       : ternary;
+            meta.result11       : ternary;
+        }
+        actions = {
+            exec_block;
+            exec_unblock;
+            exec_check_block;
+            NoAction;
+        }
+        size = 16;
+        const entries = {
+            (0, 1, 1) : exec_block();
+            (3, 1, 1) : exec_block();
+            (1, 1, 1) : exec_unblock(); // delete
+            (2, 1, 1) : exec_unblock(); // chown
+            (5, 1, 1) : exec_check_block();
         }
         const default_action = NoAction();
     }
