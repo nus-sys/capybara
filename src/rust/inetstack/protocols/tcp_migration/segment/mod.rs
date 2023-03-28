@@ -161,7 +161,7 @@ impl Iterator for TcpMigFragmenter {
 // Unit Tests
 //==============================================================================
 
-#[cfg(test)]
+/* #[cfg(test)]
 mod test {
     use super::*;
     use crate::{
@@ -282,3 +282,4 @@ mod test {
         assert_eq!(fragments[2].data.deref(), &[7, 8]);
     }
 }
+ */

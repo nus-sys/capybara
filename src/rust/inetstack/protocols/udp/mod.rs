@@ -20,7 +20,11 @@ mod tests;
 //==============================================================================
 
 pub use self::{
-    datagram::UdpHeader,
+    datagram::{
+        UdpHeader,
+        UdpDatagram,
+        UDP_HEADER_SIZE,
+    },
     futures::{
         UdpOperation,
         UdpPopFuture,

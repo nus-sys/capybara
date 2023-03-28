@@ -16,7 +16,7 @@ use crate::{
                 Ethernet2Header,
             },
             ip::IpProtocol,
-            ipv4::Ipv4Header, tcp::{segment::TcpHeader, peer::TcpState},
+            ipv4::Ipv4Header, tcp::{segment::TcpHeader, peer::TcpState}, udp::UDP_HEADER_SIZE,
         }},
     runtime::{
         fail::Fail,
@@ -242,7 +242,7 @@ impl ActiveMigration {
         debug!("TCPMig send {:?}", tcpmig_hdr);
         eprintln!("TCPMig sent: {:#?}", tcpmig_hdr);
 
-        let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::TCPMig);
+        let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::UDP);
 
         const MTU: usize = 1500; // TEMP
         let max_fragment_size =  MTU - ip_hdr.compute_size() - tcpmig_hdr.size();
