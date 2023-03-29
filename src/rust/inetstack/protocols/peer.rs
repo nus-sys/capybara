@@ -8,7 +8,6 @@ use crate::{
         ip::IpProtocol,
         ipv4::Ipv4Header,
         tcp::TcpPeer,
-        tcp_migration::segment::TcpMigHeader,
         udp::UdpPeer,
     },
     runtime::{
@@ -26,6 +25,10 @@ use crate::{
     },
     scheduler::scheduler::Scheduler,
 };
+
+#[cfg(feature = "tcp-migration")]
+use crate::inetstack::protocols::tcp_migration::segment::TcpMigHeader;
+
 use ::libc::ENOTCONN;
 use ::std::{
     future::Future,
