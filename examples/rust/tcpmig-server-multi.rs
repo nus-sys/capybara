@@ -123,7 +123,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     migratable_qds.remove(&qd);
 
                     // Request Processing Delay
-                    thread::sleep(Duration::from_micros(1));
+                    // thread::sleep(Duration::from_micros(1));
 
                     qts.push(send_response(&mut libos, qd, &recvbuf));
                 },

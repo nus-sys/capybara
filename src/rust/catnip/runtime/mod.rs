@@ -478,7 +478,7 @@ impl DPDKRuntime {
     fn generate_flow_rules(nr_queues: u16) {
         unsafe {
             for i in 0..nr_queues {
-                let port: u16 = i + 10001;
+                let port: u16 = i + 10000;
                 let mut err: rte_flow_error = mem::zeroed();
                 let mut attr: rte_flow_attr = mem::zeroed();
                 attr.priority = 0; // FLOW_TRANSPORT_PRIORITY: 0
