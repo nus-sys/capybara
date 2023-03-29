@@ -24,9 +24,9 @@ pub enum IpProtocol {
     TCP = 0x06,
     /// User Datagram Protocol
     UDP = 0x11,
-    #[cfg(feature = "tcp-migration")]
-    /// TCP Migration
-    TCPMig = 0xC0,
+    //#[cfg(feature = "tcp-migration")]
+    // TCP Migration
+    //TCPMig = 0xC0,
 }
 
 //==============================================================================

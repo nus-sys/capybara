@@ -8,6 +8,7 @@ use crate::{
         ip::IpProtocol,
         ipv4::Ipv4Header,
         tcp::TcpPeer,
+        tcp_migration::segment::TcpMigHeader,
         udp::UdpPeer,
     },
     runtime::{
@@ -123,9 +124,16 @@ impl Peer {
         match header.get_protocol() {
             IpProtocol::ICMPv4 => self.icmpv4.receive(&header, payload),
             IpProtocol::TCP => self.tcp.receive(&header, payload),
-            IpProtocol::UDP => self.udp.do_receive(&header, payload),
-            #[cfg(feature = "tcp-migration")]
-            IpProtocol::TCPMig => self.tcpmig.receive(&mut self.tcp, &header, payload),
+            IpProtocol::UDP => {
+                #[cfg(feature = "tcp-migration")]
+                if TcpMigHeader::is_tcpmig(&payload) {
+                    return self.tcpmig.receive(&mut self.tcp, &header, payload);
+                }
+
+                self.udp.do_receive(&header, payload)
+            },
+            /* #[cfg(feature = "tcp-migration")]
+            IpProtocol::TCPMig => self.tcpmig.receive(&mut self.tcp, &header, payload), */
         }
     }
 
