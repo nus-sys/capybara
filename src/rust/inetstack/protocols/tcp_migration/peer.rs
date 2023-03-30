@@ -81,6 +81,8 @@ struct Inner {
 
     rx_tx_threshold_ratio: f64,
 
+    self_udp_port: u16,
+
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
     #[allow(unused)]
@@ -161,6 +163,7 @@ impl TcpMigPeer {
                 inner.local_link_addr,
                 hdr.origin.ip().clone(),
                 MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xe8, 0x05]), // TEMP
+                inner.self_udp_port,
                 hdr.origin,
                 hdr.remote,
             );
@@ -218,6 +221,7 @@ impl TcpMigPeer {
             inner.local_link_addr,
             target.ip().clone(),
             MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]), // TEMP
+            inner.self_udp_port,
             origin,
             remote,
         );
@@ -354,6 +358,7 @@ impl Inner {
                 Ok(val) => val.parse().expect("RX_TX_RATIO should be a number"),
                 Err(..) => BASE_RX_TX_THRESHOLD_RATIO,
             },
+            self_udp_port: 10000, // TEMP
             //background: handle,
         }
     }

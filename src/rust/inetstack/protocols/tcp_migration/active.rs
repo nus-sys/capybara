@@ -43,6 +43,8 @@ use crate::timer;
 // Constants
 //======================================================================================================================
 
+// TEMP
+const DEST_UDP_PORT: u16 = 10000;
 
 //======================================================================================================================
 // Structures
@@ -63,6 +65,7 @@ pub struct ActiveMigration {
     local_link_addr: MacAddress,
     remote_ipv4_addr: Ipv4Addr,
     remote_link_addr: MacAddress,
+    self_udp_port: u16,
 
     origin: SocketAddrV4,
     remote: SocketAddrV4,
@@ -86,6 +89,7 @@ impl ActiveMigration {
         local_link_addr: MacAddress,
         remote_ipv4_addr: Ipv4Addr,
         remote_link_addr: MacAddress,
+        self_udp_port: u16,
         origin: SocketAddrV4,
         remote: SocketAddrV4,
     ) -> Self {
@@ -95,6 +99,7 @@ impl ActiveMigration {
             local_link_addr,
             remote_ipv4_addr,
             remote_link_addr,
+            self_udp_port,
             origin,
             remote,
             last_sent_stage: MigrationStage::None,
@@ -211,7 +216,7 @@ impl ActiveMigration {
     pub fn initiate_migration(&mut self) {
         assert_eq!(self.last_sent_stage, MigrationStage::None);
 
-        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 0, MigrationStage::PrepareMigration);
+        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 0, MigrationStage::PrepareMigration, self.self_udp_port, DEST_UDP_PORT);
         self.last_sent_stage = MigrationStage::PrepareMigration;
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::empty()));
     }
@@ -224,7 +229,7 @@ impl ActiveMigration {
             Err(e) => panic!("TCPState serialisation failed: {}", e),
         };
 
-        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 0, MigrationStage::ConnectionState);
+        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 0, MigrationStage::ConnectionState, self.self_udp_port, DEST_UDP_PORT);
         self.last_sent_stage = MigrationStage::ConnectionState;
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_slice(&buf)));
     }
