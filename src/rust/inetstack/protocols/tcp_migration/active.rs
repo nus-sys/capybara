@@ -10,14 +10,14 @@ use super::{segment::{
     TcpMigSegment, TcpMigDefragmenter,
 }, MigrationStage};
 use crate::{
-    inetstack::{protocols::{
+    inetstack::protocols::{
             ethernet2::{
                 EtherType2,
                 Ethernet2Header,
             },
             ip::IpProtocol,
-            ipv4::Ipv4Header, tcp::{segment::TcpHeader, peer::TcpState}, udp::UDP_HEADER_SIZE,
-        }},
+            ipv4::Ipv4Header, tcp::{segment::TcpHeader, peer::TcpState},
+        },
     runtime::{
         fail::Fail,
         memory::{Buffer, DataBuffer},
@@ -242,6 +242,7 @@ impl ActiveMigration {
         debug!("TCPMig send {:?}", tcpmig_hdr);
         eprintln!("TCPMig sent: {:#?}", tcpmig_hdr);
 
+        // Layer 4 protocol field marked as UDP because DPDK only supports standard Layer 4 protocols.
         let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::UDP);
 
         const MTU: usize = 1500; // TEMP

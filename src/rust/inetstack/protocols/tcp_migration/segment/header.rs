@@ -6,7 +6,7 @@
 //==============================================================================
 
 use crate::{
-    inetstack::protocols::{ipv4::Ipv4Header, udp::UDP_HEADER_SIZE},
+    inetstack::protocols::{ipv4::Ipv4Header},
     runtime::{
         fail::Fail,
         memory::{
@@ -100,13 +100,13 @@ impl TcpMigHeader {
     }
 
     pub fn is_tcpmig(buf: &[u8]) -> bool {
-        buf.len() >= UDP_HEADER_SIZE + TCPMIG_HEADER_SIZE &&
-            NetworkEndian::read_u32(&buf[UDP_HEADER_SIZE..UDP_HEADER_SIZE + 4]) == MAGIC_NUMBER
+        buf.len() >= TCPMIG_HEADER_SIZE &&
+            NetworkEndian::read_u32(&buf[0..4]) == MAGIC_NUMBER
     }
 
     /// Returns the size of the TcpMigration header (in bytes).
     pub fn size(&self) -> usize {
-        UDP_HEADER_SIZE + TCPMIG_HEADER_SIZE
+        TCPMIG_HEADER_SIZE
     }
 
     /// Parses a byte slice into a TcpMigration header.
@@ -115,12 +115,9 @@ impl TcpMigHeader {
         buf: &'a [u8],
     ) -> Result<(Self, &'a [u8]), Fail> {
         // Malformed header.
-        if buf.len() < UDP_HEADER_SIZE + TCPMIG_HEADER_SIZE {
+        if buf.len() < TCPMIG_HEADER_SIZE {
             return Err(Fail::new(EBADMSG, "TCPMig segment too small"));
         }
-
-        let buf = &buf[UDP_HEADER_SIZE..];
-
         if NetworkEndian::read_u32(&buf[0..4]) != MAGIC_NUMBER {
             return Err(Fail::new(EBADMSG, "not a TCPMig segment"));
         }
@@ -181,11 +178,7 @@ impl TcpMigHeader {
 
     /// Serializes the target TcpMigration header.
     pub fn serialize(&self, buf: &mut [u8], ipv4_hdr: &Ipv4Header, data: &[u8]) {
-        let fixed_buf: &mut [u8; UDP_HEADER_SIZE + TCPMIG_HEADER_SIZE] = (&mut buf[..UDP_HEADER_SIZE + TCPMIG_HEADER_SIZE]).try_into().unwrap();
-
-        (&mut fixed_buf[0..UDP_HEADER_SIZE]).fill(0);
-
-        let fixed_buf = &mut fixed_buf[UDP_HEADER_SIZE..];
+        let fixed_buf: &mut [u8; TCPMIG_HEADER_SIZE] = (&mut buf[..TCPMIG_HEADER_SIZE]).try_into().unwrap();
 
         NetworkEndian::write_u32(&mut fixed_buf[0..4], MAGIC_NUMBER);
         let fixed_buf = &mut fixed_buf[4..];
