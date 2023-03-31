@@ -235,7 +235,8 @@ impl TcpMigHeader {
 
         ipv4_hdr.get_src_addr().octets().chunks_exact(2)
         .chain(ipv4_hdr.get_dest_addr().octets().chunks_exact(2))
-        .chain(migration_hdr.chunks_exact(2))
+        .chain(migration_hdr[..6].chunks_exact(2))
+        .chain(migration_hdr[8..].chunks_exact(2))
         .chain(data.chunks_exact(2))
         .chain(data_chunks_rem.chunks_exact(2))
         .fold(0, |sum: u16, e| sum.wrapping_add(NetworkEndian::read_u16(e)))
