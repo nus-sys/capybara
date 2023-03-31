@@ -631,6 +631,7 @@ impl Inner {
             #[cfg(feature = "tcp-migration")]
             {
                 self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
+                //self.tcpmig.queue_length_heartbeat();
 
                 // Possible decision-making point.
                 if self.tcpmig.should_migrate() {

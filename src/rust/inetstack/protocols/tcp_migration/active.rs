@@ -238,6 +238,11 @@ impl ActiveMigration {
         self.recv_queue.push_back((ip_hdr, tcp_hdr, buf));
     }
 
+    pub fn send_queue_length_heartbeat(&self, queue_len: u32) {
+        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 4, MigrationStage::None, self.self_udp_port, DEST_UDP_PORT);
+        self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_slice(&queue_len.to_be_bytes())));
+    }
+
     /// Sends a TCPMig segment from local to remote.
     fn send(
         &self,

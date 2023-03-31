@@ -26,7 +26,7 @@ use crate::{
         },
     },
 };
-use std::{cell::RefCell, collections::{VecDeque, HashSet}};
+use std::{cell::RefCell, collections::{VecDeque, HashSet}, time::{Duration, Instant}};
 use ::std::{
     collections::HashMap,
     net::{
@@ -46,9 +46,23 @@ use crate::timer;
 //const BASE_RX_TX_THRESHOLD_RATIO: f64 = 2.0;
 const BASE_RECV_QUEUE_LENGTH_THRESHOLD: f64 = 10.0;
 
+// TEMP
+const SELF_UDP_PORT: u16 = 10000;
+const FRONTEND_IP: Ipv4Addr = Ipv4Addr::new(10, 0, 1, 8);
+const FRONTEND_PORT: u16 = 10000;
+const FRONTEND_MAC: MacAddress = MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xe8, 0x05]);
+const BACKEND_MAC: MacAddress = MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]);
+
+const HEARTBEAT_INTERVAL: Duration = Duration::from_micros(1000);
+
 //======================================================================================================================
 // Structures
 //======================================================================================================================
+
+struct HeartbeatData {
+    connection: ActiveMigration,
+    last_heartbeat_instant: Instant,
+}
 
 /// TCPMig Peer
 struct Inner {
@@ -60,6 +74,9 @@ struct Inner {
     local_link_addr: MacAddress,
     /// Local IPv4 address.
     local_ipv4_addr: Ipv4Addr,
+
+    // Only if this is on a backend server.
+    heartbeat: Option<HeartbeatData>,
 
     /// Connections being actively migrated in/out.
     /// 
@@ -331,6 +348,16 @@ impl TcpMigPeer {
         recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
     }
 
+    pub fn queue_length_heartbeat(&mut self) {
+        let mut inner = self.inner.borrow_mut();
+        let queue_len = inner.stats.global_recv_queue_length() as u32;
+        if let Some(heartbeat) = inner.heartbeat.as_mut() {
+            if Instant::now() - heartbeat.last_heartbeat_instant > HEARTBEAT_INTERVAL {
+                heartbeat.connection.send_queue_length_heartbeat(queue_len);
+            }
+        }
+    }
+
     pub fn print_stats(&self) {
         let inner = self.inner.borrow();
         println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
@@ -347,10 +374,26 @@ impl Inner {
         //arp: ArpPeer,
     ) -> Self {
         Self {
-            rt,
+            rt: rt.clone(),
             //arp,
             local_link_addr,
             local_ipv4_addr,
+            heartbeat: match std::env::var("IS_FRONTEND") {
+                Err(..) => None,
+                Ok(val) if val == "0" => None,
+                _ => Some(HeartbeatData::new(
+                    ActiveMigration::new(
+                        rt.clone(),
+                        local_ipv4_addr,
+                        local_link_addr,
+                        FRONTEND_IP,
+                        FRONTEND_MAC,
+                        SELF_UDP_PORT,
+                        SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0),
+                        SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0),
+                    )
+                ))
+            },
             active_migrations: HashMap::new(),
             origins: HashMap::new(),
             incoming_connections: HashSet::new(),
@@ -360,8 +403,14 @@ impl Inner {
                 Ok(val) => val.parse().expect("RECV_QUEUE_LEN should be a number"),
                 Err(..) => BASE_RECV_QUEUE_LENGTH_THRESHOLD,
             },
-            self_udp_port: 10000, // TEMP
+            self_udp_port: SELF_UDP_PORT, // TEMP
             //background: handle,
         }
+    }
+}
+
+impl HeartbeatData {
+    fn new(connection: ActiveMigration) -> Self {
+        Self { connection, last_heartbeat_instant: Instant::now() }
     }
 }
