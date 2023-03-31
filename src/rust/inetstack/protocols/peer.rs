@@ -25,6 +25,10 @@ use crate::{
     },
     scheduler::scheduler::Scheduler,
 };
+
+#[cfg(feature = "tcp-migration")]
+use crate::inetstack::protocols::tcp_migration::segment::TcpMigHeader;
+
 use ::libc::ENOTCONN;
 use ::std::{
     future::Future,
@@ -123,9 +127,16 @@ impl Peer {
         match header.get_protocol() {
             IpProtocol::ICMPv4 => self.icmpv4.receive(&header, payload),
             IpProtocol::TCP => self.tcp.receive(&header, payload),
-            IpProtocol::UDP => self.udp.do_receive(&header, payload),
-            #[cfg(feature = "tcp-migration")]
-            IpProtocol::TCPMig => self.tcpmig.receive(&mut self.tcp, &header, payload),
+            IpProtocol::UDP => {
+                #[cfg(feature = "tcp-migration")]
+                if TcpMigHeader::is_tcpmig(&payload) {
+                    return self.tcpmig.receive(&mut self.tcp, &header, payload);
+                }
+
+                self.udp.do_receive(&header, payload)
+            },
+            /* #[cfg(feature = "tcp-migration")]
+            IpProtocol::TCPMig => self.tcpmig.receive(&mut self.tcp, &header, payload), */
         }
     }
 

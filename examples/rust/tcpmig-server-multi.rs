@@ -12,7 +12,10 @@ use ::demikernel::{
     OperationResult,
     QDesc,
     QToken,
+    runtime::logging,
 };
+use log::debug;
+use std::collections::HashMap;
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -36,11 +39,12 @@ fn get_connection(libos: &mut LibOS, listen_qd: QDesc) -> QToken {
 }
 
 fn get_request(libos: &mut LibOS, qd: QDesc) -> Option<QToken> {
+    /* #[cfg(feature = "tcp-migration")]
     match libos.notify_migration_safety(qd) {
         Ok(true) => return None,
         Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
         _ => (),
-    };
+    }; */
 
     let qt = match libos.pop(qd) {
         Ok(qt) => qt,
@@ -84,35 +88,78 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     let mut qts = vec![get_connection(&mut libos, sockqd)];
 
+    let mut migratable_qds: HashMap<QDesc, QToken> = HashMap::new();
+
     loop {
-        let (index, qd, result) = match libos.wait_any2(&qts) {
+        if qts.is_empty() {
+            break;
+        }
+
+        let result = match libos.trywait_any2(&qts) {
             Ok(wait_result) => wait_result,
             Err(e) => panic!("operation failed: {:?}", e.cause),
         };
 
-        qts.swap_remove(index);
-        match result {
-            OperationResult::Accept(new_qd) => {
-                if let Some(qt) = get_request(&mut libos, new_qd) {
-                    qts.push(qt);
-                }
+        if let Some((index, qd, result)) = result {
+            qts.swap_remove(index);
+            match result {
+                OperationResult::Accept(new_qd) => {
+                    if let Some(qt) = get_request(&mut libos, new_qd) {
+                        qts.push(qt);
+                    }
 
-                qts.push(get_connection(&mut libos, qd));
-            },
-            OperationResult::Push => {
-                if let Some(qt) = get_request(&mut libos, qd) {
-                    qts.push(qt);
-                }
-            },
-            OperationResult::Pop(_, recvbuf) => {
-                // Request Processing Delay
-                thread::sleep(Duration::from_micros(1));
+                    qts.push(get_connection(&mut libos, qd));
+                },
+                OperationResult::Push => {
+                    if let Some(qt) = get_request(&mut libos, qd) {
+                        qts.push(qt);
 
-                qts.push(send_response(&mut libos, qd, &recvbuf));
-            },
-            _ => unreachable!(),
+                        // This QDesc can be migrated. (waiting for new request)
+                        migratable_qds.insert(qd, qt);
+                    }
+                },
+                OperationResult::Pop(_, recvbuf) => {
+                    // This QDesc can no longer be migrated. (currently processing a request)
+                    migratable_qds.remove(&qd);
+
+                    // Request Processing Delay
+                    // thread::sleep(Duration::from_micros(1));
+
+                    qts.push(send_response(&mut libos, qd, &recvbuf));
+                },
+                _ => {
+                    println!("RESULT: {:?}", result);
+                    unreachable!();
+                },
+            }
+        }
+
+        #[cfg(feature = "tcp-migration")]
+        {
+            let mut qd_to_remove = None;
+
+            for (&qd, &pop_qt) in migratable_qds.iter() {
+                match libos.notify_migration_safety(qd) {
+                    Ok(true) => {
+                        let index = qts.iter().position(|&qt| qt == pop_qt).expect("`pop_qt` should be in `qts`");
+                        qts.swap_remove(index);
+                        qd_to_remove = Some(qd);
+                        break;
+                    },
+                    Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
+                    _ => (),
+                };
+            }
+
+            if let Some(qd) = qd_to_remove {
+                migratable_qds.remove(&qd);
+            }
         }
     }
+
+    eprintln!("server stopping");
+
+    loop {}
 
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
@@ -135,6 +182,7 @@ fn usage(program_name: &String) {
 //======================================================================================================================
 
 pub fn main() -> Result<()> {
+    logging::initialize();
     let args: Vec<String> = env::args().collect();
 
     if args.len() >= 2 {

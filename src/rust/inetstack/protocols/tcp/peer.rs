@@ -490,16 +490,23 @@ impl TcpPeer {
     }
 
     fn send(&self, fd: QDesc, buf: Buffer) -> Result<(), Fail> {
-        let inner = self.inner.borrow_mut();
+        let mut inner = self.inner.borrow_mut();
         let key = match inner.sockets.get(&fd) {
             Some(Socket::Established { local, remote }) => (*local, *remote),
             Some(..) => return Err(Fail::new(ENOTCONN, "connection not established")),
             None => return Err(Fail::new(EBADF, "bad queue descriptor")),
         };
-        match inner.established.get(&key) {
+        let send_result = match inner.established.get(&key) {
             Some(ref s) => s.send(buf),
             None => Err(Fail::new(ENOTCONN, "connection not established")),
+        };
+
+        #[cfg(feature = "tcp-migration")]
+        {
+            inner.tcpmig.update_outgoing_stats();
         }
+
+        send_result
     }
 
     /// Closes a TCP socket.
@@ -623,15 +630,18 @@ impl Inner {
 
             #[cfg(feature = "tcp-migration")]
             {
-                self.tcpmig.update_stats(local, remote);
+                self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
+                //self.tcpmig.queue_length_heartbeat();
 
                 // Possible decision-making point.
                 if self.tcpmig.should_migrate() {
                     eprintln!("*** Should Migrate ***");
-                    self.tcpmig.initiate_migration(
+                    // self.tcpmig.print_stats();
+                    self.tcpmig.initiate_migration();
+                    /* self.tcpmig.initiate_migration(
                         tcp_hdr.dst_port,
                         SocketAddrV4::new(ip_hdr.get_src_addr(),tcp_hdr.src_port)
-                    );
+                    ); */
                 }
             }
 
@@ -905,7 +915,6 @@ impl Inner {
     pub fn migrate_in_tcp_connection(&mut self, qd: QDesc, cb: ControlBlock) -> Result<(), Fail> {
         let local = cb.get_local();
         let remote = cb.get_remote();
-
         // Check if keys already exist first. This way we don't have to undo changes we make to
         // the state.
         if self.established.contains_key(&(local, remote)) {
@@ -952,7 +961,7 @@ impl Inner {
             let buf = Buffer::Heap(crate::runtime::memory::DataBuffer::from_slice(&buf)); */
             self.receive(&ip_hdr, buf)?;
         }
-
+        self.tcpmig.complete_migrating_in(local, remote);
         Ok(())
     }
 }

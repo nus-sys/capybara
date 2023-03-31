@@ -10,14 +10,14 @@ use super::{segment::{
     TcpMigSegment, TcpMigDefragmenter,
 }, MigrationStage};
 use crate::{
-    inetstack::{protocols::{
+    inetstack::protocols::{
             ethernet2::{
                 EtherType2,
                 Ethernet2Header,
             },
             ip::IpProtocol,
             ipv4::Ipv4Header, tcp::{segment::TcpHeader, peer::TcpState},
-        }},
+        },
     runtime::{
         fail::Fail,
         memory::{Buffer, DataBuffer},
@@ -43,6 +43,8 @@ use crate::timer;
 // Constants
 //======================================================================================================================
 
+// TEMP
+const DEST_UDP_PORT: u16 = 10000;
 
 //======================================================================================================================
 // Structures
@@ -53,6 +55,7 @@ pub enum MigrationRequestStatus {
     Ok,
     Rejected,
     StateReceived(TcpState),
+    MigrationCompleted,
 }
 
 pub struct ActiveMigration {
@@ -62,6 +65,7 @@ pub struct ActiveMigration {
     local_link_addr: MacAddress,
     remote_ipv4_addr: Ipv4Addr,
     remote_link_addr: MacAddress,
+    self_udp_port: u16,
 
     origin: SocketAddrV4,
     remote: SocketAddrV4,
@@ -85,6 +89,7 @@ impl ActiveMigration {
         local_link_addr: MacAddress,
         remote_ipv4_addr: Ipv4Addr,
         remote_link_addr: MacAddress,
+        self_udp_port: u16,
         origin: SocketAddrV4,
         remote: SocketAddrV4,
     ) -> Self {
@@ -94,6 +99,7 @@ impl ActiveMigration {
             local_link_addr,
             remote_ipv4_addr,
             remote_link_addr,
+            self_udp_port,
             origin,
             remote,
             last_sent_stage: MigrationStage::None,
@@ -197,6 +203,8 @@ impl ActiveMigration {
                         eprintln!("*** Migration completed ***");
 
                         // TODO: Start closing the active migration.
+
+                        return Ok(MigrationRequestStatus::MigrationCompleted);
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE_ACK"))
                 }
@@ -208,7 +216,7 @@ impl ActiveMigration {
     pub fn initiate_migration(&mut self) {
         assert_eq!(self.last_sent_stage, MigrationStage::None);
 
-        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 0, MigrationStage::PrepareMigration);
+        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 0, MigrationStage::PrepareMigration, self.self_udp_port, DEST_UDP_PORT);
         self.last_sent_stage = MigrationStage::PrepareMigration;
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::empty()));
     }
@@ -221,13 +229,19 @@ impl ActiveMigration {
             Err(e) => panic!("TCPState serialisation failed: {}", e),
         };
 
-        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 0, MigrationStage::ConnectionState);
+        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 0, MigrationStage::ConnectionState, self.self_udp_port, DEST_UDP_PORT);
         self.last_sent_stage = MigrationStage::ConnectionState;
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_slice(&buf)));
     }
 
     pub fn buffer_packet(&mut self, ip_hdr: Ipv4Header, tcp_hdr: TcpHeader, buf: Buffer) {
         self.recv_queue.push_back((ip_hdr, tcp_hdr, buf));
+    }
+
+    pub fn send_queue_length_heartbeat(&self, queue_len: u32) {
+        let mut tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 4, MigrationStage::None, self.self_udp_port, DEST_UDP_PORT);
+        tcpmig_hdr.flag_heartbeat = true;
+        self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_slice(&queue_len.to_be_bytes())));
     }
 
     /// Sends a TCPMig segment from local to remote.
@@ -239,7 +253,8 @@ impl ActiveMigration {
         debug!("TCPMig send {:?}", tcpmig_hdr);
         eprintln!("TCPMig sent: {:#?}", tcpmig_hdr);
 
-        let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::TCPMig);
+        // Layer 4 protocol field marked as UDP because DPDK only supports standard Layer 4 protocols.
+        let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::UDP);
 
         const MTU: usize = 1500; // TEMP
         let max_fragment_size =  MTU - ip_hdr.compute_size() - tcpmig_hdr.size();
