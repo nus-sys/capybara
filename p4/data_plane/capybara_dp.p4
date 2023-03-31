@@ -10,8 +10,8 @@ struct my_ingress_headers_t {
     ethernet_h                  ethernet;
     ipv4_h                      ipv4;
     tcp_h                       tcp;
+    udp_h                       udp;
     tcpmig_h                    tcpmig;
-    // tcp_migration_header_h      tcp_migration_header;
 }
 
 struct my_ingress_metadata_t {
@@ -96,7 +96,7 @@ parser IngressParser(
         });
         transition select(hdr.ipv4.protocol){
             IP_PROTOCOL_TCP: parse_tcp;
-            IP_PROTOCOL_TCPMIG: parse_tcpmig;
+            IP_PROTOCOL_UDP: parse_udp;
             default: accept;
         }
     }
@@ -119,10 +119,15 @@ parser IngressParser(
         meta.l4_payload_checksum = tcp_checksum.get();
 
         transition accept;
-        // transition select(pkt.lookahead<bit<32>>()) {
-        //     MIGRATION_SIGNATURE: parse_tcp_migration_header;
-        //     default: accept;
-        // }
+    }
+
+    state parse_udp {
+        pkt.extract(hdr.udp);
+
+        transition select(pkt.lookahead<bit<32>>()) {
+            MIGRATION_SIGNATURE: parse_tcpmig;
+            default: accept;
+        }
     }
 
     state parse_tcpmig {
@@ -130,13 +135,6 @@ parser IngressParser(
         meta.load = hdr.tcpmig.flag[0:0];
         transition accept;
     }
-
-    // state parse_tcp_migration_header {
-    //     pkt.extract(hdr.tcp_migration_header);
-    //     meta.load = hdr.tcp_migration_header.flag[0:0];
-    //     transition accept;
-    // }
-
 }
 
 /***************** M A T C H - A C T I O N  *********************/

@@ -95,23 +95,6 @@ header tcp_h {
     bit<16>  urgent_ptr;
 } // 20
 
-header tcpmig_h {
-    bit<32>  origin_ip;
-    bit<16>  origin_port;
-    
-    bit<32>  client_ip;
-    bit<16>  client_port;
-
-    bit<16>  payload_len;
-    bit<16>  frag_offset;
-    
-    bit<8>  flag;
-    bit<8> unused;
-    bit<16> checksum;
-}
-
-
-
 header udp_h {
     bit<16>  src_port;
     bit<16>  dst_port;
@@ -120,20 +103,21 @@ header udp_h {
 }
 
 
-header tcp_migration_header_h {
+header tcpmig_h {
     bit<32>  signature;
 
     bit<32>  origin_ip;
     bit<16>  origin_port;
     
-    bit<32>  target_ip;
-    bit<16>  target_port;
-    
     bit<32>  client_ip;
     bit<16>  client_port;
+
+    // bit<16>  payload_len;
+    bit<16>  frag_offset;
     
     bit<8>  flag;
-    bit<8> checksum;
+    bit<8> unused;
+    // bit<16> checksum;
 }
 
 
