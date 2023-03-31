@@ -239,7 +239,8 @@ impl ActiveMigration {
     }
 
     pub fn send_queue_length_heartbeat(&self, queue_len: u32) {
-        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 4, MigrationStage::None, self.self_udp_port, DEST_UDP_PORT);
+        let mut tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 4, MigrationStage::None, self.self_udp_port, DEST_UDP_PORT);
+        tcpmig_hdr.flag_heartbeat = true;
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_slice(&queue_len.to_be_bytes())));
     }
 
