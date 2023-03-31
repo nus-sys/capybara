@@ -111,6 +111,10 @@ impl TcpMigStats {
         self.global_outgoing_traffic.update(instant);
     }
 
+    pub fn global_recv_queue_length(&self) -> f64 {
+        self.recv_queue_lengths.values().fold(0.0, |sum, e| sum + e.get().0)
+    }
+
     pub fn get_rx_tx_ratio(&self) -> f64 {
         self.global_incoming_traffic.get() / self.global_outgoing_traffic.get()
     }

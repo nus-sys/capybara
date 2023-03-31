@@ -43,7 +43,8 @@ use crate::timer;
 // Constants
 //======================================================================================================================
 
-const BASE_RX_TX_THRESHOLD_RATIO: f64 = 2.0;
+//const BASE_RX_TX_THRESHOLD_RATIO: f64 = 2.0;
+const BASE_RECV_QUEUE_LENGTH_THRESHOLD: f64 = 10.0;
 
 //======================================================================================================================
 // Structures
@@ -79,7 +80,8 @@ struct Inner {
 
     is_currently_migrating: bool,
 
-    rx_tx_threshold_ratio: f64,
+    //rx_tx_threshold_ratio: f64,
+    recv_queue_length_threshold: f64,
 
     self_udp_port: u16,
 
@@ -136,7 +138,7 @@ impl TcpMigPeer {
             local_link_addr,
             local_ipv4_addr,
         );
-        println!("RX_TX_RATIO: {}", inner.rx_tx_threshold_ratio);
+        println!("RECV_QUEUE_LENGTH_THRESHOLD: {}", inner.recv_queue_length_threshold);
 
         Ok(Self{inner: Rc::new(RefCell::new(inner))})
     }
@@ -325,8 +327,8 @@ impl TcpMigPeer {
         let inner = self.inner.borrow();
         if inner.is_currently_migrating { return false; }
 
-        let ratio = inner.stats.get_rx_tx_ratio();
-        ratio.is_finite() && ratio > inner.rx_tx_threshold_ratio
+        let recv_queue_len = inner.stats.global_recv_queue_length();
+        recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
     }
 
     pub fn print_stats(&self) {
@@ -354,9 +356,9 @@ impl Inner {
             incoming_connections: HashSet::new(),
             stats: TcpMigStats::new(),
             is_currently_migrating: false,
-            rx_tx_threshold_ratio: match std::env::var("RX_TX_RATIO") {
-                Ok(val) => val.parse().expect("RX_TX_RATIO should be a number"),
-                Err(..) => BASE_RX_TX_THRESHOLD_RATIO,
+            recv_queue_length_threshold: match std::env::var("RECV_QUEUE_LEN") {
+                Ok(val) => val.parse().expect("RECV_QUEUE_LEN should be a number"),
+                Err(..) => BASE_RECV_QUEUE_LENGTH_THRESHOLD,
             },
             self_udp_port: 10000, // TEMP
             //background: handle,
