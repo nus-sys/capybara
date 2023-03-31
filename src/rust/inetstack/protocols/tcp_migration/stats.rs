@@ -63,6 +63,7 @@ pub struct TcpMigStats {
     /// 
     /// (local, remote) -> requests per milli-second.
     recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
+    global_recv_queue_length: f64,
 }
 
 impl fmt::Debug for TcpMigStats {
@@ -97,13 +98,19 @@ impl TcpMigStats {
             global_incoming_traffic: PacketRate::new(),
             global_outgoing_traffic: PacketRate::new(),
             recv_queue_lengths: HashMap::new(),
+            global_recv_queue_length: 0.0,
         }
     }
 
     pub fn update_incoming(&mut self, local: SocketAddrV4, remote: SocketAddrV4, recv_queue_len: usize) {
         let instant = Instant::now();
         self.global_incoming_traffic.update(instant);
-        self.recv_queue_lengths.entry((local, remote)).or_insert(RollingAverage::new()).update(recv_queue_len);
+        
+        let len_entry = self.recv_queue_lengths.entry((local, remote)).or_insert(RollingAverage::new());
+        let old_len = len_entry.get().0;
+        len_entry.update(recv_queue_len);
+        let new_len = len_entry.get().0;
+        self.global_recv_queue_length += new_len - old_len;
     }
 
     pub fn update_outgoing(&mut self) {
@@ -112,7 +119,8 @@ impl TcpMigStats {
     }
 
     pub fn global_recv_queue_length(&self) -> f64 {
-        self.recv_queue_lengths.values().fold(0.0, |sum, e| sum + e.get().0)
+        //self.recv_queue_lengths.values().fold(0.0, |sum, e| sum + e.get().0)
+        self.global_recv_queue_length
     }
 
     pub fn get_rx_tx_ratio(&self) -> f64 {
