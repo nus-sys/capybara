@@ -141,6 +141,9 @@ path = "examples/rust/tcpmig-client.rs"
 name = "dpdk-ctrl"
 path = "examples/rust/dpdk-ctrl.rs"
 
+[[example]]
+name = "http-server"
+path = "examples/rust/http-server.rs"
 
 #=======================================================================================================================
 # Features

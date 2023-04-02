@@ -224,7 +224,6 @@ tcp-echo:
 	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-echo.elf \
 	--peer server --local 10.0.1.8:22222 --bufsize 1024
 
-
 tcpmig-single-origin:
 	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
 	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
