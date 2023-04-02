@@ -29,6 +29,7 @@ use ::std::{
     str::FromStr,
     panic,
 };
+const ROOT: &str = "/var/www/demo";
 
 //======================================================================================================================
 // server()
@@ -89,32 +90,37 @@ impl Connection {
             )
         };
         println!("Received: {}", String::from_utf8_lossy(slice));
+        
+        let mut fullpath = [0u8; 256];
 
+        let request = String::from_utf8_lossy(slice);
+        let mut file_name = request
+            .split_whitespace()
+            .nth(1)
+            .and_then(|file_path| {
+                let mut path_parts = file_path.split('/');
+                path_parts.next().and_then(|_| path_parts.next())
+            })
+            .unwrap_or("index.html");
+        if file_name == "" {
+            file_name = "index.html";
+        }
+        let full_path = format!("{}/{}", ROOT, file_name);
+
+        println!("filename: {}, fullpath: {}", file_name, full_path);
         // Add incoming scatter-gather segment to our receive queue.
-        self.receive_queue.push(rsga);
+        // self.receive_queue.push(rsga);
 
-        // Craft a response and send it.
-        let ssga: demi_sgarray_t = libos.sgaalloc(1500)?;
-        let mut slice: &mut [u8] = unsafe {
-            slice::from_raw_parts_mut(
-                ssga.sga_segs[0].sgaseg_buf as *mut u8,
-                ssga.sga_segs[0].sgaseg_len as usize,
-            )
+
+        let response = match std::fs::read_to_string(full_path.as_str()) {
+            Ok(contents) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents),
+            Err(err) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
         };
-
-        // Read the entire file into a string.
-        let contents: String = fs::read_to_string("hello.html").expect("file should exist and be readable.");
-
-        write!(
-            slice,
-            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
-            contents.len(),
-            contents
-        )?;
-
         // Write response.
-        let qt = libos.push(self.queue_descriptor, &ssga)?;
-
+        let qt = match libos.push2(self.queue_descriptor, response.as_bytes()) {
+            Ok(qt) => qt,
+            Err(e) => panic!("push failed: {:?}", e.cause),
+        };
         Ok(Some(qt))
     }
 }
