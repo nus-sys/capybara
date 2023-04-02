@@ -224,12 +224,7 @@ tcp-echo:
 	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-echo.elf \
 	--peer server --local 10.0.1.8:22222 --bufsize 1024
 
-tcpmig-client:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/c1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-client.elf \
-	10.0.1.8:22222
+
 tcpmig-single-origin:
 	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
 	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
@@ -243,12 +238,21 @@ tcpmig-single-target:
 	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-single.elf \
 	10.0.1.9:22222
 
+tcpmig-client:
+	sudo -E \
+	LIBOS=catnap \
+	CONFIG_PATH=$(CONFIG_DIR)/c1_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 0 \
+	$(ELF_DIR)/tcpmig-client.elf 10.0.1.8:10000
+
 tcpmig-multi-origin:
-	sudo -E RX_TX_RATIO=10 LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-multi.elf \
-	10.0.1.8:22222
+	sudo -E \
+	IS_FRONTEND=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/fe_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 0 \
+	$(ELF_DIR)/tcpmig-server-multi.elf 10.0.1.8:10000
 
 tcpmig-multi-target0:
 	sudo -E \
@@ -278,12 +282,33 @@ tcpmig-multi-target3:
 	taskset --cpu-list 3 \
 	$(ELF_DIR)/tcpmig-server-multi.elf 10.0.1.9:10003
 
-dpdk-ctrl:
+client-dpdk-ctrl:
 	sudo -E RUST_LOG="debug" \
-	CONFIG_PATH=$(CONFIG_DIR)/s2_config.yaml \
+	CONFIG_PATH=$(CONFIG_DIR)/client_dpdk_ctrl_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 4 \
 	$(ELF_DIR)/dpdk-ctrl.elf
+
+be-dpdk-ctrl:
+	sudo -E RUST_LOG="debug" \
+	CONFIG_PATH=$(CONFIG_DIR)/be_dpdk_ctrl_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 4 \
+	$(ELF_DIR)/dpdk-ctrl.elf
+
+fe-dpdk-ctrl:
+	sudo -E RUST_LOG="debug" \
+	CONFIG_PATH=$(CONFIG_DIR)/fe_dpdk_ctrl_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 4 \
+	$(ELF_DIR)/dpdk-ctrl.elf
+
+udp-echo0:
+	sudo -E RUST_LOG="debug" NUM_CORES=4 LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
+	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
+	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
+	/homes/inho/Capybara/capybara/bin/examples/rust/udp-echo.elf \
+	--local 10.0.1.9:10000
 
 udp-echo1:
 	sudo -E RUST_LOG="debug" NUM_CORES=4 LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/be1_config.yaml \
@@ -291,13 +316,6 @@ udp-echo1:
 	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
 	/homes/inho/Capybara/capybara/bin/examples/rust/udp-echo.elf \
 	--local 10.0.1.9:10001
-
-udp-echo2:
-	sudo -E RUST_LOG="debug" NUM_CORES=4 LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/be2_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/udp-echo.elf \
-	--local 10.0.1.9:10002
 
 tcp-migration-client:
 	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/c1_config.yaml \
