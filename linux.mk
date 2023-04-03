@@ -211,12 +211,6 @@ test-unit-rust:
 server-test:
 	CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml timeout 30 /homes/inho/Capybara/capybara/bin/examples/rust/tcp-push-pop.elf --server 20.0.0.2:22222
 
-http-server:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/http-server.elf 
-
 tcp-echo:
 	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
 	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
@@ -245,8 +239,23 @@ tcpmig-client:
 	taskset --cpu-list 0 \
 	$(ELF_DIR)/tcpmig-client.elf 10.0.1.8:10000
 
+http-server-fe:
+	sudo -E RUST_LOG="debug" \
+	IS_FRONTEND=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/fe_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 0 \
+	$(ELF_DIR)/http-server.elf 10.0.1.8:10000
+
+http-server-be:
+	sudo -E RUST_LOG="debug" \
+	CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 0 \
+	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
+
 tcpmig-multi-origin:
-	sudo -E \
+	sudo -E RUST_LOG="debug" \
 	IS_FRONTEND=1 \
 	CONFIG_PATH=$(CONFIG_DIR)/fe_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
