@@ -1,34 +1,31 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-// A (Very) Simple HTTP Server.
+//======================================================================================================================
+// Imports
+//======================================================================================================================
 
 use ::anyhow::Result;
 use ::demikernel::{
-    demi_sgarray_t,
-    runtime::{
-        fail::Fail,
-        types::demi_opcode_t,
-    },
     LibOS,
     LibOSName,
+    OperationResult,
     QDesc,
     QToken,
     runtime::logging,
 };
+use log::debug;
+use std::collections::HashMap;
 use ::std::{
     env,
-    collections::HashMap,
-    fs,
-    io::Write,
-    net::{
-        Ipv4Addr,
-        SocketAddrV4,
-    },
-    slice,
-    str::FromStr,
+    net::SocketAddrV4,
     panic,
+    str::FromStr,
+    thread, time::Duration,
 };
+
+#[cfg(feature = "profiler")]
+use ::demikernel::perftools::profiler;
 const ROOT: &str = "/var/www/demo";
 
 //======================================================================================================================
@@ -58,43 +55,9 @@ fn get_request(libos: &mut LibOS, qd: QDesc) -> Option<QToken> {
 }
 
 fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
-    match libos.push2(qd, data) {
-        Ok(qt) => qt,
-        Err(e) => panic!("push failed: {:?}", e.cause),
-    }
-}
-
-// The Connection type tracks connection state.
-struct Connection {
-    queue_descriptor: QDesc,
-    receive_queue: Vec<demi_sgarray_t>,
-}
-
-impl Connection {
-    pub fn new(qd: QDesc) -> Self {
-        Connection {
-            queue_descriptor: qd,
-            receive_queue: Vec::new(),
-        }
-    }
-
-    pub fn process_data(&mut self, libos: &mut LibOS, rsga: demi_sgarray_t) -> Result<Option<QToken>, Fail> {
-        // We only handle single-segment scatter-gather arrays for now.
-        assert_eq!(rsga.sga_numsegs, 1);
-
-        // Print the incoming data.
-        let slice: &mut [u8] = unsafe {
-            slice::from_raw_parts_mut(
-                rsga.sga_segs[0].sgaseg_buf as *mut u8,
-                rsga.sga_segs[0].sgaseg_len as usize,
-            )
-        };
-        println!("Received: {}", String::from_utf8_lossy(slice));
-        
-        let mut fullpath = [0u8; 256];
-
-        let request = String::from_utf8_lossy(slice);
-        let mut file_name = request
+    let data_str = std::str::from_utf8(data).unwrap();
+    
+    let mut file_name = data_str
             .split_whitespace()
             .nth(1)
             .and_then(|file_path| {
@@ -102,29 +65,24 @@ impl Connection {
                 path_parts.next().and_then(|_| path_parts.next())
             })
             .unwrap_or("index.html");
-        if file_name == "" {
-            file_name = "index.html";
-        }
-        let full_path = format!("{}/{}", ROOT, file_name);
-
-        println!("filename: {}, fullpath: {}", file_name, full_path);
-        // Add incoming scatter-gather segment to our receive queue.
-        // self.receive_queue.push(rsga);
-
-
-        let response = match std::fs::read_to_string(full_path.as_str()) {
-            Ok(contents) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents),
-            Err(err) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
-        };
-        // Write response.
-        let qt = match libos.push2(self.queue_descriptor, response.as_bytes()) {
-            Ok(qt) => qt,
-            Err(e) => panic!("push failed: {:?}", e.cause),
-        };
-        Ok(Some(qt))
+    if file_name == "" {
+        file_name = "index.html";
+    }
+    let full_path = format!("{}/{}", ROOT, file_name);
+    
+    
+    println!("full_path: {}", full_path);
+    
+    let response = match std::fs::read_to_string(full_path.as_str()) {
+        Ok(contents) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents),
+        Err(err) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
+    };
+    
+    match libos.push2(qd, response.as_bytes()) {
+        Ok(qt) => qt,
+        Err(e) => panic!("push failed: {:?}", e.cause),
     }
 }
-
 
 fn server(local: SocketAddrV4) -> Result<()> {
     let libos_name: LibOSName = match LibOSName::from_env() {
@@ -151,83 +109,53 @@ fn server(local: SocketAddrV4) -> Result<()> {
         Ok(()) => (),
         Err(e) => panic!("listen failed: {:?}", e.cause),
     };
-    println!("Listening on local address: {:?}", local);
 
     let mut qts = vec![get_connection(&mut libos, sockqd)];
 
     let mut migratable_qds: HashMap<QDesc, QToken> = HashMap::new();
 
-    // Create hash table of accepted connections.
-    let mut connections: HashMap<QDesc, Connection> = HashMap::new();
+    loop {
+        if qts.is_empty() {
+            break;
+        }
 
-    // Loop over queue tokens we're waiting on.
-    loop {//HERE
-        let (index, qr) = match libos.wait_any(&qts) {
-            Ok((i, qr)) => (i, qr),
-            Err(e) => panic!("Wait failed: {:?}", e),
+        let result = match libos.trywait_any2(&qts) {
+            Ok(wait_result) => wait_result,
+            Err(e) => panic!("operation failed: {:?}", e.cause),
         };
 
-        // Since this QToken completed, remove it from the list of waiters.
-        qts.swap_remove(index);
+        if let Some((index, qd, result)) = result {
+            qts.swap_remove(index);
+            match result {
+                OperationResult::Accept(new_qd) => {
+                    if let Some(qt) = get_request(&mut libos, new_qd) {
+                        qts.push(qt);
+                    }
 
-        // Find out what operation completed:
-        match qr.qr_opcode {
-            demi_opcode_t::DEMI_OPC_ACCEPT => {
-                // A new connection arrived.
-                let qd: QDesc = unsafe { qr.qr_value.ares.qd.into() };
-                println!("Connection established!  Queue Descriptor = {:?}", qd);
+                    qts.push(get_connection(&mut libos, qd));
+                },
+                OperationResult::Push => {
+                    if let Some(qt) = get_request(&mut libos, qd) {
+                        qts.push(qt);
 
-                // Create new connection state and store it.
-                let connection: Connection = Connection::new(qd);
-                connections.insert(qd, connection);
+                        // This QDesc can be migrated. (waiting for new request)
+                        migratable_qds.insert(qd, qt);
+                    }
+                },
+                OperationResult::Pop(_, recvbuf) => {
+                    // This QDesc can no longer be migrated. (currently processing a request)
+                    migratable_qds.remove(&qd);
 
-                if let Some(qt) = get_request(&mut libos, qd) {
-                    qts.push(qt);
-                }
+                    // Request Processing Delay
+                    // thread::sleep(Duration::from_micros(1));
 
-                qts.push(get_connection(&mut libos, sockqd));
-            },
-            demi_opcode_t::DEMI_OPC_POP => {
-                // A pop completed.
-                let qd: QDesc = qr.qr_qd.into();
-                let recv_sga: demi_sgarray_t = unsafe { qr.qr_value.sga };
-
-                migratable_qds.remove(&qd);
-                // Find Connection for this queue descriptor.
-                let connection: &mut Connection = connections.get_mut(&qd).expect("HashMap should hold connection!");
-
-                // Process the incoming request.
-                let oqt: Option<QToken> = match connection.process_data(&mut libos, recv_sga) {
-                    Ok(oqt) => oqt,
-                    Err(e) => panic!("process data failed: {:?}", e.cause),
-                };
-
-                if oqt.is_some() {
-                    qts.push(oqt.expect("oqt should be some!"));
-                }
-
-                // // Post another pop.
-                // match libos.pop(qd) {
-                //     Ok(qt) => waiters.push(qt),
-                //     Err(e) => panic!("failed to pop data from socket: {:?}", e.cause),
-                // }
-            },
-            demi_opcode_t::DEMI_OPC_PUSH => {
-                // A push completed.
-                let qd: QDesc = qr.qr_qd.into();
-                if let Some(qt) = get_request(&mut libos, qd) {
-                    qts.push(qt);
-
-                    // This QDesc can be migrated. (waiting for new request)
-                    migratable_qds.insert(qd, qt);
-                }
-                // ToDo: Can free the sga now.
-            },
-            demi_opcode_t::DEMI_OPC_FAILED => panic!("operation failed"),
-            _ => {
-                println!("RESULT: {:?}", qr.qr_opcode);
-                unreachable!();
-            },
+                    qts.push(send_response(&mut libos, qd, &recvbuf));
+                },
+                _ => {
+                    println!("RESULT: {:?}", result);
+                    unreachable!();
+                },
+            }
         }
 
         #[cfg(feature = "tcp-migration")]
@@ -252,11 +180,16 @@ fn server(local: SocketAddrV4) -> Result<()> {
             }
         }
     }
+
     eprintln!("server stopping");
+
     loop {}
+
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
 
+    // TODO: close socket when we get close working properly in catnip.
+    //Ok(())
 }
 
 //======================================================================================================================
@@ -285,109 +218,3 @@ pub fn main() -> Result<()> {
 
     Ok(())
 }
-
-/* 
-fn main() -> ! {
-    // Pull LibOS from environment variable "LIBOS" if present.  Otherwise, default to Catnap.
-    let libos_name: LibOSName = match LibOSName::from_env() {
-        Ok(libos_name) => libos_name.into(),
-        Err(_) => LibOSName::Catnap,
-    };
-
-    // Initialize the LibOS.
-    let mut libos: LibOS = match LibOS::new(libos_name) {
-        Ok(libos) => libos,
-        Err(e) => panic!("failed to initialize libos: {:?}", e.cause),
-    };
-
-    // Create listening socket (a QDesc in Demikernel).
-    let local_addr: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10000);
-    let listening_qd: QDesc = match create_listening_socket(&mut libos, local_addr) {
-        Ok(qd) => qd,
-        Err(e) => panic!("create_listening_socket failed: {:?}", e.cause),
-    };
-
-    println!("Listening on local address: {:?}", local_addr);
-
-    // Create list of queue tokens (QToken) representing operations we're going to wait on.
-    let mut waiters: Vec<QToken> = Vec::new();
-
-    // Post an accept for the first connection.
-    let accept_qt: QToken = match libos.accept(listening_qd) {
-        Ok(qt) => qt,
-        Err(e) => panic!("failed to accept connection on socket: {:?}", e.cause),
-    };
-    // Add this accept to the list of operations we're waiting to complete.
-    waiters.push(accept_qt);
-
-    // Create hash table of accepted connections.
-    let mut connections: HashMap<QDesc, Connection> = HashMap::new();
-
-    // Loop over queue tokens we're waiting on.
-    loop {
-        let (index, qr) = match libos.wait_any(&waiters) {
-            Ok((i, qr)) => (i, qr),
-            Err(e) => panic!("Wait failed: {:?}", e),
-        };
-
-        // Since this QToken completed, remove it from the list of waiters.
-        waiters.swap_remove(index);
-
-        // Find out what operation completed:
-        match qr.qr_opcode {
-            demi_opcode_t::DEMI_OPC_ACCEPT => {
-                // A new connection arrived.
-                let qd: QDesc = unsafe { qr.qr_value.ares.qd.into() };
-                println!("Connection established!  Queue Descriptor = {:?}", qd);
-
-                // Create new connection state and store it.
-                let connection: Connection = Connection::new(qd);
-                connections.insert(qd, connection);
-
-                // Post a pop from the new connection.
-                match libos.pop(qd) {
-                    Ok(qt) => waiters.push(qt),
-                    Err(e) => panic!("failed to pop data from socket: {:?}", e.cause),
-                };
-
-                // Post an accept for the next connection.
-                match libos.accept(listening_qd) {
-                    Ok(qt) => waiters.push(qt),
-                    Err(e) => panic!("failed to accept connection on socket: {:?}", e.cause),
-                }
-            },
-            demi_opcode_t::DEMI_OPC_POP => {
-                // A pop completed.
-                let qd: QDesc = qr.qr_qd.into();
-                let recv_sga: demi_sgarray_t = unsafe { qr.qr_value.sga };
-
-                // Find Connection for this queue descriptor.
-                let connection: &mut Connection = connections.get_mut(&qd).expect("HashMap should hold connection!");
-
-                // Process the incoming request.
-                let oqt: Option<QToken> = match connection.process_data(&mut libos, recv_sga) {
-                    Ok(oqt) => oqt,
-                    Err(e) => panic!("process data failed: {:?}", e.cause),
-                };
-
-                if oqt.is_some() {
-                    waiters.push(oqt.expect("oqt should be some!"));
-                }
-
-                // Post another pop.
-                match libos.pop(qd) {
-                    Ok(qt) => waiters.push(qt),
-                    Err(e) => panic!("failed to pop data from socket: {:?}", e.cause),
-                }
-            },
-            demi_opcode_t::DEMI_OPC_PUSH => {
-                // A push completed.
-                let _qd: QDesc = qr.qr_qd.into();
-
-                // ToDo: Can free the sga now.
-            },
-            demi_opcode_t::DEMI_OPC_FAILED => panic!("operation failed"),
-            _ => panic!("unexpected opcode"),
-        };
-    }
-}*/
