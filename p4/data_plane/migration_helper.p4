@@ -635,4 +635,63 @@ control MigrationReply16b1(
     }
 }
 
+/* FOR HEARTBEAT HANDLING */
+control MinimumWorkload32b(
+    in index_t index,
+    in my_ingress_headers_t hdr,
+    in my_ingress_metadata_t meta,
+    out bit<1> discriminator_out) {
+
+    Register< value32b_t, index_t >(1) reg;
+    RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
+        void apply(inout value32b_t register_value, out bit<1> is_written) {
+            if(register_value > hdr.heartbeat.queue_len){
+                register_value = hdr.heartbeat.queue_len;
+                is_written = 1;
+            }else{
+                is_written = 0;
+            }
+        }
+    };
+    action exec_write_value() {
+        discriminator_out = write_value.execute(index);
+    }
+
+    // RegisterAction< value32b_t, index_t, bit<1> >(reg) check_value = {
+    //     void apply(inout value32b_t register_value, out bit<1> is_matched) {
+    //         if(register_value == hdr.ipv4.src_ip){
+    //             is_matched = 1;
+    //         }else{
+    //             is_matched = 0;
+    //         }
+    //     }
+    // };
+    // action exec_check_value() {
+    //     discriminator_out = check_value.execute(index);
+    // }
+
+
+    table tbl_action_selection {
+        key = {
+            meta.load           : ternary;
+        }
+        actions = {
+            // exec_check_value;
+            exec_write_value;
+            NoAction;
+        }
+        size = 16;
+        const entries = {
+            (1) : exec_write_value();
+            // (0, _) : exec_check_value();
+        }
+        const default_action = NoAction();
+    }
+
+    apply {
+        tbl_action_selection.apply();
+    }
+}
+
+
 #endif /* _MIGRATION_HELPER_ */

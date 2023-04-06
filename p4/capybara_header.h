@@ -13,6 +13,7 @@
 #define IPV4_HOST_SIZE 1024
 
 #define MIGRATION_SIGNATURE 0xCAFEDEAD
+#define HEARTBEAT_SIGNATURE 0xCAFECAFE
 
 const int MAC_TABLE_SIZE        = 65536;
 const bit<3> L2_LEARN_DIGEST = 1;
@@ -118,6 +119,11 @@ header tcpmig_h {
     bit<8>  flag;
     bit<8> unused;
     // bit<16> checksum;
+}
+
+header heartbeat_h {
+    bit<32>  signature;
+    bit<32>  queue_len;
 }
 
 
