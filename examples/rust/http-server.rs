@@ -71,7 +71,7 @@ fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     let full_path = format!("{}/{}", ROOT, file_name);
     
     
-    println!("full_path: {}", full_path);
+    // println!("full_path: {}", full_path);
     
     let response = match std::fs::read_to_string(full_path.as_str()) {
         Ok(contents) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents),

@@ -347,6 +347,15 @@ impl TcpMigPeer {
         let recv_queue_len = inner.stats.global_recv_queue_length();
         recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
     }
+    
+    // TEMP (for migration test)
+    /* pub fn should_migrate(&self) -> bool {
+        static mut FLAG: i32 = 0;
+        unsafe {
+            FLAG += 1;
+            FLAG == 12
+        }
+    } */
 
     pub fn queue_length_heartbeat(&mut self) {
         let mut inner = self.inner.borrow_mut();
@@ -380,7 +389,7 @@ impl Inner {
             local_ipv4_addr,
             heartbeat: match std::env::var("IS_FRONTEND") {
                 Err(..) => None,
-                Ok(val) if val == "0" => None,
+                Ok(val) if val == "1" => None,
                 _ => Some(HeartbeatData::new(
                     ActiveMigration::new(
                         rt.clone(),
