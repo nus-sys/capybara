@@ -60,7 +60,7 @@ use crate::{
         timer::TimerRc,
         QDesc,
     },
-    scheduler::scheduler::Scheduler,
+    scheduler::scheduler::Scheduler, profile,
 };
 use ::futures::channel::mpsc;
 use ::libc::{
@@ -637,11 +637,10 @@ impl Inner {
                 if self.tcpmig.should_migrate() {
                     eprintln!("*** Should Migrate ***");
                     // self.tcpmig.print_stats();
+                    #[cfg(feature = "tcp-migration-profiler")]
+                    crate::profile!(self.tcpmig.initiate_migration(), "prepare");
+                    #[cfg(not(feature = "tcp-migration-profiler"))]
                     self.tcpmig.initiate_migration();
-                    /* self.tcpmig.initiate_migration(
-                        tcp_hdr.dst_port,
-                        SocketAddrV4::new(ip_hdr.get_src_addr(),tcp_hdr.src_port)
-                    ); */
                 }
             }
 
@@ -750,8 +749,16 @@ impl TcpPeer {
         
         if let Some(handle) = inner.tcpmig.can_migrate_out(local, remote) {
             eprintln!("*** Can migrate out ***");
-            let state = inner.migrate_out_tcp_connection(qd)?;
-            inner.tcpmig.migrate_out(handle, state);
+            #[cfg(feature = "tcp-migration-profiler")]
+            profile!({
+                let state = inner.migrate_out_tcp_connection(qd)?;
+                inner.tcpmig.migrate_out(handle, state);
+            }, "migrate");
+            #[cfg(not(feature = "tcp-migration-profiler"))]
+            {
+                let state = inner.migrate_out_tcp_connection(qd)?;
+                inner.tcpmig.migrate_out(handle, state);
+            }
             return Ok(true)
         }
 

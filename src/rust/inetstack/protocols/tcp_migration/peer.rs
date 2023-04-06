@@ -24,7 +24,7 @@ use crate::{
             types::MacAddress,
             NetworkRuntime,
         },
-    },
+    }, profile_merge_previous,
 };
 use std::{cell::RefCell, collections::{VecDeque, HashSet}, time::{Duration, Instant}};
 use ::std::{
@@ -203,8 +203,16 @@ impl TcpMigPeer {
             MigrationRequestStatus::Rejected => todo!("handle migration rejection"),
             MigrationRequestStatus::StateReceived(state) => {
                 let (local, remote) = (state.local, state.remote);
-                tcp_peer.notify_passive(state)?;
-                inner.incoming_connections.insert((local, remote));
+                #[cfg(feature = "tcp-migration-profiler")]
+                profile_merge_previous!({
+                    tcp_peer.notify_passive(state)?;
+                    inner.incoming_connections.insert((local, remote));
+                });
+                #[cfg(not(feature = "tcp-migration-profiler"))]
+                {
+                    tcp_peer.notify_passive(state)?;
+                    inner.incoming_connections.insert((local, remote));
+                }
                 // inner.active_migrations.remove(&(hdr.origin, hdr.remote)).expect("active migration should exist"); 
                 // Shouldn't be removed yet. Should be after processing migration queue.
             },
@@ -347,15 +355,6 @@ impl TcpMigPeer {
         let recv_queue_len = inner.stats.global_recv_queue_length();
         recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
     }
-    
-    // TEMP (for migration test)
-    /* pub fn should_migrate(&self) -> bool {
-        static mut FLAG: i32 = 0;
-        unsafe {
-            FLAG += 1;
-            FLAG == 12
-        }
-    } */
 
     pub fn queue_length_heartbeat(&mut self) {
         let mut inner = self.inner.borrow_mut();

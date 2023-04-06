@@ -19,6 +19,9 @@ mod pal;
 #[cfg(feature = "profiler")]
 pub mod perftools;
 
+#[cfg(feature = "tcp-migration-profiler")]
+pub mod tcpmig_profiler;
+
 pub mod scheduler;
 
 pub mod runtime;
