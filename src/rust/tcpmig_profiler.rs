@@ -51,7 +51,7 @@ pub fn init_profiler() {
 pub fn write_profiler_data<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
     let data: &Vec<(&str, Duration)> = data();
     for (name, datum) in data {
-        write!(w, "{}: {} ns", name, datum.as_nanos())?;
+        write!(w, "{}: {} ns\n", name, datum.as_nanos())?;
     }
     Ok(())
 }

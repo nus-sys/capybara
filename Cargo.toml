@@ -48,6 +48,7 @@ serde_json = "1.0"
 slab = "0.4.7"
 yaml-rust = "0.4.5"
 x86 = "0.51.0"
+ctrlc = "3.2.1"
 
 # Demikernel Organization
 liburing = { git = "https://github.com/demikernel/liburing-rs", rev = "780827ee3f805d94f9909bd47cd925ee8476a64b", optional = true}

@@ -28,6 +28,9 @@ use ::std::{
 use ::demikernel::perftools::profiler;
 const ROOT: &str = "/var/www/demo";
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use ctrlc;
+use std::sync::Arc;
 //======================================================================================================================
 // server()
 //======================================================================================================================
@@ -85,6 +88,12 @@ fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    }).expect("Error setting Ctrl-C handler");
+
     let libos_name: LibOSName = match LibOSName::from_env() {
         Ok(libos_name) => libos_name.into(),
         Err(e) => panic!("{:?}", e),
@@ -115,7 +124,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     let mut migratable_qds: HashMap<QDesc, QToken> = HashMap::new();
 
     loop {
-        if qts.is_empty() {
+        if qts.is_empty() || !running.load(Ordering::SeqCst) {
             break;
         }
 
@@ -183,13 +192,16 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     eprintln!("server stopping");
 
-    loop {}
+    // loop {}
 
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
 
+    #[cfg(feature = "tcp-migration-profiler")]
+    demikernel::tcpmig_profiler::write_profiler_data(&mut std::io::stdout()).unwrap();
+
     // TODO: close socket when we get close working properly in catnip.
-    //Ok(())
+    Ok(())
 }
 
 //======================================================================================================================
@@ -207,6 +219,10 @@ fn usage(program_name: &String) {
 
 pub fn main() -> Result<()> {
     logging::initialize();
+
+    #[cfg(feature = "tcp-migration-profiler")]
+    demikernel::tcpmig_profiler::init_profiler();
+
     let args: Vec<String> = env::args().collect();
 
     if args.len() >= 2 {
