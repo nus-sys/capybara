@@ -24,8 +24,12 @@ use crate::{
             types::MacAddress,
             NetworkRuntime,
         },
-    }, profile_merge_previous,
+    }, 
 };
+
+#[cfg(feature = "tcp-migration-profiler")]
+use crate::profile_merge_previous;
+
 use std::{cell::RefCell, collections::{VecDeque, HashSet}, time::{Duration, Instant}};
 use ::std::{
     collections::HashMap,

@@ -25,8 +25,12 @@ use crate::{
             types::MacAddress,
             NetworkRuntime,
         },
-    }, profile,
+    },
 };
+
+#[cfg(feature = "tcp-migration-profiler")]
+use crate::profile;
+
 use std::collections::VecDeque;
 use ::std::{
     net::{
