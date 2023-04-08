@@ -197,8 +197,9 @@ control Ingress(
     MigrationReply32b1() origin_ip_1;
     MigrationReply16b1() origin_port_1;
 
-    MinimumWorkload32b() min_workload;
-
+    MinimumWorkload() min_workload;
+    MinimumWorkload32b() min_workload_mac_hi32;
+    MinimumWorkload16b() min_workload_mac_lo16;
 
 
     
@@ -252,7 +253,7 @@ control Ingress(
                 counter_update.execute(0);
                 // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
                 // meta.hash1 = hash1;
-                target_mac = hdr.ethernet.src_mac;
+                target_mac = hdr.ethernet.src_mac; // Q. why not directly use hdr.ethernet.src_mac?
                 origin_mac = hdr.ethernet.dst_mac;
                 hash.apply(hdr.tcpmig.client_ip, hdr.tcpmig.client_port, hash1);
                 hash2 = hash1;    
@@ -308,8 +309,14 @@ control Ingress(
             origin_port_1.apply(hash2, hdr.tcpmig.origin_port, meta, hdr.tcp.src_port);
 
         }else if(hdr.heartbeat.isValid() || meta.start_migration == 1){
+            bit<32> temp_32b;
+            bit<16> temp_16b;
+
             bit<1> holder_1b_00;
             min_workload.apply(0, hdr, meta, holder_1b_00);
+            meta.result00 = holder_1b_00;
+            min_workload_mac_hi32.apply(0, hdr.ethernet.src_mac[47:16], meta, temp_32b);
+            min_workload_mac_lo16.apply(0, hdr.ethernet.src_mac[15:0], meta, temp_16b);
         }
 
         l2_forwarding.apply();

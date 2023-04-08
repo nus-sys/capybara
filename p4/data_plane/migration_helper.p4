@@ -636,7 +636,7 @@ control MigrationReply16b1(
 }
 
 /* FOR HEARTBEAT HANDLING */
-control MinimumWorkload32b(
+control MinimumWorkload(
     in index_t index,
     in my_ingress_headers_t hdr,
     in my_ingress_metadata_t meta,
@@ -673,7 +673,7 @@ control MinimumWorkload32b(
 
     table tbl_action_selection {
         key = {
-            meta.load           : ternary;
+            hdr.heartbeat.isValid() : exact;
         }
         actions = {
             // exec_check_value;
@@ -682,8 +682,107 @@ control MinimumWorkload32b(
         }
         size = 16;
         const entries = {
-            (1) : exec_write_value();
+            (true) : exec_write_value();
             // (0, _) : exec_check_value();
+        }
+        const default_action = NoAction();
+    }
+
+    apply {
+        tbl_action_selection.apply();
+    }
+}
+
+
+control MinimumWorkload32b(
+    in index_t index,
+    in value32b_t value,
+    in my_ingress_metadata_t meta,
+    out value32b_t return_value) {
+
+    Register< value32b_t, index_t >(register_size) reg;
+    RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
+        void apply(inout value32b_t register_value, out bit<1> null) {
+            register_value = value;
+        }
+    };
+    action exec_write_value() {
+        write_value.execute(index);
+    }
+
+    RegisterAction< value32b_t, index_t, value32b_t >(reg) read_value = {
+        void apply(inout value32b_t register_value, out value32b_t rv) {
+            rv = register_value;
+        }
+    };
+    action exec_read_value() {
+        return_value = read_value.execute(index);
+    }
+
+
+    table tbl_action_selection {
+        key = {
+            meta.start_migration        : ternary;
+            meta.result00               : ternary;
+        }
+        actions = {
+            exec_read_value;
+            exec_write_value;
+            NoAction;
+        }
+        size = 16;
+        const entries = {
+            (0, 1) : exec_write_value();
+            (1, _) : exec_read_value();
+        }
+        const default_action = NoAction();
+    }
+
+    apply {
+        tbl_action_selection.apply();
+    }
+}
+
+control MinimumWorkload16b(
+    in index_t index,
+    in value16b_t value,
+    in my_ingress_metadata_t meta,
+    out value16b_t return_value) {
+
+    Register< value16b_t, index_t >(register_size) reg;
+    RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
+        void apply(inout value16b_t register_value, out bit<1> null) {
+            register_value = value;
+        }
+    };
+    action exec_write_value() {
+        write_value.execute(index);
+    }
+
+    RegisterAction< value16b_t, index_t, value16b_t >(reg) read_value = {
+        void apply(inout value16b_t register_value, out value16b_t rv) {
+            rv = register_value;
+        }
+    };
+    action exec_read_value() {
+        return_value = read_value.execute(index);
+    }
+
+
+    table tbl_action_selection {
+        key = {
+            meta.start_migration        : ternary;
+            meta.result00               : ternary;
+        }
+        actions = {
+            exec_read_value;
+            exec_write_value;
+            NoAction;
+        }
+        size = 16;
+        const entries = {
+            (0, 1) : exec_write_value();
+            (1, _) : exec_read_value();
         }
         const default_action = NoAction();
     }
