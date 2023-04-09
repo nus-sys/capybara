@@ -1026,12 +1026,14 @@ impl TcpState {
         }
     }
 
-    pub fn serialize(&self) -> Result<Vec<u8>, serde_json::Error> {
-        Ok(serde_json::to_string_pretty(self)?.as_bytes().to_vec())
+    pub fn serialize(&self) -> Result<Vec<u8>, postcard::Error> {
+        //Ok(serde_json::to_string_pretty(self)?.as_bytes().to_vec());
+        postcard::to_allocvec(self)
     }
 
-    pub fn deserialize(serialized: &[u8]) -> Result<Self, serde_json::Error> {
+    pub fn deserialize(serialized: &[u8]) -> Result<Self, postcard::Error> {
         // TODO: Check if having all `UnackedSegment` timestamps as `None` affects anything.
-        serde_json::from_slice::<TcpState>(serialized)
+        //serde_json::from_slice::<TcpState>(serialized)
+        postcard::from_bytes(serialized)
     }
 }
