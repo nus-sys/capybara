@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 //==============================================================================
 // Data
@@ -11,26 +11,76 @@ static mut DATA: Option<Vec<(&str, Duration)>> = None;
 //==============================================================================
 
 #[macro_export]
-macro_rules! profile {
-    ($e:expr, $name:expr) => {{
-        let begin = std::time::Instant::now();
-        let expr_result = $e;
-        let end = std::time::Instant::now();
-        crate::tcpmig_profiler::data().push(($name, end - begin));
-        expr_result
+macro_rules! tcpmig_profile {
+    ($name:expr) => {
+        let __tcpmig_profiler_dropped_object__ = crate::tcpmig_profiler::DroppedObject::begin($name);
+    };
+}
+
+/// Merges this time interval with the last one profiled, ensuring that the name is the same.
+#[macro_export]
+macro_rules! tcpmig_profile_merge_previous {
+    ($name:expr) => {{
+        let __tcpmig_profiler_dropped_object__ = crate::tcpmig_profiler::MergeDroppedObject::begin($name);
     }};
 }
 
-/// Merges this time interval with the last one profiled if there is one, else just acts like `profile!()`.
-#[macro_export]
-macro_rules! profile_merge_previous {
-    ($e:expr) => {{
-        let begin = std::time::Instant::now();
-        let expr_result = $e;
-        let end = std::time::Instant::now();
-        crate::tcpmig_profiler::data().last_mut().expect("no previous value").1 += end - begin;
-        expr_result
-    }};
+//==============================================================================
+// Structures
+//==============================================================================
+
+pub struct DroppedObject {
+    name: &'static str,
+    begin: Instant,
+}
+
+pub struct MergeDroppedObject {
+    begin: Instant,
+}
+
+//==============================================================================
+// Standard Library Trait Implementations
+//==============================================================================
+
+impl Drop for DroppedObject {
+    fn drop(&mut self) {
+        let end = Instant::now();
+        data().push((self.name, end - self.begin));
+    }
+}
+
+impl Drop for MergeDroppedObject {
+    fn drop(&mut self) {
+        let end = Instant::now();
+        data().last_mut().expect("no previous value").1 += end - self.begin;
+    }
+}
+
+//==============================================================================
+// Implementations
+//==============================================================================
+
+impl DroppedObject {
+    pub fn begin(name: &'static str) -> Self {
+        Self {
+            name,
+            begin: Instant::now()
+        }
+    }
+}
+
+impl MergeDroppedObject {
+    pub fn begin(name: &'static str) -> Self {
+        match data().last() {
+            None => panic!("tcpmig_profiler: no previous value"),
+            Some(&(prev, _)) if prev != name => panic!("tcpmig_profiler: expected \"{}\", found \"{}\"", name, prev),
+            _ => (),
+        }
+
+        Self {
+            begin: Instant::now()
+        }
+    }
 }
 
 //==============================================================================

@@ -28,7 +28,7 @@ use crate::{
 };
 
 #[cfg(feature = "tcp-migration-profiler")]
-use crate::profile_merge_previous;
+use crate::{tcpmig_profile, tcpmig_profile_merge_previous};
 
 use std::{cell::RefCell, collections::{VecDeque, HashSet}, time::{Duration, Instant}};
 use ::std::{
@@ -180,6 +180,9 @@ impl TcpMigPeer {
 
         // First packet that target receives.
         if hdr.stage == MigrationStage::PrepareMigration {
+            #[cfg(feature = "tcp-migration-profiler")]
+            tcpmig_profile!("prepare_ack");
+
             let active = ActiveMigration::new(
                 inner.rt.clone(),
                 inner.local_ipv4_addr,
@@ -206,17 +209,13 @@ impl TcpMigPeer {
         match active.process_packet(hdr, buf)? {
             MigrationRequestStatus::Rejected => todo!("handle migration rejection"),
             MigrationRequestStatus::StateReceived(state) => {
-                let (local, remote) = (state.local, state.remote);
                 #[cfg(feature = "tcp-migration-profiler")]
-                profile_merge_previous!({
-                    tcp_peer.notify_passive(state)?;
-                    inner.incoming_connections.insert((local, remote));
-                });
-                #[cfg(not(feature = "tcp-migration-profiler"))]
-                {
-                    tcp_peer.notify_passive(state)?;
-                    inner.incoming_connections.insert((local, remote));
-                }
+                tcpmig_profile_merge_previous!("migrate_ack");
+
+                let (local, remote) = (state.local, state.remote);
+                tcp_peer.notify_passive(state)?;
+                inner.incoming_connections.insert((local, remote));
+
                 // inner.active_migrations.remove(&(hdr.origin, hdr.remote)).expect("active migration should exist"); 
                 // Shouldn't be removed yet. Should be after processing migration queue.
             },

@@ -65,7 +65,7 @@ use crate::{
 };
 
 #[cfg(feature = "tcp-migration-profiler")]
-use crate::profile;
+use crate::tcpmig_profile;
 
 use ::futures::channel::mpsc;
 use ::libc::{
@@ -371,18 +371,23 @@ impl TcpPeer {
         };
 
         #[cfg(feature = "tcp-migration")]
-        if inner.tcpmig.take_connection(cb.get_local(), cb.get_remote()) {
-            match inner.migrate_in_tcp_connection(new_qd, cb) {
-                Ok(()) => {
-                    eprintln!("*** Accepted migrated connection ***");
-                    return Poll::Ready(Ok(new_qd));
-                },
-                Err(e) => {
-                    warn!("Dropped migrated-in connection");
-                    return Poll::Ready(Err(e));
-                }
+        {
+            #[cfg(feature = "tcp-migration-profiler")]
+            tcpmig_profile!("migrated_accept");
+
+            if inner.tcpmig.take_connection(cb.get_local(), cb.get_remote()) {
+                match inner.migrate_in_tcp_connection(new_qd, cb) {
+                    Ok(()) => {
+                        eprintln!("*** Accepted migrated connection ***");
+                        return Poll::Ready(Ok(new_qd));
+                    },
+                    Err(e) => {
+                        warn!("Dropped migrated-in connection");
+                        return Poll::Ready(Err(e));
+                    }
+                };
             };
-        };
+        }
 
         let established: EstablishedSocket = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
         let key: (SocketAddrV4, SocketAddrV4) = (established.cb.get_local(), established.cb.get_remote());
@@ -640,11 +645,11 @@ impl Inner {
 
                 // Possible decision-making point.
                 if self.tcpmig.should_migrate() {
+                    #[cfg(feature = "tcp-migration-profiler")]
+                    tcpmig_profile!("prepare");
+
                     eprintln!("*** Should Migrate ***");
                     // self.tcpmig.print_stats();
-                    #[cfg(feature = "tcp-migration-profiler")]
-                    crate::profile!(self.tcpmig.initiate_migration(), "prepare");
-                    #[cfg(not(feature = "tcp-migration-profiler"))]
                     self.tcpmig.initiate_migration();
                 }
             }
@@ -753,17 +758,12 @@ impl TcpPeer {
         };
         
         if let Some(handle) = inner.tcpmig.can_migrate_out(local, remote) {
-            eprintln!("*** Can migrate out ***");
             #[cfg(feature = "tcp-migration-profiler")]
-            profile!({
-                let state = inner.migrate_out_tcp_connection(qd)?;
-                inner.tcpmig.migrate_out(handle, state);
-            }, "migrate");
-            #[cfg(not(feature = "tcp-migration-profiler"))]
-            {
-                let state = inner.migrate_out_tcp_connection(qd)?;
-                inner.tcpmig.migrate_out(handle, state);
-            }
+            tcpmig_profile!("migrate");
+
+            eprintln!("*** Can migrate out ***");
+            let state = inner.migrate_out_tcp_connection(qd)?;
+            inner.tcpmig.migrate_out(handle, state);
             return Ok(true)
         }
 
@@ -1027,13 +1027,11 @@ impl TcpState {
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>, postcard::Error> {
-        //Ok(serde_json::to_string_pretty(self)?.as_bytes().to_vec());
         postcard::to_allocvec(self)
     }
 
     pub fn deserialize(serialized: &[u8]) -> Result<Self, postcard::Error> {
         // TODO: Check if having all `UnackedSegment` timestamps as `None` affects anything.
-        //serde_json::from_slice::<TcpState>(serialized)
         postcard::from_bytes(serialized)
     }
 }

@@ -29,7 +29,7 @@ use crate::{
 };
 
 #[cfg(feature = "tcp-migration-profiler")]
-use crate::profile;
+use crate::{tcpmig_profile, tcpmig_profile_merge_previous};
 
 use std::collections::VecDeque;
 use ::std::{
@@ -115,6 +115,17 @@ impl ActiveMigration {
     }
 
     pub fn process_packet(&mut self, hdr: TcpMigHeader, buf: Buffer) -> Result<MigrationRequestStatus, Fail> {
+        #[inline]
+        fn next_header(mut hdr: TcpMigHeader, next_stage: MigrationStage) -> TcpMigHeader {
+            hdr.stage = next_stage;
+            hdr
+        }
+
+        #[inline]
+        fn empty_buffer() -> Buffer {
+            Buffer::Heap(DataBuffer::empty())
+        }
+
         match self.last_sent_stage {
             // Target
 
@@ -122,14 +133,16 @@ impl ActiveMigration {
             MigrationStage::None => {
                 match hdr.stage {
                     MigrationStage::PrepareMigration => {
+                        #[cfg(feature = "tcp-migration-profiler")]
+                        tcpmig_profile_merge_previous!("prepare_ack");
+
                         // Decide if migration should be accepted or not and send corresponding segment.
 
                         // Assume always accept for now.
-                        #[cfg(feature = "tcp-migration-profiler")]
-                        profile!(self.prepare_migration_ack(hdr), "prepare_ack");
-                        #[cfg(not(feature = "tcp-migration-profiler"))]
-                        self.prepare_migration_ack(hdr);
-                        
+                        let mut hdr = next_header(hdr, MigrationStage::PrepareMigrationAck);
+                        hdr.flag_load = true;
+                        self.last_sent_stage = MigrationStage::PrepareMigrationAck;
+                        self.send(hdr, empty_buffer());
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected PREPARE_MIGRATION"))
                 }
@@ -140,9 +153,30 @@ impl ActiveMigration {
                 match hdr.stage {
                     MigrationStage::ConnectionState => {
                         #[cfg(feature = "tcp-migration-profiler")]
-                        return profile!(self.connection_state_ack(hdr, buf), "migrate_ack");
-                        #[cfg(not(feature = "tcp-migration-profiler"))]
-                        return self.connection_state_ack(hdr, buf);
+                        tcpmig_profile!("migrate_ack");
+
+                        // Handle fragmentation.
+                        let (hdr, buf) = match self.defragmenter.defragment(hdr, buf) {
+                            Some((hdr, buf)) => (hdr, buf),
+                            None => return Ok(MigrationRequestStatus::Ok),
+                        };
+
+                        let mut state = match TcpState::deserialize(&buf) {
+                            Ok(state) => state,
+                            Err(..) => return Err(Fail::new(libc::EBADMSG, "invalid TCP state")),
+                        };
+
+                        // Overwrite local address.
+                        state.local = SocketAddrV4::new(self.local_ipv4_addr, self.origin.port());
+
+                        eprintln!("*** Received state ***");
+
+                        // ACK CONNECTION_STATE.
+                        let hdr = next_header(hdr, MigrationStage::ConnectionStateAck);
+                        self.last_sent_stage = MigrationStage::ConnectionStateAck;
+                        self.send(hdr, empty_buffer());
+
+                        return Ok(MigrationRequestStatus::StateReceived(state));
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE"))
                 }
@@ -194,38 +228,6 @@ impl ActiveMigration {
         let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 0, MigrationStage::PrepareMigration, self.self_udp_port, DEST_UDP_PORT);
         self.last_sent_stage = MigrationStage::PrepareMigration;
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::empty()));
-    }
-
-    fn prepare_migration_ack(&mut self, hdr: TcpMigHeader) {
-        let mut hdr = next_header(hdr, MigrationStage::PrepareMigrationAck);
-        hdr.flag_load = true;
-        self.last_sent_stage = MigrationStage::PrepareMigrationAck;
-        self.send(hdr, empty_buffer());
-    }
-
-    fn connection_state_ack(&mut self, hdr: TcpMigHeader, buf: Buffer) -> Result<MigrationRequestStatus, Fail> {
-        // Handle fragmentation.
-        let (hdr, buf) = match self.defragmenter.defragment(hdr, buf) {
-            Some((hdr, buf)) => (hdr, buf),
-            None => return Ok(MigrationRequestStatus::Ok),
-        };
-
-        let mut state = match TcpState::deserialize(&buf) {
-            Ok(state) => state,
-            Err(..) => return Err(Fail::new(libc::EBADMSG, "invalid TCP state")),
-        };
-
-        // Overwrite local address.
-        state.local = SocketAddrV4::new(self.local_ipv4_addr, self.origin.port());
-
-        eprintln!("*** Received state ***");
-
-        // ACK CONNECTION_STATE.
-        let hdr = next_header(hdr, MigrationStage::ConnectionStateAck);
-        self.last_sent_stage = MigrationStage::ConnectionStateAck;
-        self.send(hdr, empty_buffer());
-
-        Ok(MigrationRequestStatus::StateReceived(state))
     }
 
     pub fn send_connection_state(&mut self, state: TcpState) {
@@ -286,14 +288,3 @@ impl ActiveMigration {
 //======================================================================================================================
 // Functions
 //======================================================================================================================
-
-#[inline]
-fn next_header(mut hdr: TcpMigHeader, next_stage: MigrationStage) -> TcpMigHeader {
-    hdr.stage = next_stage;
-    hdr
-}
-
-#[inline]
-fn empty_buffer() -> Buffer {
-    Buffer::Heap(DataBuffer::empty())
-}
