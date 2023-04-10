@@ -371,23 +371,21 @@ impl TcpPeer {
         };
 
         #[cfg(feature = "tcp-migration")]
-        {
+        if inner.tcpmig.take_connection(cb.get_local(), cb.get_remote()) {
             #[cfg(feature = "tcp-migration-profiler")]
             tcpmig_profile!("migrated_accept");
-
-            if inner.tcpmig.take_connection(cb.get_local(), cb.get_remote()) {
-                match inner.migrate_in_tcp_connection(new_qd, cb) {
-                    Ok(()) => {
-                        eprintln!("*** Accepted migrated connection ***");
-                        return Poll::Ready(Ok(new_qd));
-                    },
-                    Err(e) => {
-                        warn!("Dropped migrated-in connection");
-                        return Poll::Ready(Err(e));
-                    }
-                };
+            
+            match inner.migrate_in_tcp_connection(new_qd, cb) {
+                Ok(()) => {
+                    eprintln!("*** Accepted migrated connection ***");
+                    return Poll::Ready(Ok(new_qd));
+                },
+                Err(e) => {
+                    warn!("Dropped migrated-in connection");
+                    return Poll::Ready(Err(e));
+                }
             };
-        }
+        };
 
         let established: EstablishedSocket = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
         let key: (SocketAddrV4, SocketAddrV4) = (established.cb.get_local(), established.cb.get_remote());
