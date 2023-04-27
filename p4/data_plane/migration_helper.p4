@@ -700,7 +700,7 @@ control MinimumWorkload32b(
     in my_ingress_metadata_t meta,
     out value32b_t return_value) {
 
-    Register< value32b_t, index_t >(register_size) reg;
+    Register< value32b_t, index_t >(1) reg;
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value32b_t register_value, out bit<1> null) {
             register_value = value;
@@ -749,7 +749,7 @@ control MinimumWorkload16b(
     in my_ingress_metadata_t meta,
     out value16b_t return_value) {
 
-    Register< value16b_t, index_t >(register_size) reg;
+    Register< value16b_t, index_t >(1) reg;
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value16b_t register_value, out bit<1> null) {
             register_value = value;

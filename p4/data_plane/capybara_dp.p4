@@ -136,7 +136,7 @@ parser IngressParser(
     state parse_tcpmig {
         pkt.extract(hdr.tcpmig);
         meta.load = hdr.tcpmig.flag[0:0];
-        meta.start_migration = hdr.tcpmig.flag[5:5];
+        meta.start_migration = hdr.tcpmig.flag[5:5]; // PREPARE_MIGRATION: 00100000
         transition accept;
     }
 
@@ -200,6 +200,8 @@ control Ingress(
     MinimumWorkload() min_workload;
     MinimumWorkload32b() min_workload_mac_hi32;
     MinimumWorkload16b() min_workload_mac_lo16;
+    MinimumWorkload32b() min_workload_ip;
+    MinimumWorkload16b() min_workload_port;
 
 
     
@@ -314,9 +316,12 @@ control Ingress(
 
             bit<1> holder_1b_00;
             min_workload.apply(0, hdr, meta, holder_1b_00);
-            meta.result00 = holder_1b_00;
-            min_workload_mac_hi32.apply(0, hdr.ethernet.src_mac[47:16], meta, temp_32b);
-            min_workload_mac_lo16.apply(0, hdr.ethernet.src_mac[15:0], meta, temp_16b);
+            meta.result00 = holder_1b_00; // if it's 1, min_workload has been updated (addresses should be updated too)
+            min_workload_mac_hi32.apply(0, hdr.ethernet.src_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
+            min_workload_mac_lo16.apply(0, hdr.ethernet.src_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
+            min_workload_ip.apply(0, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
+            min_workload_port.apply(0, hdr.udp.src_port, meta, hdr.udp.dst_port);
+               
         }
 
         l2_forwarding.apply();
