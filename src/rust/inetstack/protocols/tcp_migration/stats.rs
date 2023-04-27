@@ -64,6 +64,7 @@ pub struct TcpMigStats {
     /// (local, remote) -> requests per milli-second.
     recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
     global_recv_queue_length: f64,
+    threshold: f64,
 }
 
 impl fmt::Debug for TcpMigStats {
@@ -99,6 +100,10 @@ impl TcpMigStats {
             global_outgoing_traffic: PacketRate::new(),
             recv_queue_lengths: HashMap::new(),
             global_recv_queue_length: 0.0,
+            threshold: match std::env::var("MIG_THRESHOLD") {
+                Ok(val) => val.parse().expect("MIG_THRESHOLD should be a number"),
+                Err(..) => panic!("no MIG_THRESHOLD found"),
+            },
         }
     }
 
@@ -119,7 +124,6 @@ impl TcpMigStats {
     }
 
     pub fn global_recv_queue_length(&self) -> f64 {
-        //self.recv_queue_lengths.values().fold(0.0, |sum, e| sum + e.get().0)
         self.global_recv_queue_length
     }
 
@@ -128,9 +132,20 @@ impl TcpMigStats {
     }
 
     pub fn get_connection_to_migrate_out(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
-        self.recv_queue_lengths.iter()
+        /* self.recv_queue_lengths.iter()
         .max_by_key(|(_, v)| v.get())
-        .and_then(|(k, _)| Some(*k))
+        .and_then(|(k, _)| Some(*k)) */
+
+        let pivot = self.global_recv_queue_length - self.threshold;
+
+        self.recv_queue_lengths.iter()
+            .filter(|(_, v)| v.get().0 > pivot)
+            .min_by_key(|(_, v)| v.get())
+            .or_else(||
+                self.recv_queue_lengths.iter()
+                    .max_by_key(|(_, v)| v.get())
+            )
+            .and_then(|(k, _)| Some(*k))
     }
 
     pub fn stop_tracking_connection(&mut self, local: SocketAddrV4, remote: SocketAddrV4) {
