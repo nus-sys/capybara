@@ -638,17 +638,23 @@ impl Inner {
 
             #[cfg(feature = "tcp-migration")]
             {
-                self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
-                //self.tcpmig.queue_length_heartbeat();
+                // Remove
+                if tcp_hdr.fin || tcp_hdr.rst {
+                    self.tcpmig.stop_tracking_connection_stats(local, remote);
+                }
+                else {
+                    self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
+                    //self.tcpmig.queue_length_heartbeat();
 
-                // Possible decision-making point.
-                if self.tcpmig.should_migrate() {
-                    #[cfg(feature = "tcp-migration-profiler")]
-                    tcpmig_profile!("prepare");
+                    // Possible decision-making point.
+                    if self.tcpmig.should_migrate() {
+                        #[cfg(feature = "tcp-migration-profiler")]
+                        tcpmig_profile!("prepare");
 
-                    eprintln!("*** Should Migrate ***");
-                    // self.tcpmig.print_stats();
-                    self.tcpmig.initiate_migration();
+                        eprintln!("*** Should Migrate ***");
+                        // self.tcpmig.print_stats();
+                        self.tcpmig.initiate_migration();
+                    }
                 }
             }
 

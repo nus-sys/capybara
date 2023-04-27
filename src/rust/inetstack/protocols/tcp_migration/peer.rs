@@ -369,6 +369,10 @@ impl TcpMigPeer {
         }
     }
 
+    pub fn stop_tracking_connection_stats(&mut self, local: SocketAddrV4, remote: SocketAddrV4) {
+        self.inner.borrow_mut().stats.stop_tracking_connection(local, remote)
+    }
+
     pub fn print_stats(&self) {
         let inner = self.inner.borrow();
         println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
