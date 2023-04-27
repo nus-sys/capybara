@@ -15,6 +15,12 @@
 #define MIGRATION_SIGNATURE 0xCAFEDEAD
 #define HEARTBEAT_SIGNATURE 0xCAFECAFE
 
+#define FE_MAC 0x08c0ebb6e805
+#define FE_IP 0x0a000108
+#define FE_PORT 10000 
+#define NUM_BACKENDS 4
+
+
 const int MAC_TABLE_SIZE        = 65536;
 const bit<3> L2_LEARN_DIGEST = 1;
 const bit<3> TCP_MIGRATION_DIGEST = 2;
