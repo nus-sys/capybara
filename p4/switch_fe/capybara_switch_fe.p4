@@ -15,11 +15,14 @@ struct my_ingress_headers_t {
     heartbeat_h                 heartbeat;
 }
 
-struct my_ingress_metadata_t {
+struct my_ingress_metadata_t { // client ip and port in meta
     index_t backend_idx;
     bit<48> owner_mac;
     value32b_t owner_ip;
     value16b_t owner_port;
+
+    value32b_t client_ip;
+    value16b_t client_port;
 
     PortId_t ingress_port;
     PortId_t egress_port;
@@ -27,9 +30,9 @@ struct my_ingress_metadata_t {
     
     bit<16> hash1;
     bit<16> hash2;
-    bit<16> hash3;
+    // bit<16> hash3;
     
-    bit<1> load;
+    bit<1> chown;
     bit<1> start_migration;
     bit<1> result00;
     bit<1> result01;
@@ -40,7 +43,7 @@ struct my_ingress_metadata_t {
     bit<1> result12;
     bit<1> result13;
 
-    bit<48> dst_mac;
+    // bit<48> dst_mac;
 
     bit<32> time;
 }
@@ -68,10 +71,13 @@ parser IngressParser(
         meta.owner_ip = 0;
         meta.owner_port = 0;
 
+        meta.client_ip = 0;
+        meta.client_port = 0;
+
         meta.ingress_port = ig_intr_md.ingress_port;
         meta.egress_port = 0;
         meta.l4_payload_checksum  = 0;
-        meta.load = 0;
+        meta.chown = 0;
         meta.result00 = 0;
         meta.result01 = 0;
         meta.result02 = 0;
@@ -87,7 +93,7 @@ parser IngressParser(
 
     state parse_ethernet {
         pkt.extract(hdr.ethernet);
-        meta.dst_mac = hdr.ethernet.dst_mac;
+        // meta.dst_mac = hdr.ethernet.dst_mac;
         transition select(hdr.ethernet.ether_type){
             ETHERTYPE_IPV4: parse_ipv4;
             default: accept;
@@ -145,7 +151,9 @@ parser IngressParser(
 
     state parse_tcpmig {
         pkt.extract(hdr.tcpmig);
-        meta.load = hdr.tcpmig.flag[0:0];
+        meta.client_ip = hdr.tcpmig.client_ip;
+        meta.client_port = hdr.tcpmig.client_port;
+        meta.chown = hdr.tcpmig.flag[0:0];
         meta.start_migration = hdr.tcpmig.flag[5:5]; // PREPARE_MIGRATION: 00100000
         transition accept;
     }
@@ -180,9 +188,10 @@ control Ingress(
     RegisterAction<index_t, _, index_t>(counter) counter_update = {
         void apply(inout index_t val, out index_t rv) {
             rv = val;
-            val = val + 1;
-            if(val == NUM_BACKENDS){
+            if(val == NUM_BACKENDS-1){
                 val = 0;
+            }else{
+                val = val + 1;    
             }
         }
     };
@@ -250,6 +259,12 @@ control Ingress(
     MigrationRequest32b0() owner_ip_0;
     MigrationRequest16b0() owner_port_0;
 
+    MinimumWorkload() min_workload;
+    MinimumWorkload32b() min_workload_mac_hi32;
+    MinimumWorkload16b() min_workload_mac_lo16;
+    MinimumWorkload32b() min_workload_ip;
+    MinimumWorkload16b() min_workload_port;
+
     action exec_reply_rewrite() {
         hdr.ethernet.src_mac = FE_MAC;
         hdr.ipv4.src_ip = FE_IP;
@@ -257,8 +272,10 @@ control Ingress(
     }
     table tbl_reply_rewrite {
         key = {
-            meta.result02       : ternary;
-            meta.result03       : ternary;
+            meta.start_migration    : ternary;
+            meta.chown              : ternary;
+            meta.result02           : ternary;
+            meta.result03           : ternary;
         }
         actions = {
             exec_reply_rewrite;
@@ -266,60 +283,79 @@ control Ingress(
         }
         size = 16;
         const entries = {
-            (1, 1) : exec_reply_rewrite();
+            (0, 0, 1, 1) : exec_reply_rewrite();
         }
         const default_action = NoAction();
     }
 
     apply {
-        bit<16> hash1;
-        bit<16> hash2;
-        bit<1> holder_1b_00;
-        bit<1> holder_1b_01;
-        bit<1> holder_1b_02;
-        bit<1> holder_1b_03;
-        
-        if(hdr.tcp.isValid()){
-            hash.apply(hdr.ipv4.src_ip, hdr.tcp.src_port, hash1);
-            hash.apply(hdr.ipv4.dst_ip, hdr.tcp.dst_port, hash2);
-            if(hdr.tcp.flags == 0b00000010){ // SYN
-                meta.backend_idx = counter_update.execute(0);
-                exec_read_backend_mac_hi32();
-                exec_read_backend_mac_lo16();
-                exec_read_backend_ip();
-                exec_read_backend_port();
-                
-                hash2 = hash1;
+        if(hdr.heartbeat.isValid() || meta.start_migration == 1){
+            bit<1> holder_1b_00;
 
-                // hdr.ipv4.dst_ip = meta.backend_ip;
-                // hdr.tcp.dst_port = meta.backend_port;
+            min_workload.apply(0, hdr, meta, holder_1b_00);
+            meta.result00 = holder_1b_00; // if it's 1, min_workload has been updated (addresses should be updated too)
+            min_workload_mac_hi32.apply(0, hdr.ethernet.src_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
+            min_workload_mac_lo16.apply(0, hdr.ethernet.src_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
+            min_workload_ip.apply(0, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
+            min_workload_port.apply(0, hdr.udp.src_port, meta, hdr.udp.dst_port);
+            if(hdr.heartbeat.isValid()){
+                drop();
             }
-        }
-        else if(meta.load == 1){
-            hash.apply(hdr.tcpmig.client_ip, hdr.tcpmig.client_port, hash1);
-            hash2 = hash1;
-            meta.owner_mac = hdr.ethernet.src_mac;
-            meta.owner_ip = hdr.ipv4.src_ip;
-            meta.owner_port = hdr.udp.src_port;
-        }
-        // When the owner is changed? 1) SYN; 2) migration;
-        request_client_ip_0.apply(hash1, hdr, meta, holder_1b_00);
-        request_client_port_0.apply(hash1, hdr, meta, holder_1b_01);
-        reply_client_ip_0.apply(hash2, hdr, meta, holder_1b_02);
-        reply_client_port_0.apply(hash2, hdr, meta, holder_1b_03);
-        
-        meta.result00 = holder_1b_00;
-        meta.result01 = holder_1b_01;
-        meta.result02 = holder_1b_02;
-        meta.result03 = holder_1b_03;
+        }else{
+            bit<16> hash1;
+            bit<16> hash2;
+            bit<1> holder_1b_00;
+            bit<1> holder_1b_01;
+            bit<1> holder_1b_02;
+            bit<1> holder_1b_03;
 
-        owner_mac_hi32_0.apply(hash1, meta.owner_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
-        owner_mac_lo16_0.apply(hash1, meta.owner_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
-        owner_ip_0.apply(hash1, meta.owner_ip, meta, hdr.ipv4.dst_ip);
-        owner_port_0.apply(hash1, meta.owner_port, meta, hdr.tcp.dst_port); // Assumption: target uses the same port as origin to serve client
-        
-        tbl_reply_rewrite.apply();
+            if(hdr.tcp.isValid()){
+                hash.apply(hdr.ipv4.src_ip, hdr.tcp.src_port, hash1);
+                hash.apply(hdr.ipv4.dst_ip, hdr.tcp.dst_port, hash2);
+                if(hdr.tcp.flags == 0b00000010){ // SYN
+                    meta.client_ip = hdr.ipv4.src_ip;
+                    meta.client_port = hdr.tcp.src_port;
 
+                    meta.backend_idx = counter_update.execute(0);
+                    exec_read_backend_mac_hi32();
+                    exec_read_backend_mac_lo16();
+                    exec_read_backend_ip();
+                    exec_read_backend_port();
+                    
+                    hash2 = hash1;
+                    meta.start_migration = 1; // initial migration from FE (switch) to a BE
+
+                    hdr.ethernet.dst_mac = meta.owner_mac;
+                    hdr.ipv4.dst_ip = meta.owner_ip;
+                    hdr.tcp.dst_port = meta.owner_port;
+                }
+            }
+            else if(meta.chown == 1){
+                hash.apply(meta.client_ip, meta.client_port, hash1);
+                hash2 = hash1;
+                meta.owner_mac = hdr.ethernet.src_mac;
+                meta.owner_ip = hdr.ipv4.src_ip;
+                meta.owner_port = hdr.udp.src_port;
+            }
+
+            // When the owner is changed? 1) SYN; 2) migration;
+            request_client_ip_0.apply(hash1, hdr, meta, holder_1b_00);
+            request_client_port_0.apply(hash1, hdr, meta, holder_1b_01);
+            reply_client_ip_0.apply(hash2, hdr, meta, holder_1b_02);
+            reply_client_port_0.apply(hash2, hdr, meta, holder_1b_03);
+            
+            meta.result00 = holder_1b_00;
+            meta.result01 = holder_1b_01;
+            meta.result02 = holder_1b_02;
+            meta.result03 = holder_1b_03;
+
+            owner_mac_hi32_0.apply(hash1, meta.owner_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
+            owner_mac_lo16_0.apply(hash1, meta.owner_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
+            owner_ip_0.apply(hash1, meta.owner_ip, meta, hdr.ipv4.dst_ip);
+            owner_port_0.apply(hash1, meta.owner_port, meta, hdr.tcp.dst_port); // Assumption: target uses the same port as origin to serve client
+            
+            tbl_reply_rewrite.apply();
+        }
 
 
         l2_forwarding.apply();
