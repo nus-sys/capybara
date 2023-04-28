@@ -359,6 +359,15 @@ impl TcpMigPeer {
         recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
     }
 
+    // TEMP (for migration test)
+    // pub fn should_migrate(&self) -> bool {
+    //     static mut FLAG: i32 = 0;
+    //     unsafe {
+    //         FLAG += 1;
+    //         FLAG == 12
+    //     }
+    // }
+
     pub fn queue_length_heartbeat(&mut self) {
         let mut inner = self.inner.borrow_mut();
         let queue_len = inner.stats.global_recv_queue_length() as u32;
