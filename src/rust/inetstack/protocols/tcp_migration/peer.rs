@@ -206,7 +206,7 @@ impl TcpMigPeer {
             None => return Err(Fail::new(libc::EINVAL, "no such active migration")),
         };
 
-        match active.process_packet(hdr, buf)? {
+        match active.process_packet(ipv4_hdr, hdr, buf)? {
             MigrationRequestStatus::Rejected => todo!("handle migration rejection"),
             MigrationRequestStatus::StateReceived(state) => {
                 #[cfg(feature = "tcp-migration-profiler")]
@@ -242,7 +242,7 @@ impl TcpMigPeer {
         eprintln!("initiate migration for connection {} <-> {}", origin, remote);
 
         //let origin = SocketAddrV4::new(inner.local_ipv4_addr, origin_port);
-        let target = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), origin.port()); // TEMP
+        let target = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), origin.port()); // TEMP
         let key = (origin, remote);
 
         let active = ActiveMigration::new(
@@ -397,6 +397,11 @@ impl Inner {
         local_ipv4_addr: Ipv4Addr,
         //arp: ArpPeer,
     ) -> Self {
+        let recv_queue_length_threshold = match std::env::var("RECV_QUEUE_LEN") {
+            Ok(val) => val.parse().expect("RECV_QUEUE_LEN should be a number"),
+            Err(..) => BASE_RECV_QUEUE_LENGTH_THRESHOLD,
+        };
+
         Self {
             rt: rt.clone(),
             //arp,
@@ -421,12 +426,9 @@ impl Inner {
             active_migrations: HashMap::new(),
             origins: HashMap::new(),
             incoming_connections: HashSet::new(),
-            stats: TcpMigStats::new(),
+            stats: TcpMigStats::new(recv_queue_length_threshold),
             is_currently_migrating: false,
-            recv_queue_length_threshold: match std::env::var("RECV_QUEUE_LEN") {
-                Ok(val) => val.parse().expect("RECV_QUEUE_LEN should be a number"),
-                Err(..) => BASE_RECV_QUEUE_LENGTH_THRESHOLD,
-            },
+            recv_queue_length_threshold,
             self_udp_port: SELF_UDP_PORT, // TEMP
             //background: handle,
         }

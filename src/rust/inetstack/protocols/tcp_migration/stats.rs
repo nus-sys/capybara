@@ -94,16 +94,13 @@ impl std::cmp::Ord for RollingAverageResult {
 //======================================================================================================================
 
 impl TcpMigStats {
-    pub fn new() -> Self {
+    pub fn new(threshold: f64) -> Self {
         Self {
             global_incoming_traffic: PacketRate::new(),
             global_outgoing_traffic: PacketRate::new(),
             recv_queue_lengths: HashMap::new(),
             global_recv_queue_length: 0.0,
-            threshold: match std::env::var("MIG_THRESHOLD") {
-                Ok(val) => val.parse().expect("MIG_THRESHOLD should be a number"),
-                Err(..) => panic!("no MIG_THRESHOLD found"),
-            },
+            threshold,
         }
     }
 

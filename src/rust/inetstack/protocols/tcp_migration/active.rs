@@ -114,7 +114,7 @@ impl ActiveMigration {
         self.is_prepared
     }
 
-    pub fn process_packet(&mut self, hdr: TcpMigHeader, buf: Buffer) -> Result<MigrationRequestStatus, Fail> {
+    pub fn process_packet(&mut self, ipv4_hdr: &Ipv4Header, hdr: TcpMigHeader, buf: Buffer) -> Result<MigrationRequestStatus, Fail> {
         #[inline]
         fn next_header(mut hdr: TcpMigHeader, next_stage: MigrationStage) -> TcpMigHeader {
             hdr.stage = next_stage;
@@ -195,6 +195,9 @@ impl ActiveMigration {
             MigrationStage::PrepareMigration => {
                 match hdr.stage {
                     MigrationStage::PrepareMigrationAck => {
+                        // Change target address to actual target address.
+                        self.remote_ipv4_addr = ipv4_hdr.get_src_addr();
+
                         // Mark migration as prepared so that it can be migrated out at the next decision point.
                         self.is_prepared = true;
                     },
