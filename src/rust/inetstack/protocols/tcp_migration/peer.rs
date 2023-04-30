@@ -164,6 +164,11 @@ impl TcpMigPeer {
         Ok(Self{inner: Rc::new(RefCell::new(inner))})
     }
 
+    pub fn set_port(&mut self, port: u16) {
+        let mut inner = self.inner.borrow_mut();
+        inner.self_udp_port = port;
+    }
+
     /// Consumes the payload from a buffer.
     pub fn receive(&mut self, tcp_peer: &mut TcpPeer, ipv4_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         #[cfg(feature = "profiler")]
@@ -337,36 +342,36 @@ impl TcpMigPeer {
     pub fn update_incoming_stats(&mut self, local: SocketAddrV4, remote: SocketAddrV4, recv_queue_len: usize) {
         self.inner.borrow_mut().stats.update_incoming(local, remote, recv_queue_len);
 
-        unsafe {
-            static mut TMP: i32 = 0;
-            TMP += 1;
-            if TMP == 500 {
-                TMP = 0;
-                println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
-            }
-        }
+        // unsafe {
+        //     static mut TMP: i32 = 0;
+        //     TMP += 1;
+        //     if TMP == 500 {
+        //         TMP = 0;
+        //         println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
+        //     }
+        // }
     }
 
     pub fn update_outgoing_stats(&mut self) {
         self.inner.borrow_mut().stats.update_outgoing();
     }
 
-    pub fn should_migrate(&self) -> bool {
-        let inner = self.inner.borrow();
-        if inner.is_currently_migrating { return false; }
+    // pub fn should_migrate(&self) -> bool {
+    //     let inner = self.inner.borrow();
+    //     if inner.is_currently_migrating { return false; }
 
-        let recv_queue_len = inner.stats.global_recv_queue_length();
-        recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
-    }
+    //     let recv_queue_len = inner.stats.global_recv_queue_length();
+    //     recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
+    // }
 
     // TEMP (for migration test)
-    // pub fn should_migrate(&self) -> bool {
-    //     static mut FLAG: i32 = 0;
-    //     unsafe {
-    //         FLAG += 1;
-    //         FLAG == 12
-    //     }
-    // }
+    pub fn should_migrate(&self) -> bool {
+        static mut FLAG: i32 = 0;
+        unsafe {
+            FLAG += 1;
+            FLAG == 12
+        }
+    }
 
     pub fn queue_length_heartbeat(&mut self) {
         let mut inner = self.inner.borrow_mut();

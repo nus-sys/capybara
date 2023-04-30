@@ -273,6 +273,8 @@ impl TcpPeer {
             addr.set_port(new_port);
         }
 
+        inner.tcpmig.set_port(addr.port());
+
         // Issue operation.
         let ret: Result<(), Fail> = match inner.sockets.get_mut(&qd) {
             Some(Socket::Inactive { ref mut local }) => match *local {
@@ -644,7 +646,7 @@ impl Inner {
                 }
                 else {
                     self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
-                    //self.tcpmig.queue_length_heartbeat();
+                    // self.tcpmig.queue_length_heartbeat();
 
                     // Possible decision-making point.
                     if self.tcpmig.should_migrate() {
