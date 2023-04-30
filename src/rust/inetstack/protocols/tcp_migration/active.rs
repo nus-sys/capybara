@@ -4,7 +4,7 @@
 //==============================================================================
 // Imports
 //==============================================================================
-
+use super::constants::*;
 use super::{segment::{
     TcpMigHeader,
     TcpMigSegment, TcpMigDefragmenter,
@@ -39,13 +39,6 @@ use ::std::{
     },
     rc::Rc,
 };
-
-//======================================================================================================================
-// Constants
-//======================================================================================================================
-
-// TEMP
-const DEST_UDP_PORT: u16 = 10000;
 
 //======================================================================================================================
 // Structures
@@ -118,6 +111,7 @@ impl ActiveMigration {
         #[inline]
         fn next_header(mut hdr: TcpMigHeader, next_stage: MigrationStage) -> TcpMigHeader {
             hdr.stage = next_stage;
+            hdr.swap_src_dst_port();
             hdr
         }
 
@@ -228,7 +222,11 @@ impl ActiveMigration {
     pub fn initiate_migration(&mut self) {
         assert_eq!(self.last_sent_stage, MigrationStage::None);
 
-        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 0, MigrationStage::PrepareMigration, self.self_udp_port, DEST_UDP_PORT);
+        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 
+                                                        0, 
+                                                        MigrationStage::PrepareMigration, 
+                                                        self.self_udp_port, 
+                                                        FRONTEND_PORT);
         self.last_sent_stage = MigrationStage::PrepareMigration;
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::empty()));
     }
@@ -241,7 +239,11 @@ impl ActiveMigration {
             Err(e) => panic!("TCPState serialisation failed: {}", e),
         };
 
-        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 0, MigrationStage::ConnectionState, self.self_udp_port, DEST_UDP_PORT);
+        let tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 
+                                                        0, 
+                                                        MigrationStage::ConnectionState, 
+                                                        self.self_udp_port, 
+                                                        DEST_UDP_PORT); // PORT should be the sender of PREPARE_MIGRATION_ACK
         self.last_sent_stage = MigrationStage::ConnectionState;
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_slice(&buf)));
     }
@@ -251,8 +253,13 @@ impl ActiveMigration {
     }
 
     pub fn send_queue_length_heartbeat(&self, queue_len: u32) {
-        let mut tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 4, MigrationStage::None, self.self_udp_port, DEST_UDP_PORT);
+        let mut tcpmig_hdr = TcpMigHeader::new(self.origin, self.remote, 
+                                                             4, 
+                                                             MigrationStage::None, 
+                                                             self.self_udp_port, 
+                                                             FRONTEND_PORT);
         tcpmig_hdr.flag_heartbeat = true;
+        println!("SEND HEARTBEAT (queue_len: {})", queue_len);
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_slice(&queue_len.to_be_bytes())));
     }
 
@@ -263,7 +270,7 @@ impl ActiveMigration {
         buf: Buffer,
     ) {
         debug!("TCPMig send {:?}", tcpmig_hdr);
-        eprintln!("TCPMig sent: {:#?}", tcpmig_hdr);
+        eprintln!("TCPMig sent: {:#?}\nto {:?}:{:?}", tcpmig_hdr, self.remote_link_addr, self.remote_ipv4_addr);
 
         // Layer 4 protocol field marked as UDP because DPDK only supports standard Layer 4 protocols.
         let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::UDP);

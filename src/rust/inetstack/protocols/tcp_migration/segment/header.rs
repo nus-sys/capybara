@@ -114,6 +114,12 @@ impl TcpMigHeader {
         }
     }
 
+    pub fn swap_src_dst_port(&mut self) {
+        let temp: u16 = self.source_udp_port;
+        self.source_udp_port = self.dest_udp_port;
+        self.dest_udp_port = temp;
+    }
+
     pub fn is_tcpmig(buf: &[u8]) -> bool {
         buf.len() >= TCPMIG_HEADER_SIZE &&
             NetworkEndian::read_u32(&buf[8..12]) == MAGIC_NUMBER
@@ -171,7 +177,7 @@ impl TcpMigHeader {
 
         // Checksum payload.
         let payload_buf: &[u8] = &buf[TCPMIG_HEADER_SIZE..];
-        if checksum != Self::checksum(&ipv4_hdr, hdr_buf, payload_buf) {
+        if checksum != 0 && checksum != Self::checksum(&ipv4_hdr, hdr_buf, payload_buf) {
             return Err(Fail::new(EBADMSG, "TCPMig checksum mismatch"));
         }
 

@@ -1,3 +1,4 @@
+pub mod constants;
 pub mod segment;
 mod peer;
 mod active;

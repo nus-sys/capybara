@@ -711,6 +711,7 @@ impl ControlBlock {
         // Check the FIN bit.
         if header.fin {
             trace!("Received FIN");
+            println!("Received FIN");
             // ToDo: Signal the user "connection closing" and return any pending Receive requests.
 
             // Advance RCV.NXT over the FIN.
