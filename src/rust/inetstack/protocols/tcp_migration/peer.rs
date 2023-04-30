@@ -51,7 +51,7 @@ use crate::timer;
 const BASE_RECV_QUEUE_LENGTH_THRESHOLD: f64 = 10.0;
 
 // TEMP
-const SELF_UDP_PORT: u16 = 10000;
+const SELF_UDP_PORT: u16 = 10000; // it will be set properly when the socket is binded
 const FRONTEND_IP: Ipv4Addr = Ipv4Addr::new(10, 0, 1, 8);
 const FRONTEND_PORT: u16 = 10000;
 const FRONTEND_MAC: MacAddress = MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xe8, 0x05]);
@@ -247,19 +247,19 @@ impl TcpMigPeer {
         eprintln!("initiate migration for connection {} <-> {}", origin, remote);
 
         //let origin = SocketAddrV4::new(inner.local_ipv4_addr, origin_port);
-        let target = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), origin.port()); // TEMP
+        // let target = SocketAddrV4::new(FRONTEND_IP, FRONTEND_PORT); // TEMP
         let key = (origin, remote);
 
         let active = ActiveMigration::new(
             inner.rt.clone(),
             inner.local_ipv4_addr,
             inner.local_link_addr,
-            target.ip().clone(),
-            MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]), // TEMP
+            FRONTEND_IP,
+            FRONTEND_MAC, 
             inner.self_udp_port,
             origin,
             remote,
-        );
+        ); // Inho: Q. Why link_addr (MAC addr) is needed when the libOS has arp_table already? Is it possible to use the arp_table instead?
         
         if let Some(..) = inner.active_migrations.insert(key, active) {
             todo!("duplicate active migration");
