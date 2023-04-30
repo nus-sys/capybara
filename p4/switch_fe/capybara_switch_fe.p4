@@ -316,7 +316,7 @@ control Ingress(
             if(hdr.heartbeat.isValid()){
                 drop();
             }
-        }else{
+        }else if(hdr.ipv4.isValid()){
             bit<16> hash1;
             bit<16> hash2;
             bit<1> holder_1b_00;
