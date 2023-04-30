@@ -210,14 +210,13 @@ class capybara_switch_fe():
         # migrate_reply = bfrt.capybara_switch_fe.pipe.Ingress.migrate_reply
         
         for digest in msg:
-            src_mac        =   digest["src_mac"]
-            dst_mac        =    digest["dst_mac"]
-            src_ip         =   digest["src_ip"];
-            # src_port         =   digest["src_port"];
-            dst_ip         =   digest["dst_ip"];
-            # dst_port         =   digest["dst_port"];
-            # meta_ip         =   digest["meta_ip"];
-            # meta_port         =   digest["meta_port"];
+            src_mac     = digest["src_mac"]
+            src_ip      = digest["src_ip"]
+            src_port      = digest["src_port"]
+            
+            dst_mac     = digest["dst_mac"]
+            dst_ip      = digest["dst_ip"]
+            dst_port      = digest["dst_port"]
 
             # hash_digest1         =   digest["hash_digest1"];
             # hash_digest         =   digest["hash_digest"];
@@ -226,8 +225,8 @@ class capybara_switch_fe():
             # print("src: {}:{}, dst: {}:{}, meta: {},{}\nHash1: {} and Hash2: {}\n".format(
             #     ip(src_ip), src_port, ip(dst_ip), dst_port, ip(meta_ip), meta_port, hash_digest1, hash_digest2), end="", flush=True)
 
-            print("\n{}:{} => {}:{} \n".format(
-                mac(src_mac), ip(src_ip), mac(dst_mac), ip(dst_ip)), end="", flush=True)
+            print("\n{}:{}:{} => {}:{}:{} \n".format(
+                mac(src_mac), ip(src_ip), src_port, mac(dst_mac), ip(dst_ip), dst_port), end="", flush=True)
 
 
             # Since we do not have access to self, we have to use
@@ -260,10 +259,21 @@ sl2 = capybara_switch_fe(default_ttl=10000)
 sl2.setup()
 set_bcast([24, 32, 36])
 
+
+# temporary test
+p4.Ingress.min_workload_mac_hi32.reg.mod(REGISTER_INDEX=0, f1=0x08c0ebb6)
+p4.Ingress.min_workload_mac_lo16.reg.mod(REGISTER_INDEX=0, f1=0xc5ad)
+p4.Ingress.min_workload_ip.reg.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.9'))
+p4.Ingress.min_workload_port.reg.mod(REGISTER_INDEX=0, f1=10001)
+
+
+
 for i in range(num_backends):
     p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
     p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xc5ad)
     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.9'))
-    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + i)
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + 0)
+
+
 
 bfrt.complete_operations()

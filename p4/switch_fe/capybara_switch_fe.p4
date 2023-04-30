@@ -57,6 +57,7 @@ parser IngressParser(
 
     Checksum() ipv4_checksum;
     Checksum() tcp_checksum;
+    // Checksum() udp_checksum;
 
     /* This is a mandatory state, required by Tofino Architecture */
     state start {
@@ -142,6 +143,16 @@ parser IngressParser(
     state parse_udp {
         pkt.extract(hdr.udp);
 
+        /* Calculate Payload checksum */
+        // udp_checksum.subtract({
+        //     hdr.udp.src_port,
+        //     hdr.udp.dst_port,
+        //     // hdr.udp.len, Do not subtract the length!!!!
+        //     hdr.udp.checksum
+        // });
+
+        // meta.l4_payload_checksum = udp_checksum.get();
+
         transition select(pkt.lookahead<bit<32>>()) {
             MIGRATION_SIGNATURE: parse_tcpmig;
             HEARTBEAT_SIGNATURE: parse_heartbeat;
@@ -154,7 +165,7 @@ parser IngressParser(
         meta.client_ip = hdr.tcpmig.client_ip;
         meta.client_port = hdr.tcpmig.client_port;
         meta.chown = hdr.tcpmig.flag[0:0];
-        meta.start_migration = hdr.tcpmig.flag[5:5]; // PREPARE_MIGRATION: 00100000
+        // meta.start_migration = hdr.tcpmig.flag[5:5]; // PREPARE_MIGRATION: 00100000
         transition accept;
     }
 
@@ -289,9 +300,13 @@ control Ingress(
     }
 
     apply {
-        if(hdr.heartbeat.isValid() || meta.start_migration == 1){
+        if(hdr.heartbeat.isValid() || hdr.tcpmig.flag == 0b00100000){
+
+            hdr.udp.checksum = 0;
+            
             bit<1> holder_1b_00;
 
+            meta.start_migration = 1;
             min_workload.apply(0, hdr, meta, holder_1b_00);
             meta.result00 = holder_1b_00; // if it's 1, min_workload has been updated (addresses should be updated too)
             min_workload_mac_hi32.apply(0, hdr.ethernet.src_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
@@ -331,11 +346,18 @@ control Ingress(
                 }
             }
             else if(meta.chown == 1){
+                ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
                 hash.apply(meta.client_ip, meta.client_port, hash1);
                 hash2 = hash1;
                 meta.owner_mac = hdr.ethernet.src_mac;
                 meta.owner_ip = hdr.ipv4.src_ip;
                 meta.owner_port = hdr.udp.src_port;
+            }
+
+            if(hdr.tcpmig.isValid()){
+                hdr.udp.checksum = 0;
+                hdr.ethernet.dst_mac = BE_MAC;
+                hdr.ipv4.dst_ip = BE_IP;
             }
 
             // When the owner is changed? 1) SYN; 2) migration;
@@ -369,9 +391,12 @@ control Ingress(
 /* This struct is needed for proper digest receive API generation */
 struct migration_digest_t {
     bit<48>  src_mac;
-    bit<48>  dst_mac;
     bit<32>  src_ip;
+    bit<16>  src_port;
+
+    bit<48>  dst_mac;
     bit<32>  dst_ip;
+    bit<16>  dst_port;
     
     // bit<32>  dst_ip;
     // bit<16>  dst_port;
@@ -394,13 +419,18 @@ control IngressDeparser(packet_out pkt,
 
     Checksum()  ipv4_checksum;
     Checksum()  tcp_checksum;
+    // Checksum()  udp_checksum;
+
     apply {
         if (ig_dprsr_md.digest_type == TCP_MIGRATION_DIGEST) {
             migration_digest.pack({
                     hdr.ethernet.src_mac,
-                    hdr.ethernet.dst_mac,
                     hdr.ipv4.src_ip,
-                    hdr.ipv4.dst_ip});
+                    hdr.udp.src_port,
+                    hdr.ethernet.dst_mac,
+                    hdr.ipv4.dst_ip,
+                    hdr.udp.dst_port
+                });
         }
 
 
@@ -432,6 +462,31 @@ control IngressDeparser(packet_out pkt,
                 /* Any headers past TCP */
                 meta.l4_payload_checksum
             });
+        }
+
+        if (hdr.udp.isValid()) {
+            hdr.ipv4.hdr_checksum = ipv4_checksum.update({
+                hdr.ipv4.version,
+                hdr.ipv4.ihl,
+                hdr.ipv4.diffserv,
+                hdr.ipv4.total_len,
+                hdr.ipv4.identification,
+                hdr.ipv4.flags,
+                hdr.ipv4.frag_offset,
+                hdr.ipv4.ttl,
+                hdr.ipv4.protocol,
+                hdr.ipv4.src_ip,
+                hdr.ipv4.dst_ip
+            });
+            // hdr.udp.checksum = udp_checksum.update({
+            //     hdr.ipv4.src_ip,
+            //     hdr.ipv4.dst_ip,
+            //     8w0, hdr.ipv4.protocol,
+            //     hdr.udp.src_port,
+            //     hdr.udp.dst_port,
+            //     /* Any headers past TCP */
+            //     meta.l4_payload_checksum
+            // });
         }
 
         pkt.emit(hdr);
