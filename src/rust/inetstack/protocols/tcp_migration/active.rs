@@ -9,7 +9,6 @@ use super::{segment::{
     TcpMigHeader,
     TcpMigSegment, TcpMigDefragmenter,
 }, MigrationStage};
-use crate::inetstack::protocols::udp::{UdpDatagram, UdpHeader};
 use crate::{
     inetstack::protocols::{
             ethernet2::{
@@ -256,37 +255,6 @@ impl ActiveMigration {
 
     pub fn buffer_packet(&mut self, ip_hdr: Ipv4Header, tcp_hdr: TcpHeader, buf: Buffer) {
         self.recv_queue.push_back((ip_hdr, tcp_hdr, buf));
-    }
-
-    // Only to be used for a heartbeat connection.
-    pub fn send_queue_length_heartbeat(&self, queue_len: u32) {
-        /* let mut tcpmig_hdr = TcpMigHeader::new(
-            self.origin,
-            self.remote, 
-            4, 
-            MigrationStage::None, 
-            self.self_udp_port, 
-            FRONTEND_PORT
-        );
-
-        tcpmig_hdr.flag_heartbeat = true;
-        println!("SEND HEARTBEAT (queue_len: {})", queue_len);
-        self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_slice(&queue_len.to_be_bytes()))); */
-
-        const HEARTBEAT_MAGIC: u32 = 0xCAFECAFE;
-
-        let mut data = HEARTBEAT_MAGIC.to_be_bytes().to_vec();
-        data.extend_from_slice(&queue_len.to_be_bytes());
-
-        let segment = UdpDatagram::new(
-            Ethernet2Header::new(self.remote_link_addr, self.local_link_addr, EtherType2::Ipv4),
-            Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::UDP),
-            UdpHeader::new(self.self_udp_port, self.dest_udp_port),
-            Buffer::Heap(DataBuffer::from_slice(&data)),
-            false,
-        );
-
-        self.rt.transmit(Box::new(segment));
     }
 
     /// Sends a TCPMig segment from local to remote.

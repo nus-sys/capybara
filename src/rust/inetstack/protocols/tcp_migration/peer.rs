@@ -6,6 +6,10 @@
 //==============================================================================
 use super::constants::*;
 use super::{segment::TcpMigHeader, active::ActiveMigration, stats::TcpMigStats};
+use crate::inetstack::protocols::ethernet2::{EtherType2, Ethernet2Header};
+use crate::inetstack::protocols::ip::IpProtocol;
+use crate::inetstack::protocols::udp::{UdpDatagram, UdpHeader};
+use crate::runtime::memory::DataBuffer;
 use crate::{
     inetstack::protocols::{
             ipv4::Ipv4Header, 
@@ -30,7 +34,7 @@ use crate::{
 #[cfg(feature = "tcp-migration-profiler")]
 use crate::{tcpmig_profile, tcpmig_profile_merge_previous};
 
-use std::{cell::RefCell, collections::{VecDeque, HashSet}, time::{Duration, Instant}};
+use std::{cell::RefCell, collections::{VecDeque, HashSet}, time::Instant};
 use ::std::{
     collections::HashMap,
     net::{
@@ -48,7 +52,6 @@ use crate::timer;
 //======================================================================================================================
 
 struct HeartbeatData {
-    connection: ActiveMigration,
     last_heartbeat_instant: Instant,
 }
 
@@ -362,13 +365,27 @@ impl TcpMigPeer {
     }
 
     pub fn queue_length_heartbeat(&mut self) {
+        const HEARTBEAT_MAGIC: u32 = 0xCAFECAFE;
+
         let mut inner = self.inner.borrow_mut();
         let queue_len = inner.stats.global_recv_queue_length() as u32;
         if let Some(heartbeat) = inner.heartbeat.as_mut() {
             let now = Instant::now();
             if now - heartbeat.last_heartbeat_instant > HEARTBEAT_INTERVAL {
-                heartbeat.connection.send_queue_length_heartbeat(queue_len);
                 heartbeat.last_heartbeat_instant = now;
+
+                let mut data = HEARTBEAT_MAGIC.to_be_bytes().to_vec();
+                data.extend_from_slice(&queue_len.to_be_bytes());
+
+                let segment = UdpDatagram::new(
+                    Ethernet2Header::new(FRONTEND_MAC, inner.local_link_addr, EtherType2::Ipv4),
+                    Ipv4Header::new(inner.local_ipv4_addr, FRONTEND_IP, IpProtocol::UDP),
+                    UdpHeader::new(0, 0),
+                    Buffer::Heap(DataBuffer::from_slice(&data)),
+                    false,
+                );
+
+                inner.rt.transmit(Box::new(segment));
             }
         }
     }
@@ -405,19 +422,7 @@ impl Inner {
             heartbeat: match std::env::var("IS_FRONTEND") {
                 Err(..) => None,
                 Ok(val) if val == "1" => None,
-                _ => Some(HeartbeatData::new(
-                    ActiveMigration::new(
-                        rt.clone(),
-                        local_ipv4_addr,
-                        local_link_addr,
-                        FRONTEND_IP,
-                        FRONTEND_MAC,
-                        SELF_UDP_PORT,
-                        0, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
-                        SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0),
-                        SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0),
-                    )
-                ))
+                _ => Some(HeartbeatData::new())
             },
             active_migrations: HashMap::new(),
             origins: HashMap::new(),
@@ -432,7 +437,7 @@ impl Inner {
 }
 
 impl HeartbeatData {
-    fn new(connection: ActiveMigration) -> Self {
-        Self { connection, last_heartbeat_instant: Instant::now() }
+    fn new() -> Self {
+        Self { last_heartbeat_instant: Instant::now() }
     }
 }
