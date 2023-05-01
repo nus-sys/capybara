@@ -303,19 +303,22 @@ control Ingress(
         if(hdr.heartbeat.isValid() || hdr.tcpmig.flag == 0b00100000){
 
             hdr.udp.checksum = 0;
-            
             bit<1> holder_1b_00;
+            
+            if(hdr.heartbeat.isValid()){
+                ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+                drop();
+            }else{
+                meta.start_migration = 1;
+            }
 
-            meta.start_migration = 1;
             min_workload.apply(0, hdr, meta, holder_1b_00);
             meta.result00 = holder_1b_00; // if it's 1, min_workload has been updated (addresses should be updated too)
             min_workload_mac_hi32.apply(0, hdr.ethernet.src_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
             min_workload_mac_lo16.apply(0, hdr.ethernet.src_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
             min_workload_ip.apply(0, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
             min_workload_port.apply(0, hdr.udp.src_port, meta, hdr.udp.dst_port);
-            if(hdr.heartbeat.isValid()){
-                drop();
-            }
+
         }else if(hdr.ipv4.isValid()){
             bit<16> hash1;
             bit<16> hash2;
@@ -346,7 +349,7 @@ control Ingress(
                 }
             }
             else if(meta.chown == 1){
-                ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+                
                 hash.apply(meta.client_ip, meta.client_port, hash1);
                 hash2 = hash1;
                 meta.owner_mac = hdr.ethernet.src_mac;

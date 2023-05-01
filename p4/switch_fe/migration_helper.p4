@@ -717,7 +717,7 @@ control MinimumWorkload(
     Register< value32b_t, index_t >(1) reg;
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value32b_t register_value, out bit<1> is_written) {
-            if(register_value > hdr.heartbeat.queue_len){
+            if(register_value >= hdr.heartbeat.queue_len){
                 register_value = hdr.heartbeat.queue_len;
                 is_written = 1;
             }else{
