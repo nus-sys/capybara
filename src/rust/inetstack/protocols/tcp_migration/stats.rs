@@ -112,7 +112,7 @@ impl TcpMigStats {
         let old_len = len_entry.get().0;
         len_entry.update(recv_queue_len);
         let new_len = len_entry.get().0;
-        self.global_recv_queue_length += new_len - old_len;
+        self.global_recv_queue_length = ((self.global_recv_queue_length * WINDOW as f64) + new_len - old_len) / (WINDOW as f64);
     }
 
     pub fn update_outgoing(&mut self) {
