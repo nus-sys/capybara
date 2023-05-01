@@ -238,12 +238,16 @@ impl TcpMigPeer {
             Some(conn) => conn,
             None => return,
         };
+        let key = (origin, remote);
+        if inner.active_migrations.contains_key(&key) {
+            return;
+        }
 
         eprintln!("initiate migration for connection {} <-> {}", origin, remote);
 
         //let origin = SocketAddrV4::new(inner.local_ipv4_addr, origin_port);
         // let target = SocketAddrV4::new(FRONTEND_IP, FRONTEND_PORT); // TEMP
-        let key = (origin, remote);
+        
 
         let active = ActiveMigration::new(
             inner.rt.clone(),
