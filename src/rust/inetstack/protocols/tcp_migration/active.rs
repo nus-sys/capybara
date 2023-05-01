@@ -60,6 +60,7 @@ pub struct ActiveMigration {
     remote_ipv4_addr: Ipv4Addr,
     remote_link_addr: MacAddress,
     self_udp_port: u16,
+    dest_udp_port: u16,
 
     origin: SocketAddrV4,
     remote: SocketAddrV4,
@@ -84,6 +85,7 @@ impl ActiveMigration {
         remote_ipv4_addr: Ipv4Addr,
         remote_link_addr: MacAddress,
         self_udp_port: u16,
+        dest_udp_port: u16,
         origin: SocketAddrV4,
         remote: SocketAddrV4,
     ) -> Self {
@@ -94,6 +96,7 @@ impl ActiveMigration {
             remote_ipv4_addr,
             remote_link_addr,
             self_udp_port,
+            dest_udp_port, 
             origin,
             remote,
             last_sent_stage: MigrationStage::None,
@@ -169,7 +172,7 @@ impl ActiveMigration {
                         let hdr = next_header(hdr, MigrationStage::ConnectionStateAck);
                         self.last_sent_stage = MigrationStage::ConnectionStateAck;
                         self.send(hdr, empty_buffer());
-
+                        println!("return StateReceived");
                         return Ok(MigrationRequestStatus::StateReceived(state));
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE"))
@@ -190,7 +193,9 @@ impl ActiveMigration {
                 match hdr.stage {
                     MigrationStage::PrepareMigrationAck => {
                         // Change target address to actual target address.
-                        self.remote_ipv4_addr = ipv4_hdr.get_src_addr();
+                        // self.remote_ipv4_addr = ipv4_hdr.get_src_addr();
+                        println!("PrepareMigrationAck from port: {}", hdr.get_source_udp_port());
+                        self.dest_udp_port = hdr.get_source_udp_port();
 
                         // Mark migration as prepared so that it can be migrated out at the next decision point.
                         self.is_prepared = true;
@@ -243,7 +248,7 @@ impl ActiveMigration {
                                                         0, 
                                                         MigrationStage::ConnectionState, 
                                                         self.self_udp_port, 
-                                                        DEST_UDP_PORT); // PORT should be the sender of PREPARE_MIGRATION_ACK
+                                                        self.dest_udp_port); // PORT should be the sender of PREPARE_MIGRATION_ACK
         self.last_sent_stage = MigrationStage::ConnectionState;
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_slice(&buf)));
     }

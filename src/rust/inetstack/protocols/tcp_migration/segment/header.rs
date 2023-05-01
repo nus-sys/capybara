@@ -114,6 +114,10 @@ impl TcpMigHeader {
         }
     }
 
+    pub fn get_source_udp_port(&self) -> u16 {
+        self.source_udp_port
+    }
+
     pub fn swap_src_dst_port(&mut self) {
         let temp: u16 = self.source_udp_port;
         self.source_udp_port = self.dest_udp_port;

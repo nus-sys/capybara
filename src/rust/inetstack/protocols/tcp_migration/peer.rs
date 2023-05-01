@@ -176,9 +176,10 @@ impl TcpMigPeer {
                 inner.rt.clone(),
                 inner.local_ipv4_addr,
                 inner.local_link_addr,
-                hdr.origin.ip().clone(),
-                BACKEND_MAC, // TEMP 
+                FRONTEND_IP,
+                FRONTEND_MAC, // Need to go through the switch 
                 inner.self_udp_port,
+                hdr.origin.port(), 
                 hdr.origin,
                 hdr.remote,
             );
@@ -202,6 +203,8 @@ impl TcpMigPeer {
                 tcpmig_profile_merge_previous!("migrate_ack");
 
                 let (local, remote) = (state.local, state.remote);
+                println!("migrating in connection local: {}, remote: {}", local, remote);
+                
                 tcp_peer.notify_passive(state)?;
                 inner.incoming_connections.insert((local, remote));
 
@@ -241,6 +244,7 @@ impl TcpMigPeer {
             FRONTEND_IP,
             FRONTEND_MAC, 
             inner.self_udp_port,
+            0, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
             origin,
             remote,
         ); // Inho: Q. Why link_addr (MAC addr) is needed when the libOS has arp_table already? Is it possible to use the arp_table instead?
@@ -407,6 +411,7 @@ impl Inner {
                         FRONTEND_IP,
                         FRONTEND_MAC,
                         SELF_UDP_PORT,
+                        0, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
                         SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0),
                         SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0),
                     )
