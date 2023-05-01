@@ -389,7 +389,7 @@ impl TcpMigPeer {
                 let segment = UdpDatagram::new(
                     Ethernet2Header::new(FRONTEND_MAC, inner.local_link_addr, EtherType2::Ipv4),
                     Ipv4Header::new(inner.local_ipv4_addr, FRONTEND_IP, IpProtocol::UDP),
-                    UdpHeader::new(0, 0),
+                    UdpHeader::new(inner.self_udp_port, FRONTEND_PORT),
                     Buffer::Heap(DataBuffer::from_slice(&data)),
                     false,
                 );
@@ -429,7 +429,6 @@ impl Inner {
             local_link_addr,
             local_ipv4_addr,
             heartbeat: match std::env::var("IS_FRONTEND") {
-                Err(..) => None,
                 Ok(val) if val == "1" => None,
                 _ => Some(HeartbeatData::new())
             },
