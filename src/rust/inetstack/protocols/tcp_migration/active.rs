@@ -164,7 +164,7 @@ impl ActiveMigration {
                         };
 
                         // Overwrite local address.
-                        state.local = SocketAddrV4::new(self.local_ipv4_addr, self.origin.port());
+                        state.local = SocketAddrV4::new(self.local_ipv4_addr, self.self_udp_port);
 
                         eprintln!("*** Received state ***");
 
@@ -172,7 +172,7 @@ impl ActiveMigration {
                         let hdr = next_header(hdr, MigrationStage::ConnectionStateAck);
                         self.last_sent_stage = MigrationStage::ConnectionStateAck;
                         self.send(hdr, empty_buffer());
-                        println!("return StateReceived");
+                        
                         return Ok(MigrationRequestStatus::StateReceived(state));
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE"))

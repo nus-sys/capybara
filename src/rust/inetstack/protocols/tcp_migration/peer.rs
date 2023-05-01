@@ -187,7 +187,7 @@ impl TcpMigPeer {
                 todo!("duplicate active migration");
             }
 
-            let target = SocketAddrV4::new(inner.local_ipv4_addr, hdr.origin.port());
+            let target = SocketAddrV4::new(inner.local_ipv4_addr, inner.self_udp_port);
             inner.origins.insert((target, hdr.remote), hdr.origin);
         }
 
