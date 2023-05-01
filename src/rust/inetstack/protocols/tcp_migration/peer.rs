@@ -365,8 +365,10 @@ impl TcpMigPeer {
         let mut inner = self.inner.borrow_mut();
         let queue_len = inner.stats.global_recv_queue_length() as u32;
         if let Some(heartbeat) = inner.heartbeat.as_mut() {
-            if Instant::now() - heartbeat.last_heartbeat_instant > HEARTBEAT_INTERVAL {
+            let now = Instant::now();
+            if now - heartbeat.last_heartbeat_instant > HEARTBEAT_INTERVAL {
                 heartbeat.connection.send_queue_length_heartbeat(queue_len);
+                heartbeat.last_heartbeat_instant = now;
             }
         }
     }
