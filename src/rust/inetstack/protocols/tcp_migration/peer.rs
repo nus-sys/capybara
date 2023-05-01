@@ -187,7 +187,12 @@ impl TcpMigPeer {
                 hdr.remote,
             );
             if let Some(..) = inner.active_migrations.insert(key, active) {
-                todo!("duplicate active migration");
+                // todo!("duplicate active migration");
+                // It happens when a backend send PREPARE_MIGRATION to the switch
+                // but it receives back the message again (i.e., this is the current minimum workload backend)
+                // In this case, remove the active migration.
+                inner.active_migrations.remove(&key); 
+                return Ok(())
             }
 
             let target = SocketAddrV4::new(inner.local_ipv4_addr, inner.self_udp_port);
@@ -358,9 +363,13 @@ impl TcpMigPeer {
     // TEMP (for migration test)
     pub fn should_migrate(&self) -> bool {
         static mut FLAG: i32 = 0;
+        
         unsafe {
+            if FLAG == 10 {
+                FLAG = 0;
+            }
             FLAG += 1;
-            FLAG == 12
+            FLAG == 10
         }
     }
 

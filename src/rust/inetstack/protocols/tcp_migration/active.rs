@@ -193,8 +193,12 @@ impl ActiveMigration {
                 match hdr.stage {
                     MigrationStage::PrepareMigrationAck => {
                         // Change target address to actual target address.
-                        // self.remote_ipv4_addr = ipv4_hdr.get_src_addr();
-                        println!("PrepareMigrationAck from port: {}", hdr.get_source_udp_port());
+                        /*  self.remote_ipv4_addr = ipv4_hdr.get_src_addr(); */
+                        // Currently, we are running all backends on a single machine, 
+                        // so we send the migration messages to the switch first, 
+                        // and let the switch do the addressing to the backend.
+                        // Later if backends are on different machines, we need to uncomment this line again.
+
                         self.dest_udp_port = hdr.get_source_udp_port();
 
                         // Mark migration as prepared so that it can be migrated out at the next decision point.
