@@ -192,6 +192,7 @@ impl TcpMigPeer {
                 // but it receives back the message again (i.e., this is the current minimum workload backend)
                 // In this case, remove the active migration.
                 inner.active_migrations.remove(&key); 
+                inner.is_currently_migrating = false;
                 return Ok(())
             }
 
@@ -239,9 +240,11 @@ impl TcpMigPeer {
             None => return,
         };
         let key = (origin, remote);
-        if inner.active_migrations.contains_key(&key) {
-            return;
-        }
+        // if inner.active_migrations.contains_key(&key) {
+        //     return;
+        // }
+        // this one maybe no need, because we are checking if the migration is
+        // ongoing with is_currently_migrating
 
         eprintln!("initiate migration for connection {} <-> {}", origin, remote);
 
@@ -342,40 +345,41 @@ impl TcpMigPeer {
     pub fn update_incoming_stats(&mut self, local: SocketAddrV4, remote: SocketAddrV4, recv_queue_len: usize) {
         self.inner.borrow_mut().stats.update_incoming(local, remote, recv_queue_len);
 
-        // unsafe {
-        //     static mut TMP: i32 = 0;
-        //     TMP += 1;
-        //     if TMP == 500 {
-        //         TMP = 0;
-        //         println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
-        //     }
-        // }
+        unsafe {
+            static mut TMP: i32 = 0;
+            TMP += 1;
+            if TMP == 1000 {
+                TMP = 0;
+                println!("global_recv_queue_length: {}", self.inner.borrow().stats.global_recv_queue_length());
+            }
+        }
     }
 
     pub fn update_outgoing_stats(&mut self) {
         self.inner.borrow_mut().stats.update_outgoing();
     }
 
-    // pub fn should_migrate(&self) -> bool {
-    //     let inner = self.inner.borrow();
-    //     if inner.is_currently_migrating { return false; }
+    pub fn should_migrate(&self) -> bool {
+        let inner = self.inner.borrow();
+        if inner.is_currently_migrating { return false; }
 
-    //     let recv_queue_len = inner.stats.global_recv_queue_length();
-    //     recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
-    // }
+        let recv_queue_len = inner.stats.global_recv_queue_length();
+        println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
+        recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
+    }
 
     // TEMP (for migration test)
-    pub fn should_migrate(&self) -> bool {
-        static mut FLAG: i32 = 0;
+    // pub fn should_migrate(&self) -> bool {
+    //     static mut FLAG: i32 = 0;
         
-        unsafe {
-            if FLAG == 10 {
-                FLAG = 0;
-            }
-            FLAG += 1;
-            FLAG == 10
-        }
-    }
+    //     unsafe {
+    //         if FLAG == 10 {
+    //             FLAG = 0;
+    //         }
+    //         FLAG += 1;
+    //         FLAG == 10
+    //     }
+    // }
 
     pub fn queue_length_heartbeat(&mut self) {
         const HEARTBEAT_MAGIC: u32 = 0xCAFECAFE;
@@ -409,8 +413,9 @@ impl TcpMigPeer {
 
     pub fn print_stats(&self) {
         let inner = self.inner.borrow();
-        println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
-        println!("TCPMig stats: {:?}", inner.stats);
+        println!("global_recv_queue_length: {}", self.inner.borrow().stats.global_recv_queue_length());
+        // println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
+        // println!("TCPMig stats: {:?}", inner.stats);
     }
 }
 

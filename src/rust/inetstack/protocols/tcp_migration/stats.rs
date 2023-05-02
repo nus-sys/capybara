@@ -112,7 +112,7 @@ impl TcpMigStats {
         let old_len = len_entry.get().0;
         len_entry.update(recv_queue_len);
         let new_len = len_entry.get().0;
-        eprintln!("old: {}, new: {}", old_len, new_len);
+        // println!("old: {}, new: {}", old_len, new_len);
         self.global_recv_queue_length += new_len - old_len;
     }
 
