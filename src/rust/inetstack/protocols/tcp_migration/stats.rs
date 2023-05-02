@@ -104,6 +104,10 @@ impl TcpMigStats {
         }
     }
 
+    pub fn num_of_connections(&self) -> usize {
+        self.recv_queue_lengths.len()
+    }
+
     pub fn update_incoming(&mut self, local: SocketAddrV4, remote: SocketAddrV4, recv_queue_len: usize) {
         let instant = Instant::now();
         self.global_incoming_traffic.update(instant);

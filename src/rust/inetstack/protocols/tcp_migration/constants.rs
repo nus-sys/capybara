@@ -32,3 +32,5 @@ pub const BACKEND_MAC: MacAddress = MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc
 pub const BACKEND_IP: Ipv4Addr = Ipv4Addr::new(10, 0, 1, 9);
 
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_micros(1000);
+
+pub const HEARTBEAT_MAGIC: u32 = 0xCAFECAFE;

@@ -361,7 +361,7 @@ impl TcpMigPeer {
 
     pub fn should_migrate(&self) -> bool {
         let inner = self.inner.borrow();
-        if inner.is_currently_migrating { return false; }
+        if inner.is_currently_migrating || inner.stats.num_of_connections() <= 1 { return false; }
 
         let recv_queue_len = inner.stats.global_recv_queue_length();
         println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
@@ -382,11 +382,13 @@ impl TcpMigPeer {
     // }
 
     pub fn queue_length_heartbeat(&mut self) {
-        const HEARTBEAT_MAGIC: u32 = 0xCAFECAFE;
 
         let mut inner = self.inner.borrow_mut();
         let queue_len = inner.stats.global_recv_queue_length() as u32;
-        if let Some(heartbeat) = inner.heartbeat.as_mut() {
+        if queue_len as f64 > inner.recv_queue_length_threshold{
+            return;
+        }
+        if let Some(heartbeat) = inner.heartbeat.as_mut() { 
             let now = Instant::now();
             if now - heartbeat.last_heartbeat_instant > HEARTBEAT_INTERVAL {
                 heartbeat.last_heartbeat_instant = now;
