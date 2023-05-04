@@ -272,9 +272,12 @@ impl TcpPeer {
             let new_port: u16 = inner.ephemeral_ports.alloc_any()?;
             addr.set_port(new_port);
         }
-
-        inner.tcpmig.set_port(addr.port());
-
+        
+        #[cfg(feature = "tcp-migration")]
+        {
+            inner.tcpmig.set_port(addr.port());
+        }
+        
         // Issue operation.
         let ret: Result<(), Fail> = match inner.sockets.get_mut(&qd) {
             Some(Socket::Inactive { ref mut local }) => match *local {
@@ -379,7 +382,7 @@ impl TcpPeer {
             
             match inner.migrate_in_tcp_connection(new_qd, cb) {
                 Ok(()) => {
-                    eprintln!("*** Accepted migrated connection ***");
+                    // eprintln!("*** Accepted migrated connection ***");
                     return Poll::Ready(Ok(new_qd));
                 },
                 Err(e) => {
@@ -647,14 +650,14 @@ impl Inner {
                 else {
                     // println!("receive");
                     self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
-                    self.tcpmig.queue_length_heartbeat();
+                    // self.tcpmig.queue_length_heartbeat();
 
                     // Possible decision-making point.
                     if self.tcpmig.should_migrate() {
                         #[cfg(feature = "tcp-migration-profiler")]
                         tcpmig_profile!("prepare");
 
-                        eprintln!("*** Should Migrate ***");
+                        // eprintln!("*** Should Migrate ***");
                         // self.tcpmig.print_stats();
                         self.tcpmig.initiate_migration();
                     }
@@ -768,7 +771,7 @@ impl TcpPeer {
             #[cfg(feature = "tcp-migration-profiler")]
             tcpmig_profile!("migrate");
 
-            eprintln!("*** Can migrate out ***");
+            // eprintln!("*** Can migrate out ***");
             let state = inner.migrate_out_tcp_connection(qd)?;
             inner.tcpmig.migrate_out(handle, state);
             return Ok(true)
@@ -786,7 +789,6 @@ impl TcpPeer {
 impl Inner {
     fn take_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
         info!("Retrieving TCP State for {:?}!", fd);
-        let details =  "We can only migrate out established connections.";
 
         match self.sockets.get(&fd) {
             Some(Socket::Established { local, remote }) => {
@@ -827,12 +829,12 @@ impl Inner {
                         ))
                     },
                     None => {
-                        Err(Fail::new(EINVAL, details))
+                        Err(Fail::new(EINVAL, "We can only migrate out established connections."))
                     }
                 }
             },
             _ => {
-                Err(Fail::new(EINVAL, details))
+                Err(Fail::new(EINVAL, "We can only migrate out established connections."))
             }
         }
     }
