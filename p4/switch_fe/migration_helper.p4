@@ -403,110 +403,6 @@ control MigrationRequest16b0(
     }
 }
 
-control MigrationReply32b0(
-    in index_t index,
-    in value32b_t value,
-    in my_ingress_metadata_t meta,
-    out value32b_t return_value) {
-
-    Register< value32b_t, index_t >(register_size) reg;
-    RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
-        void apply(inout value32b_t register_value, out bit<1> null) {
-            register_value = value;
-        }
-    };
-    action exec_write_value() {
-        write_value.execute(index);
-    }
-
-    RegisterAction< value32b_t, index_t, value32b_t >(reg) read_value = {
-        void apply(inout value32b_t register_value, out value32b_t rv) {
-            rv = register_value;
-        }
-    };
-    action exec_read_value() {
-        return_value = read_value.execute(index);
-    }
-
-
-    table tbl_action_selection {
-        key = {
-            meta.start_migration    : ternary;
-            meta.chown              : ternary;
-            meta.result02           : ternary;
-            meta.result03           : ternary;
-        }
-        actions = {
-            exec_read_value;
-            exec_write_value;
-            NoAction;
-        }
-        size = 16;
-        const entries = {
-            (1, 0, 1, 1) : exec_write_value();
-            (0, 1, 1, 1) : exec_write_value();
-            (0, 0, 1, 1) : exec_read_value();
-        }
-        const default_action = NoAction();
-    }
-
-    apply {
-        tbl_action_selection.apply();
-    }
-}
-
-control MigrationReply16b0(
-    in index_t index,
-    in value16b_t value,
-    in my_ingress_metadata_t meta,
-    out value16b_t return_value) {
-
-    Register< value16b_t, index_t >(register_size) reg;
-    RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
-        void apply(inout value16b_t register_value, out bit<1> null) {
-            register_value = value;
-        }
-    };
-    action exec_write_value() {
-        write_value.execute(index);
-    }
-
-    RegisterAction< value16b_t, index_t, value16b_t >(reg) read_value = {
-        void apply(inout value16b_t register_value, out value16b_t rv) {
-            rv = register_value;
-        }
-    };
-    action exec_read_value() {
-        return_value = read_value.execute(index);
-    }
-
-
-    table tbl_action_selection {
-        key = {
-            meta.start_migration    : ternary;
-            meta.chown              : ternary;
-            meta.result02           : ternary;
-            meta.result03           : ternary;
-        }
-        actions = {
-            exec_read_value;
-            exec_write_value;
-            NoAction;
-        }
-        size = 16;
-        const entries = {
-            (1, 0, 1, 1) : exec_write_value();
-            (0, 1, 1, 1) : exec_write_value();
-            (0, 0, 1, 1) : exec_read_value();
-        }
-        const default_action = NoAction();
-    }
-
-    apply {
-        tbl_action_selection.apply();
-    }
-}
-
 control MigrationRequest32b1(
     in index_t index,
     in value32b_t value,
@@ -535,9 +431,10 @@ control MigrationRequest32b1(
 
     table tbl_action_selection {
         key = {
-            meta.chown           : ternary;
-            meta.result10       : ternary;
-            meta.result11       : ternary;
+            meta.start_migration    : ternary;
+            meta.chown              : ternary;
+            meta.result10           : ternary;
+            meta.result11           : ternary;
         }
         actions = {
             exec_read_value;
@@ -546,8 +443,9 @@ control MigrationRequest32b1(
         }
         size = 16;
         const entries = {
-            (1, 1, 1) : exec_write_value();
-            (0, 1, 1) : exec_read_value();
+            (1, 0, 1, 1) : exec_write_value();
+            (0, 1, 1, 1) : exec_write_value();
+            (0, 0, 1, 1) : exec_read_value();
         }
         const default_action = NoAction();
     }
@@ -585,9 +483,10 @@ control MigrationRequest16b1(
 
     table tbl_action_selection {
         key = {
-            meta.chown           : ternary;
-            meta.result10       : ternary;
-            meta.result11       : ternary;
+            meta.start_migration    : ternary;
+            meta.chown              : ternary;
+            meta.result10           : ternary;
+            meta.result11           : ternary;
         }
         actions = {
             exec_read_value;
@@ -596,108 +495,9 @@ control MigrationRequest16b1(
         }
         size = 16;
         const entries = {
-            (1, 1, 1) : exec_write_value();
-            (0, 1, 1) : exec_read_value();
-        }
-        const default_action = NoAction();
-    }
-
-    apply {
-        tbl_action_selection.apply();
-    }
-}
-
-control MigrationReply32b1(
-    in index_t index,
-    in value32b_t value,
-    in my_ingress_metadata_t meta,
-    out value32b_t return_value) {
-
-    Register< value32b_t, index_t >(register_size) reg;
-    RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
-        void apply(inout value32b_t register_value, out bit<1> null) {
-            register_value = value;
-        }
-    };
-    action exec_write_value() {
-        write_value.execute(index);
-    }
-
-    RegisterAction< value32b_t, index_t, value32b_t >(reg) read_value = {
-        void apply(inout value32b_t register_value, out value32b_t rv) {
-            rv = register_value;
-        }
-    };
-    action exec_read_value() {
-        return_value = read_value.execute(index);
-    }
-
-
-    table tbl_action_selection {
-        key = {
-            meta.chown           : ternary;
-            meta.result12       : ternary;
-            meta.result13       : ternary;
-        }
-        actions = {
-            exec_read_value;
-            exec_write_value;
-            NoAction;
-        }
-        size = 16;
-        const entries = {
-            (1, 1, 1) : exec_write_value();
-            (0, 1, 1) : exec_read_value();
-        }
-        const default_action = NoAction();
-    }
-
-    apply {
-        tbl_action_selection.apply();
-    }
-}
-
-control MigrationReply16b1(
-    in index_t index,
-    in value16b_t value,
-    in my_ingress_metadata_t meta,
-    out value16b_t return_value) {
-
-    Register< value16b_t, index_t >(register_size) reg;
-    RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
-        void apply(inout value16b_t register_value, out bit<1> null) {
-            register_value = value;
-        }
-    };
-    action exec_write_value() {
-        write_value.execute(index);
-    }
-
-    RegisterAction< value16b_t, index_t, value16b_t >(reg) read_value = {
-        void apply(inout value16b_t register_value, out value16b_t rv) {
-            rv = register_value;
-        }
-    };
-    action exec_read_value() {
-        return_value = read_value.execute(index);
-    }
-
-
-    table tbl_action_selection {
-        key = {
-            meta.chown           : ternary;
-            meta.result12       : ternary;
-            meta.result13       : ternary;
-        }
-        actions = {
-            exec_read_value;
-            exec_write_value;
-            NoAction;
-        }
-        size = 16;
-        const entries = {
-            (1, 1, 1) : exec_write_value();
-            (0, 1, 1) : exec_read_value();
+            (1, 0, 1, 1) : exec_write_value();
+            (0, 1, 1, 1) : exec_write_value();
+            (0, 0, 1, 1) : exec_read_value();
         }
         const default_action = NoAction();
     }
@@ -728,6 +528,15 @@ control MinimumWorkload(
     action exec_write_value() {
         discriminator_out = write_value.execute(index);
     }
+    RegisterAction< value32b_t, index_t, bit<1> >(reg) init_value = {
+        void apply(inout value32b_t register_value, out bit<1> is_written) {
+            register_value = 9999999;
+            is_written = 1;
+        }
+    };
+    action exec_init_value() {
+        discriminator_out = init_value.execute(index);
+    }
 
     // RegisterAction< value32b_t, index_t, bit<1> >(reg) check_value = {
     //     void apply(inout value32b_t register_value, out bit<1> is_matched) {
@@ -748,13 +557,14 @@ control MinimumWorkload(
             hdr.heartbeat.isValid() : exact;
         }
         actions = {
-            // exec_check_value;
             exec_write_value;
+            exec_init_value;
             NoAction;
         }
         size = 16;
         const entries = {
             (true) : exec_write_value();
+            (false): exec_init_value();
             // (0, _) : exec_check_value();
         }
         const default_action = NoAction();
