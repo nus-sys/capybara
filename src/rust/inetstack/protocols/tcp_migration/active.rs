@@ -243,7 +243,7 @@ impl ActiveMigration {
     pub fn send_connection_state(&mut self, state: TcpState) {
         assert_eq!(self.last_sent_stage, MigrationStage::PrepareMigration);
 
-        let buf = match state.serialize() {
+        let mut buf = match state.serialize() {
             Ok(buf) => buf,
             Err(e) => panic!("TCPState serialisation failed: {}", e),
         };
@@ -254,7 +254,7 @@ impl ActiveMigration {
                                                         self.self_udp_port, 
                                                         self.dest_udp_port); // PORT should be the sender of PREPARE_MIGRATION_ACK
         self.last_sent_stage = MigrationStage::ConnectionState;
-        self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_slice(&buf)));
+        self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_raw_parts(buf.as_mut_ptr(), buf.len()).expect("empty TcpState buffer")));
     }
 
     pub fn buffer_packet(&mut self, ip_hdr: Ipv4Header, tcp_hdr: TcpHeader, buf: Buffer) {
