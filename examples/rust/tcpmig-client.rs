@@ -75,44 +75,46 @@ fn client(remote: SocketAddrV4) -> Result<()> {
     let rounds = 128;
 
     // Issue n sends.
-    for i in 1..=rounds {
-        //let begin = Instant::now();
-        
-        let sendbuf = mkbuf(BUFFER_SIZE, i);
-        // Push data.
-        let qt: QToken = match libos.push2(sockqd, &sendbuf[..]) {
-            Ok(qt) => qt,
-            Err(e) => panic!("push failed: {:?}", e.cause),
-        };
-        match libos.wait2(qt) {
-            Ok((_, OperationResult::Push)) => (),
-            Err(e) => panic!("operation failed: {:?}", e.cause),
-            _ => unreachable!(),
-        };
+    for j in 1..10000 {
+        for i in 1..=rounds {
+            //let begin = Instant::now();
+            
+            let sendbuf = mkbuf(BUFFER_SIZE, i);
+            // Push data.
+            let qt: QToken = match libos.push2(sockqd, &sendbuf[..]) {
+                Ok(qt) => qt,
+                Err(e) => panic!("push failed: {:?}", e.cause),
+            };
+            match libos.wait2(qt) {
+                Ok((_, OperationResult::Push)) => (),
+                Err(e) => panic!("operation failed: {:?}", e.cause),
+                _ => unreachable!(),
+            };
 
-        println!("ping {}", i);
+            println!("ping {}", i);
 
-        // Pop data.
-        let qt: QToken = match libos.pop(sockqd) {
-            Ok(qt) => qt,
-            Err(e) => panic!("pop failed: {:?}", e.cause),
-        };
-        // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
-        let recvbuf = match libos.wait2(qt) {
-            Ok((_, OperationResult::Pop(_, buf))) => buf,
-            Err(e) if e.errno == libc::ETIMEDOUT => continue,
-            Err(e) => panic!("operation failed: {:?}", e.cause),
-            _ => unreachable!(),
-        };
+            // Pop data.
+            let qt: QToken = match libos.pop(sockqd) {
+                Ok(qt) => qt,
+                Err(e) => panic!("pop failed: {:?}", e.cause),
+            };
+            // TODO: add type annotation to the following variable once we have a common buffer abstraction across all libOSes.
+            let recvbuf = match libos.wait2(qt) {
+                Ok((_, OperationResult::Pop(_, buf))) => buf,
+                Err(e) if e.errno == libc::ETIMEDOUT => continue,
+                Err(e) => panic!("operation failed: {:?}", e.cause),
+                _ => unreachable!(),
+            };
 
-        println!("pong {}", recvbuf[0]);
+            println!("pong {}", recvbuf[0]);
 
-        thread::sleep(FREQ);
+            thread::sleep(FREQ);
 
-        //instants.push((begin, Instant::now()));
+            //instants.push((begin, Instant::now()));
 
-        #[cfg(feature = "profiler")]
-        profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
+            #[cfg(feature = "profiler")]
+            profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
+        }
     }
 
     /* let instants = instants.iter()
