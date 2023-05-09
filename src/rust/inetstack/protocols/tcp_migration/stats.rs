@@ -151,8 +151,9 @@ impl TcpMigStats {
     }
 
     pub fn stop_tracking_connection(&mut self, local: SocketAddrV4, remote: SocketAddrV4) {
-        if let None = self.recv_queue_lengths.remove(&(local, remote)) {
-            warn!("`TcpMigStats` was not tracking connection ({}, {})", local, remote);
+        match self.recv_queue_lengths.remove(&(local, remote)) {
+            Some(len) => self.global_recv_queue_length -= len.get().0,
+            None => warn!("`TcpMigStats` was not tracking connection ({}, {})", local, remote),
         }
     }
 }
