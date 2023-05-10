@@ -9,6 +9,14 @@ static mut DATA: Option<Vec<(&str, Duration)>> = None;
 //==============================================================================
 // Macros
 //==============================================================================
+use colored::*; 
+pub fn tcpmig_log<T: std::fmt::Display>(param: T) {
+    if let Ok(val) = std::env::var("RUST_LOG") {
+        if val == "tcpmig" {
+            println!("{}", format!("[TCPMig] {}", param).green());
+        }
+    }
+}
 
 #[macro_export]
 macro_rules! tcpmig_profile {

@@ -13,6 +13,7 @@ use ::demikernel::{
     QDesc,
     QToken,
     runtime::logging,
+    tcpmig_profiler::tcpmig_log,
 };
 use log::debug;
 use std::collections::HashMap;
@@ -156,7 +157,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     migratable_qds.remove(&qd);
 
                     // Request Processing Delay
-                    // thread::sleep(Duration::from_micros(1));
+                    // thread::sleep(Duration::from_secs(1));
 
                     qts.push(send_response(&mut libos, qd, &recvbuf));
                 },
@@ -218,6 +219,11 @@ fn usage(program_name: &String) {
 //======================================================================================================================
 
 pub fn main() -> Result<()> {
+    #[cfg(feature = "tcp-migration-profiler")]
+    {
+        let abc = 3;
+        tcpmig_log(format!("test tcpmig log {}", abc));
+    }
     logging::initialize();
 
     #[cfg(feature = "tcp-migration-profiler")]

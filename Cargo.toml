@@ -49,6 +49,7 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 slab = "0.4.7"
 yaml-rust = "0.4.5"
 x86 = "0.51.0"
+colored = "2.0.0"
 
 # Demikernel Organization
 liburing = { git = "https://github.com/demikernel/liburing-rs", rev = "780827ee3f805d94f9909bd47cd925ee8476a64b", optional = true}
