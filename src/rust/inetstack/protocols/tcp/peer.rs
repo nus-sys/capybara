@@ -514,10 +514,10 @@ impl TcpPeer {
             None => Err(Fail::new(ENOTCONN, "connection not established")),
         };
 
-        #[cfg(feature = "tcp-migration")]
-        {
-            inner.tcpmig.update_outgoing_stats();
-        }
+        // #[cfg(feature = "tcp-migration")]
+        // {
+        //     inner.tcpmig.update_outgoing_stats();
+        // }
 
         send_result
     }
