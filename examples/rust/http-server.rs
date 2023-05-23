@@ -13,8 +13,11 @@ use ::demikernel::{
     QDesc,
     QToken,
     runtime::logging,
-    tcpmig_profiler::tcpmig_log,
 };
+
+#[cfg(feature = "tcp-migration-profiler")]
+use ::demikernel::tcpmig_profiler::tcpmig_log;
+
 use log::debug;
 use std::collections::HashMap;
 use ::std::{
@@ -59,8 +62,9 @@ fn get_request(libos: &mut LibOS, qd: QDesc) -> Option<QToken> {
 }
 
 fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
-    let data_str = std::str::from_utf8(data).unwrap();
-    
+    // let data_str = std::str::from_utf8(data).unwrap();
+    let data_str = String::from_utf8_lossy(data);
+
     let mut file_name = data_str
             .split_whitespace()
             .nth(1)
@@ -81,7 +85,7 @@ fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         Ok(contents) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents),
         Err(err) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
     };
-    
+    // eprintln!("response: {}", response);
     match libos.push2(qd, response.as_bytes()) {
         Ok(qt) => qt,
         Err(e) => panic!("push failed: {:?}", e.cause),
