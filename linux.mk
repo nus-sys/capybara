@@ -240,22 +240,49 @@ tcpmig-client:
 	$(ELF_DIR)/tcpmig-client.elf 10.0.1.8:10000
 
 http-server-fe:
-	sudo -E RUST_LOG="debug" \
+	sudo -E \
 	IS_FRONTEND=1 \
 	CONFIG_PATH=$(CONFIG_DIR)/fe_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 0 \
 	$(ELF_DIR)/http-server.elf 10.0.1.8:10000
 
-http-server-be:
+http-server-be0:
 	sudo -E RUST_LOG="debug" \
+	MIG_THRESHOLD=5 \
+	RECV_QUEUE_LEN=0 \
 	CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 0 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
 
+http-server-be1:
+	sudo -E  \
+	MIG_THRESHOLD=5 \
+	RECV_QUEUE_LEN=3000 \
+	CONFIG_PATH=$(CONFIG_DIR)/be1_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 1 \
+	$(ELF_DIR)/http-server.elf 10.0.1.9:10001
+
+http-server-be2:
+	sudo -E  \
+	MIG_THRESHOLD=5 \
+	CONFIG_PATH=$(CONFIG_DIR)/be2_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 2 \
+	$(ELF_DIR)/http-server.elf 10.0.1.9:10002
+
+http-server-be3:
+	sudo -E  \
+	MIG_THRESHOLD=5 \
+	CONFIG_PATH=$(CONFIG_DIR)/be3_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 3 \
+	$(ELF_DIR)/http-server.elf 10.0.1.9:10003
+
 tcpmig-multi-origin:
-	sudo -E RUST_LOG="debug" \
+	sudo -E \
 	IS_FRONTEND=1 \
 	CONFIG_PATH=$(CONFIG_DIR)/fe_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
@@ -264,6 +291,7 @@ tcpmig-multi-origin:
 
 tcpmig-multi-target0:
 	sudo -E \
+	IS_FRONTEND=0 \
 	CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 0 \
