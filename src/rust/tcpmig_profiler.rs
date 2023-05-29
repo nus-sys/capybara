@@ -10,10 +10,18 @@ static mut DATA: Option<Vec<(&str, Duration)>> = None;
 // Macros
 //==============================================================================
 use colored::*; 
+pub fn tcp_log<T: std::fmt::Display>(param: T) {
+    if let Ok(val) = std::env::var("CAPYBARA_LOG") {
+        if val == "all" || val == "tcp" {
+            println!("{}", format!("{}", param).green());
+        }
+    }
+}
+
 pub fn tcpmig_log<T: std::fmt::Display>(param: T) {
-    if let Ok(val) = std::env::var("RUST_LOG") {
-        if val == "tcpmig" {
-            println!("{}", format!("[TCPMig] {}", param).green());
+    if let Ok(val) = std::env::var("CAPYBARA_LOG") {
+        if val == "all" || val == "tcpmig" {
+            println!("{}", format!("{}", param).yellow());
         }
     }
 }

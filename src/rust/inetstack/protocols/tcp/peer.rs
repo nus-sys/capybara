@@ -111,6 +111,10 @@ use crate::inetstack::protocols::tcp_migration::TcpMigPeer;
 #[cfg(feature = "profiler")]
 use crate::timer;
 
+
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+
 //==============================================================================
 // Enumerations
 //==============================================================================
@@ -638,13 +642,20 @@ impl Inner {
         }
         let key = (local, remote);
 
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("\n\n[RX] {:?} => {:?}", remote, local));
+        }
         if let Some(s) = self.established.get(&key) {
             debug!("Routing to established connection: {:?}", key);
-
             #[cfg(feature = "tcp-migration")]
             {
                 // Remove
                 if tcp_hdr.fin || tcp_hdr.rst {
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("RX FIN or RST => tcpmig stops tracking this conn"));
+                    }
                     self.tcpmig.stop_tracking_connection_stats(local, remote);
                 }
                 else {
@@ -656,7 +667,6 @@ impl Inner {
                     if self.tcpmig.should_migrate() {
                         #[cfg(feature = "tcp-migration-profiler")]
                         tcpmig_profile!("prepare");
-
                         // eprintln!("*** Should Migrate ***");
                         // self.tcpmig.print_stats();
                         self.tcpmig.initiate_migration();
@@ -772,6 +782,10 @@ impl TcpPeer {
             tcpmig_profile!("migrate");
 
             // eprintln!("*** Can migrate out ***");
+            #[cfg(feature = "capybara-log")]
+            {
+                tcpmig_log(format!("Migrate Out ({}, {})", local, remote));
+            }
             let state = inner.migrate_out_tcp_connection(qd)?;
             inner.tcpmig.migrate_out(handle, state);
             return Ok(true)
@@ -983,6 +997,10 @@ impl Inner {
             self.receive(&ip_hdr, buf)?;
         }
         self.tcpmig.complete_migrating_in(local, remote);
+        #[cfg(feature = "capybara-log")]
+        {
+            tcpmig_log(format!("\n\n!!! Accepted ({}, {}) !!!\n\n", local, remote));
+        }
         Ok(())
     }
 }

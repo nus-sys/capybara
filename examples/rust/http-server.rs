@@ -15,8 +15,8 @@ use ::demikernel::{
     runtime::logging,
 };
 
-#[cfg(feature = "tcp-migration-profiler")]
-use ::demikernel::tcpmig_profiler::tcpmig_log;
+#[cfg(feature = "capybara-log")]
+use ::demikernel::tcpmig_profiler::{tcp_log};
 
 use log::debug;
 use std::collections::HashMap;
@@ -85,7 +85,10 @@ fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         Ok(contents) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents),
         Err(err) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
     };
-    // eprintln!("response: {}", response);
+    #[cfg(feature = "capybara-log")]
+    {
+        tcp_log(format!("PUSH: {}", response.lines().next().unwrap_or("")));
+    }
     match libos.push2(qd, response.as_bytes()) {
         Ok(qt) => qt,
         Err(e) => panic!("push failed: {:?}", e.cause),
@@ -144,6 +147,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Accept(new_qd) => {
                     if let Some(qt) = get_request(&mut libos, new_qd) {
                         qts.push(qt);
+                        // qts.insert(0, qt);
                     }
 
                     qts.push(get_connection(&mut libos, qd));
@@ -151,6 +155,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Push => {
                     if let Some(qt) = get_request(&mut libos, qd) {
                         qts.push(qt);
+                        // qts.insert(0, qt);
 
                         // This QDesc can be migrated. (waiting for new request)
                         migratable_qds.insert(qd, qt);
@@ -161,9 +166,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     migratable_qds.remove(&qd);
 
                     // Request Processing Delay
-                    // thread::sleep(Duration::from_secs(1));
+                    // thread::sleep(Duration::from_secs(10));
 
                     qts.push(send_response(&mut libos, qd, &recvbuf));
+                    // qts.insert(0, send_response(&mut libos, qd, &recvbuf));
                 },
                 _ => {
                     println!("RESULT: {:?}", result);
@@ -223,12 +229,11 @@ fn usage(program_name: &String) {
 //======================================================================================================================
 
 pub fn main() -> Result<()> {
-    #[cfg(feature = "tcp-migration-profiler")]
+    #[cfg(feature = "capybara-log")]
     {
-        let abc = 3;
-        tcpmig_log(format!("test tcpmig log {}", abc));
+        tcp_log(format!("*** CAPYBARA LOGGING IS ON ***"));
     }
-    logging::initialize();
+    // logging::initialize();
 
     #[cfg(feature = "tcp-migration-profiler")]
     demikernel::tcpmig_profiler::init_profiler();

@@ -52,10 +52,10 @@ const STAGE_BIT_SHIFT: u8 = 4;
 //  4       2       Length (UDP Length field)
 //  6       2       Checksum (UDP Checksum field)
 //  8       4       Magic Number
-//  12      4       Origin IP
-//  16      2       Origin Port
-//  18      4       Remote IP
-//  22      2       Remote Port
+//  12      4       Origin Server IP
+//  16      2       Origin Server Port
+//  18      4       Client IP
+//  22      2       Client Port
 //  24      2       Fragment Offset
 //  26      1       Flags + Stage
 //  27      1       Zero (unused)
@@ -76,7 +76,7 @@ pub struct TcpMigHeader {
     /// Client-facing address of the origin server.
     pub origin: SocketAddrV4,
     /// Client's address.
-    pub remote: SocketAddrV4,
+    pub client: SocketAddrV4,
     pub length: u16,
     pub fragment_offset: u16,
 
@@ -97,12 +97,12 @@ pub struct TcpMigHeader {
 impl TcpMigHeader {
     /// Creates a TcpMigration header.
     pub fn new(
-        origin: SocketAddrV4, remote: SocketAddrV4, payload_length: u16, stage: MigrationStage,
+        origin: SocketAddrV4, client: SocketAddrV4, payload_length: u16, stage: MigrationStage,
         source_udp_port: u16, dest_udp_port: u16
     ) -> Self {
         Self {
             origin,
-            remote,
+            client,
             length: TCPMIG_HEADER_SIZE as u16 + payload_length,
             fragment_offset: 0,
             flag_load: false,
@@ -159,7 +159,7 @@ impl TcpMigHeader {
             Ipv4Addr::new(hdr_buf[12], hdr_buf[13], hdr_buf[14], hdr_buf[15]),
             NetworkEndian::read_u16(&hdr_buf[16..18]),
         );
-        let remote = SocketAddrV4::new(
+        let client = SocketAddrV4::new(
             Ipv4Addr::new(hdr_buf[18], hdr_buf[19], hdr_buf[20], hdr_buf[21]),
             NetworkEndian::read_u16(&hdr_buf[22..24]),
         );
@@ -187,7 +187,7 @@ impl TcpMigHeader {
 
         let header = Self {
             origin,
-            remote,
+            client,
             length,
             fragment_offset,
             flag_load,
@@ -222,8 +222,8 @@ impl TcpMigHeader {
 
         fixed_buf[12..16].copy_from_slice(&self.origin.ip().octets());
         NetworkEndian::write_u16(&mut fixed_buf[16..18], self.origin.port());
-        fixed_buf[18..22].copy_from_slice(&self.remote.ip().octets());
-        NetworkEndian::write_u16(&mut fixed_buf[22..24], self.remote.port());
+        fixed_buf[18..22].copy_from_slice(&self.client.ip().octets());
+        NetworkEndian::write_u16(&mut fixed_buf[22..24], self.client.port());
 
         NetworkEndian::write_u16(&mut fixed_buf[24..26], self.fragment_offset);
         fixed_buf[26] = self.serialize_flags_and_stage();

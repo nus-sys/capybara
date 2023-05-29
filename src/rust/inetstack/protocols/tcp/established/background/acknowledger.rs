@@ -12,6 +12,9 @@ use ::futures::{
 };
 use ::std::rc::Rc;
 
+#[cfg(feature = "capybara-log")]
+use crate::{tcpmig_profiler::tcp_log};
+
 pub async fn acknowledger(cb: Rc<ControlBlock>) -> Result<!, Fail> {
     loop {
         // TODO: Implement TCP delayed ACKs, subject to restrictions from RFC 1122
@@ -32,6 +35,10 @@ pub async fn acknowledger(cb: Rc<ControlBlock>) -> Result<!, Fail> {
         futures::select_biased! {
             _ = ack_deadline_changed => continue,
             _ = ack_future => {
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcp_log(format!("ACK DEADLINE REACHED"));
+                }
                 cb.send_ack();
             },
         }

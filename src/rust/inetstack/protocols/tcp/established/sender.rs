@@ -34,6 +34,9 @@ use ::std::{
     },
 };
 
+#[cfg(feature = "capybara-log")]
+use crate::{tcpmig_profiler::tcp_log};
+
 // Structure of entries on our unacknowledged queue.
 // ToDo: We currently allocate these on the fly when we add a buffer to the queue.  Would be more efficient to have a
 // buffer structure that held everything we need directly, thus avoiding this extra wrapper.
@@ -167,6 +170,7 @@ impl Sender {
     // This is the main TCP send routine.
     //
     pub fn send(&self, buf: Buffer, cb: &ControlBlock) -> Result<(), Fail> {
+        
         // If the user is done sending (i.e. has called close on this connection), then they shouldn't be sending.
         //
         if cb.user_is_done_sending.get() {
@@ -239,6 +243,10 @@ impl Sender {
                         buf_len = 1;
                     }
                     trace!("Send immediate");
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("SEND immediate"));
+                    }
                     cb.emit(header, Some(buf.clone()), remote_link_addr);
 
                     // Update SND.NXT.
@@ -263,12 +271,20 @@ impl Sender {
                     return Ok(());
                 } else {
                     warn!("no ARP cache entry for send");
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("ARP issue in send()"));
+                    }
                 }
             }
         }
 
         // Too fast.
         // ToDo: We need to fix this the correct way: limit our send buffer size to the amount we're willing to buffer.
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("WARNINIG: TOO FAST, unsent_queue_len: {}", self.unsent_queue.borrow().len()));
+        }
         if self.unsent_queue.borrow().len() > UNSENT_QUEUE_CUTOFF {
             return Err(Fail::new(EBUSY, "too many packets to send"));
         }

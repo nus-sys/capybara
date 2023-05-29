@@ -70,6 +70,9 @@ use ::std::{
     time::Duration,
 };
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::{tcp_log};
+
 struct InflightAccept {
     local_isn: SeqNumber,
     remote_isn: SeqNumber,
@@ -179,6 +182,10 @@ impl PassiveSocket {
         let remote = SocketAddrV4::new(ip_header.get_src_addr(), header.src_port);
         if self.ready.borrow().endpoints.contains(&remote) {
             // TODO: What should we do if a packet shows up for a connection that hasn't been `accept`ed yet?
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("This conn is ready"));
+            }
             return Ok(());
         }
         let inflight_len = self.inflight.len();
@@ -189,6 +196,10 @@ impl PassiveSocket {
                 return Err(Fail::new(EBADMSG, "expeting ACK"));
             }
             debug!("Received ACK: {:?}", header);
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("ACK"));
+            }
             let &InflightAccept {
                 local_isn,
                 remote_isn,
@@ -252,8 +263,16 @@ impl PassiveSocket {
             return Err(Fail::new(EBADMSG, "invalid flags"));
         }
         debug!("Received SYN: {:?}", header);
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("SYN"));
+        }
         if inflight_len + self.ready.borrow().len() >= self.max_backlog {
             // TODO: Should we send a RST here?
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("Refused (backlog full)"));
+            }
             return Err(Fail::new(ECONNREFUSED, "connection refused"));
         }
         let local_isn = self.isn_generator.generate(&self.local, &remote);
@@ -298,6 +317,11 @@ impl PassiveSocket {
             mss,
             handle,
         };
+        // #[cfg(feature = "capybara-log")]
+        // {
+        //     tcp_log(format!("This conn is now in-flight"));
+        //     tcp_log(format!("seq_num: {} | {}", local_isn, remote_isn));
+        // }
         self.inflight.insert(remote, accept);
         Ok(())
     }
@@ -322,6 +346,10 @@ impl PassiveSocket {
                 let remote_link_addr = match arp.query(remote.ip().clone()).await {
                     Ok(r) => r,
                     Err(e) => {
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcp_log(format!("ARP query failed: {:?}", e));
+                        }
                         warn!("ARP query failed: {:?}", e);
                         continue;
                     },
@@ -341,6 +369,10 @@ impl PassiveSocket {
                 info!("Advertising window scale: {}", tcp_config.get_window_scale());
 
                 debug!("Sending SYN+ACK: {:?}", tcp_hdr);
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcp_log(format!("\n\n[TX] {:?} => {:?}: SYN+ACK", local, remote));
+                }
                 let segment = TcpSegment {
                     ethernet2_hdr: Ethernet2Header::new(remote_link_addr, local_link_addr, EtherType2::Ipv4),
                     ipv4_hdr: Ipv4Header::new(local.ip().clone(), remote.ip().clone(), IpProtocol::TCP),
@@ -351,7 +383,8 @@ impl PassiveSocket {
                 rt.transmit(Box::new(segment));
                 clock.wait(clock.clone(), handshake_timeout).await;
             }
-            ready.borrow_mut().push_err(Fail::new(ETIMEDOUT, "handshake timeout"));
+            eprintln!("WARNING: handshake timeout");
+            // ready.borrow_mut().push_err(Fail::new(ETIMEDOUT, "handshake timeout"));
         }
     }
 }
