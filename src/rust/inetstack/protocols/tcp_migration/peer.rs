@@ -93,6 +93,8 @@ struct Inner {
 
     self_udp_port: u16,
 
+    migrated_out_connections: HashSet<(SocketAddrV4, SocketAddrV4)>,
+
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
     #[allow(unused)]
@@ -277,6 +279,10 @@ impl TcpMigPeer {
         inner.is_currently_migrating = true;
     }
 
+    pub fn is_migrated_out(&self, origin: SocketAddrV4, remote: SocketAddrV4) -> bool {
+        self.inner.borrow().migrated_out_connections.contains(&(origin, remote))
+    }
+
     pub fn can_migrate_out(&self, origin: SocketAddrV4, remote: SocketAddrV4) -> Option<MigrationHandle> {
         let key = (origin, remote);
         let inner = self.inner.borrow();
@@ -293,6 +299,9 @@ impl TcpMigPeer {
         let mut inner = self.inner.borrow_mut();
         if let Some(active) = inner.active_migrations.get_mut(&key) {
             active.send_connection_state(state);
+        }
+        if !inner.migrated_out_connections.insert(key) {
+            panic!("Duplicate migrated_out_connections set insertion");
         }
     }
 
@@ -450,6 +459,7 @@ impl Inner {
             is_currently_migrating: false,
             recv_queue_length_threshold,
             self_udp_port: SELF_UDP_PORT, // TEMP
+            migrated_out_connections: HashSet::new(),
             //background: handle,
         }
     }
