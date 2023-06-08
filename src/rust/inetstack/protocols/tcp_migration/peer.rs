@@ -87,7 +87,7 @@ struct Inner {
 
     /// Connections ready to be migrated-in.
     /// 
-    /// key = (local, remote).
+    /// key = (local, client).
     incoming_connections: HashSet<(SocketAddrV4, SocketAddrV4)>,
 
     stats: TcpMigStats,
@@ -99,7 +99,7 @@ struct Inner {
 
     self_udp_port: u16,
 
-    migrated_out_connections: HashSet<(SocketAddrV4, SocketAddrV4)>,
+    migrated_out_connections: HashSet<SocketAddrV4>,
 
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
@@ -114,7 +114,7 @@ pub struct TcpMigPeer {
 
 pub struct MigrationHandle {
     origin: SocketAddrV4,
-    remote: SocketAddrV4,
+    client: SocketAddrV4,
 }
 
 //======================================================================================================================
@@ -241,7 +241,7 @@ impl TcpMigPeer {
                 tcpmig_profile_merge_previous!("migrate_ack");
 
                 let (local, client) = (state.local, state.remote);
-                // println!("migrating in connection local: {}, remote: {}", local, remote);
+                // println!("migrating in connection local: {}, client: {}", local, client);
                 
                 tcp_peer.notify_passive(state)?;
                 inner.incoming_connections.insert((local, client));
@@ -249,7 +249,7 @@ impl TcpMigPeer {
                 {
                     tcpmig_log(format!("======= MIGRATING IN STATE ({}, {}) =======", local, client));
                 }
-                // inner.active_migrations.remove(&(hdr.origin, hdr.remote)).expect("active migration should exist"); 
+                // inner.active_migrations.remove(&(hdr.origin, hdr.client)).expect("active migration should exist"); 
                 // Shouldn't be removed yet. Should be after processing migration queue.
             },
             MigrationRequestStatus::MigrationCompleted => {
@@ -280,18 +280,18 @@ impl TcpMigPeer {
         }
         let mut inner = self.inner.borrow_mut();
 
-        let (origin, remote) = match inner.stats.get_connection_to_migrate_out() {
+        let (origin, client) = match inner.stats.get_connection_to_migrate_out() {
             Some(conn) => conn,
             None => return,
         };
-        let key = (origin, remote);
+        let key = (origin, client);
         // if inner.active_migrations.contains_key(&key) {
         //     return;
         // }
         // this one maybe no need, because we are checking if the migration is
         // ongoing with is_currently_migrating
 
-        // eprintln!("initiate migration for connection {} <-> {}", origin, remote);
+        // eprintln!("initiate migration for connection {} <-> {}", origin, client);
 
         //let origin = SocketAddrV4::new(inner.local_ipv4_addr, origin_port);
         // let target = SocketAddrV4::new(FRONTEND_IP, FRONTEND_PORT); // TEMP
@@ -306,7 +306,7 @@ impl TcpMigPeer {
             inner.self_udp_port,
             if inner.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
             origin,
-            remote,
+            client,
         ); // Inho: Q. Why link_addr (MAC addr) is needed when the libOS has arp_table already? Is it possible to use the arp_table instead?
         
         if let Some(..) = inner.active_migrations.insert(key, active) {
@@ -325,41 +325,41 @@ impl TcpMigPeer {
         inner.is_currently_migrating = true;
     }
 
-    pub fn is_migrated_out(&self, origin: SocketAddrV4, remote: SocketAddrV4) -> bool {
-        self.inner.borrow().migrated_out_connections.contains(&(origin, remote))
+    pub fn is_migrated_out(&self, client: SocketAddrV4) -> bool {
+        self.inner.borrow().migrated_out_connections.contains(&client)
     }
 
-    pub fn can_migrate_out(&self, origin: SocketAddrV4, remote: SocketAddrV4) -> Option<MigrationHandle> {
-        let key = (origin, remote);
+    pub fn can_migrate_out(&self, origin: SocketAddrV4, client: SocketAddrV4) -> Option<MigrationHandle> {
+        let key = (origin, client);
         let inner = self.inner.borrow();
         if let Some(active) = inner.active_migrations.get(&key) {
             if active.is_prepared() {
-                return Some(MigrationHandle { origin, remote })
+                return Some(MigrationHandle { origin, client })
             }
         }
         None
     }
 
     pub fn migrate_out(&mut self, handle: MigrationHandle, state: TcpState) {
-        let key = (handle.origin, handle.remote);
+        let key = (handle.origin, handle.client);
         let mut inner = self.inner.borrow_mut();
         if let Some(active) = inner.active_migrations.get_mut(&key) {
             active.send_connection_state(state);
         }
-        if !inner.migrated_out_connections.insert(key) {
+        if !inner.migrated_out_connections.insert(handle.client) {
             panic!("Duplicate migrated_out_connections set insertion");
         }
     }
 
-    pub fn try_buffer_packet(&mut self, target: SocketAddrV4, remote: SocketAddrV4, ip_hdr: Ipv4Header, tcp_hdr: TcpHeader, buf: Buffer) -> Result<(), ()> {
+    pub fn try_buffer_packet(&mut self, target: SocketAddrV4, client: SocketAddrV4, ip_hdr: Ipv4Header, tcp_hdr: TcpHeader, buf: Buffer) -> Result<(), ()> {
         let mut inner = self.inner.borrow_mut();
 
-        let origin = match inner.origins.get(&(target, remote)) {
+        let origin = match inner.origins.get(&(target, client)) {
             Some(origin) => *origin,
             None => return Err(()),
         };
 
-        match inner.active_migrations.get_mut(&(origin, remote)) {
+        match inner.active_migrations.get_mut(&(origin, client)) {
             Some(active) => {
                 active.buffer_packet(ip_hdr, tcp_hdr, buf);
                 Ok(())
@@ -368,37 +368,39 @@ impl TcpMigPeer {
         }
     }
 
-    pub fn take_connection(&mut self, local: SocketAddrV4, remote: SocketAddrV4) -> bool {
+    pub fn take_connection(&mut self, local: SocketAddrV4, client: SocketAddrV4) -> bool {
         self.inner.borrow_mut()
-        .incoming_connections.remove(&(local, remote))
+        .incoming_connections.remove(&(local, client))
     }
 
-    pub fn take_buffer_queue(&mut self, target: SocketAddrV4, remote: SocketAddrV4) -> Result<VecDeque<(Ipv4Header, TcpHeader, Buffer)>, Fail> {
+    pub fn take_buffer_queue(&mut self, target: SocketAddrV4, client: SocketAddrV4) -> Result<VecDeque<(Ipv4Header, TcpHeader, Buffer)>, Fail> {
         let mut inner = self.inner.borrow_mut();
 
-        let origin = match inner.origins.get(&(target, remote)) {
+        let origin = match inner.origins.get(&(target, client)) {
             Some(origin) => *origin,
             None => return Err(Fail::new(libc::EINVAL, "no origin found")),
         };
 
-        match inner.active_migrations.get_mut(&(origin, remote)) {
+        match inner.active_migrations.get_mut(&(origin, client)) {
             Some(active) => Ok(active.recv_queue.drain(..).collect()),
             None => Err(Fail::new(libc::EINVAL, "no active migration found")),
         }
     }
 
-    pub fn complete_migrating_in(&mut self, target: SocketAddrV4, remote: SocketAddrV4) {
+    pub fn complete_migrating_in(&mut self, target: SocketAddrV4, client: SocketAddrV4) {
         let mut inner = self.inner.borrow_mut();
 
-        let origin = match inner.origins.get(&(target, remote)) {
+        let origin = match inner.origins.get(&(target, client)) {
             Some(origin) => *origin,
-            None => panic!("no origin found for connection: ({:?}, {:?})", target, remote),
+            None => panic!("no origin found for connection: ({:?}, {:?})", target, client),
         };
-        inner.active_migrations.remove(&(origin, remote)).expect("active migration should exist");
+        inner.active_migrations.remove(&(origin, client)).expect("active migration should exist");
+        inner.migrated_out_connections.remove(&client);
+        eprintln!("migrated_out_connections: {:?}", inner.migrated_out_connections);
     }
 
-    pub fn update_incoming_stats(&mut self, local: SocketAddrV4, remote: SocketAddrV4, recv_queue_len: usize) {
-        self.inner.borrow_mut().stats.update_incoming(local, remote, recv_queue_len);
+    pub fn update_incoming_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {
+        self.inner.borrow_mut().stats.update_incoming(local, client, recv_queue_len);
 
         // unsafe {
         //     static mut TMP: i32 = 0;
@@ -425,7 +427,7 @@ impl TcpMigPeer {
 
     // TEMP (for migration test)
     pub fn should_migrate(&self) -> bool {
-        return false;
+        // return false;
         static mut FLAG: i32 = 0;
         static mut num_mig: i32 = 0;
         let inner = self.inner.borrow();
@@ -471,8 +473,8 @@ impl TcpMigPeer {
         }
     }
 
-    pub fn stop_tracking_connection_stats(&mut self, local: SocketAddrV4, remote: SocketAddrV4) {
-        self.inner.borrow_mut().stats.stop_tracking_connection(local, remote)
+    pub fn stop_tracking_connection_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4) {
+        self.inner.borrow_mut().stats.stop_tracking_connection(local, client)
     }
 
     pub fn print_stats(&self) {

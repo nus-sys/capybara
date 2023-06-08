@@ -918,7 +918,7 @@ impl ControlBlock {
             } else {
                 0
             };
-            tcp_log(format!("\n\n[TX] {} => {}\n {} bytes", 
+            tcp_log(format!("\n\n[TX] {} => {}: // {} bytes", 
                                         self.local.ip(), self.remote.ip(), len));
         }
         let segment = TcpSegment {
