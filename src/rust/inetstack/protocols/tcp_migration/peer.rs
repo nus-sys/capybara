@@ -41,11 +41,17 @@ use ::std::{
         Ipv4Addr,
         SocketAddrV4,
     },
+    thread, time::Duration,
     rc::Rc,
+    env,
 };
 
 #[cfg(feature = "profiler")]
 use crate::timer;
+
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+
 
 //======================================================================================================================
 // Structures
@@ -71,12 +77,12 @@ struct Inner {
 
     /// Connections being actively migrated in/out.
     /// 
-    /// key = (origin, remote).
+    /// key = (origin, client).
     active_migrations: HashMap<(SocketAddrV4, SocketAddrV4), ActiveMigration>,
 
     /// Origins. Only used on the target side to get the origin of redirected packets.
     /// 
-    /// key = (target, remote).
+    /// key = (target, client).
     origins: HashMap<(SocketAddrV4, SocketAddrV4), SocketAddrV4>,
 
     /// Connections ready to be migrated-in.
@@ -164,9 +170,13 @@ impl TcpMigPeer {
         // Parse header.
         let (hdr, buf) = TcpMigHeader::parse(ipv4_hdr, buf)?;
         debug!("TCPMig received {:?}", hdr);
-        eprintln!("TCPMig received {:#?}", hdr);
+        // eprintln!("TCPMig received {:#?}", hdr);
+        #[cfg(feature = "capybara-log")]
+        {
+            tcpmig_log(format!("\n\n[RX] TCPMig"));
+        }
 
-        let key = (hdr.origin, hdr.remote);
+        let key = (hdr.origin, hdr.client);
 
         let mut inner = self.inner.borrow_mut();
 
@@ -175,6 +185,11 @@ impl TcpMigPeer {
             #[cfg(feature = "tcp-migration-profiler")]
             tcpmig_profile!("prepare_ack");
 
+            #[cfg(feature = "capybara-log")]
+            {
+                tcpmig_log(format!("******* MIGRATION REQUESTED *******"));
+                tcpmig_log(format!("PREPARE_MIG {:?}", key));
+            }
             let active = ActiveMigration::new(
                 inner.rt.clone(),
                 inner.local_ipv4_addr,
@@ -184,20 +199,28 @@ impl TcpMigPeer {
                 inner.self_udp_port,
                 hdr.origin.port(), 
                 hdr.origin,
-                hdr.remote,
+                hdr.client,
             );
             if let Some(..) = inner.active_migrations.insert(key, active) {
                 // todo!("duplicate active migration");
                 // It happens when a backend send PREPARE_MIGRATION to the switch
                 // but it receives back the message again (i.e., this is the current minimum workload backend)
                 // In this case, remove the active migration.
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcpmig_log(format!("It returned back to itself, maybe it's the current-min-workload server"));
+                }
                 inner.active_migrations.remove(&key); 
                 inner.is_currently_migrating = false;
                 return Ok(())
             }
 
             let target = SocketAddrV4::new(inner.local_ipv4_addr, inner.self_udp_port);
-            inner.origins.insert((target, hdr.remote), hdr.origin);
+            #[cfg(feature = "capybara-log")]
+            {
+                tcpmig_log(format!("I'm target {}", target));
+            }
+            inner.origins.insert((target, hdr.client), hdr.origin);
         }
 
         let active = match inner.active_migrations.get_mut(&key) {
@@ -205,26 +228,37 @@ impl TcpMigPeer {
             None => return Err(Fail::new(libc::EINVAL, "no such active migration")),
         };
 
+        #[cfg(feature = "capybara-log")]
+        {
+            tcpmig_log(format!("Active migration {:?}", key));
+        }
         match active.process_packet(ipv4_hdr, hdr, buf)? {
             MigrationRequestStatus::Rejected => todo!("handle migration rejection"),
             MigrationRequestStatus::StateReceived(state) => {
                 #[cfg(feature = "tcp-migration-profiler")]
                 tcpmig_profile_merge_previous!("migrate_ack");
 
-                let (local, remote) = (state.local, state.remote);
-                println!("migrating in connection local: {}, remote: {}", local, remote);
+                let (local, client) = (state.local, state.remote);
+                // println!("migrating in connection local: {}, remote: {}", local, remote);
                 
                 tcp_peer.notify_passive(state)?;
-                inner.incoming_connections.insert((local, remote));
-
+                inner.incoming_connections.insert((local, client));
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcpmig_log(format!("======= MIGRATING IN STATE ({}, {}) =======", local, client));
+                }
                 // inner.active_migrations.remove(&(hdr.origin, hdr.remote)).expect("active migration should exist"); 
                 // Shouldn't be removed yet. Should be after processing migration queue.
             },
             MigrationRequestStatus::MigrationCompleted => {
-                let (local, remote) = (hdr.origin, hdr.remote);
-                inner.active_migrations.remove(&(local, remote)).expect("active migration should exist");
-                inner.stats.stop_tracking_connection(local, remote);
+                let (local, client) = (hdr.origin, hdr.client);
+                inner.active_migrations.remove(&(local, client)).expect("active migration should exist");
+                inner.stats.stop_tracking_connection(local, client);
                 inner.is_currently_migrating = false;
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcpmig_log(format!("CONN_STATE_ACK ({}, {})\n=======  MIGRATION COMPLETE! =======\n\n", local, client));
+                }
             },
             MigrationRequestStatus::Ok => (),
         };
@@ -233,6 +267,15 @@ impl TcpMigPeer {
     }
 
     pub fn initiate_migration(&mut self) {
+        // thread::sleep(Duration::from_nanos(1));
+        let delay = env::var("MIG_THRESHOLD")
+        .unwrap_or_else(|_| String::from("0")) // Default value if DELAY is not set
+        .parse::<u32>()
+        .expect("Invalid DELAY value");
+
+        for _ in 0..delay {
+            thread::yield_now();
+        }
         let mut inner = self.inner.borrow_mut();
 
         let (origin, remote) = match inner.stats.get_connection_to_migrate_out() {
@@ -246,7 +289,7 @@ impl TcpMigPeer {
         // this one maybe no need, because we are checking if the migration is
         // ongoing with is_currently_migrating
 
-        eprintln!("initiate migration for connection {} <-> {}", origin, remote);
+        // eprintln!("initiate migration for connection {} <-> {}", origin, remote);
 
         //let origin = SocketAddrV4::new(inner.local_ipv4_addr, origin_port);
         // let target = SocketAddrV4::new(FRONTEND_IP, FRONTEND_PORT); // TEMP
@@ -259,13 +302,16 @@ impl TcpMigPeer {
             FRONTEND_IP,
             FRONTEND_MAC, 
             inner.self_udp_port,
-            0, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
+            if inner.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
             origin,
             remote,
         ); // Inho: Q. Why link_addr (MAC addr) is needed when the libOS has arp_table already? Is it possible to use the arp_table instead?
         
         if let Some(..) = inner.active_migrations.insert(key, active) {
             todo!("duplicate active migration");
+            // inho: how it can happen when we check is_currently_migrating?
+            // isn't that there is one one active migration always?
+            // A. looks like it cannot happen (leave it just for debugging purpose)
         };
 
         let active = match inner.active_migrations.get_mut(&key) {
@@ -345,41 +391,48 @@ impl TcpMigPeer {
     pub fn update_incoming_stats(&mut self, local: SocketAddrV4, remote: SocketAddrV4, recv_queue_len: usize) {
         self.inner.borrow_mut().stats.update_incoming(local, remote, recv_queue_len);
 
-        unsafe {
-            static mut TMP: i32 = 0;
-            TMP += 1;
-            if TMP == 1000 {
-                TMP = 0;
-                println!("global_recv_queue_length: {}", self.inner.borrow().stats.global_recv_queue_length());
-            }
-        }
+        // unsafe {
+        //     static mut TMP: i32 = 0;
+        //     TMP += 1;
+        //     if TMP == 1000 {
+        //         TMP = 0;
+        //         println!("global_recv_queue_length: {}", self.inner.borrow().stats.global_recv_queue_length());
+        //     }
+        // }
     }
 
     pub fn update_outgoing_stats(&mut self) {
         self.inner.borrow_mut().stats.update_outgoing();
     }
 
-    pub fn should_migrate(&self) -> bool {
-        let inner = self.inner.borrow();
-        if inner.is_currently_migrating || inner.stats.num_of_connections() <= 1 { return false; }
+    // pub fn should_migrate(&self) -> bool {
+    //     let inner = self.inner.borrow();
+    //     if inner.is_currently_migrating || inner.stats.num_of_connections() <= 100 { return false; }
 
-        let recv_queue_len = inner.stats.global_recv_queue_length();
-        println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
-        recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
-    }
+    //     let recv_queue_len = inner.stats.global_recv_queue_length();
+    //     // println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
+    //     recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
+    // }
 
     // TEMP (for migration test)
-    // pub fn should_migrate(&self) -> bool {
-    //     static mut FLAG: i32 = 0;
+    pub fn should_migrate(&self) -> bool {
+        return false;
+        static mut FLAG: i32 = 0;
+        static mut num_mig: i32 = 0;
+        let inner = self.inner.borrow();
+        // println!("currently_migration: {} , num_conn: {}", inner.is_currently_migrating, inner.stats.num_of_connections());
         
-    //     unsafe {
-    //         if FLAG == 10 {
-    //             FLAG = 0;
-    //         }
-    //         FLAG += 1;
-    //         FLAG == 10
-    //     }
-    // }
+        unsafe {
+            if inner.is_currently_migrating || inner.stats.num_of_connections() <= 40 || num_mig >= 200 { return false; }
+            if FLAG == 1000 {
+                FLAG = 0;
+                num_mig+=1;
+            }
+            FLAG += 1;
+            // println!("FLAG: {}", FLAG);
+            FLAG == 1000
+        }
+    }
 
     pub fn queue_length_heartbeat(&mut self) {
 

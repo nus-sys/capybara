@@ -485,6 +485,10 @@ impl TcpPeer {
             Some(Socket::MigratedOut { .. }) => return Poll::Ready(Err(Fail::new(EBADF, "socket migrated out"))),
             None => return Poll::Ready(Err(Fail::new(EBADF, "bad queue descriptor"))),
         };
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("poll_recv on {:?}", key));
+        }
         match inner.established.get(&key) {
             Some(ref s) => s.poll_recv(ctx),
             None => Poll::Ready(Err(Fail::new(ENOTCONN, "connection not established"))),
