@@ -693,6 +693,11 @@ impl Inner {
             return Ok(());
         }
 
+        if self.tcpmig.is_migrated_out(local, remote) {
+            warn!("Dropped packet received on migrated out connection ({local}, {remote})");
+            return Ok(());
+        }
+
         let (local, _) = key;
         if let Some(s) = self.passive.get_mut(&local) {
             debug!("Routing to passive connection: {:?}", local);
