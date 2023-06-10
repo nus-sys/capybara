@@ -386,7 +386,7 @@ impl ControlBlock {
         self.sender.top_size_unsent()
     }
 
-    pub fn pop_unsent_segment(&self, max_bytes: usize) -> Option<Buffer> {
+    pub fn pop_unsent_segment(&self, max_bytes: usize) -> Option<(Buffer, bool)> {
         self.sender.pop_unsent(max_bytes)
     }
 
