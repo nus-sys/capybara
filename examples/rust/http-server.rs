@@ -61,7 +61,7 @@ fn get_request(libos: &mut LibOS, qd: QDesc) -> Option<QToken> {
     Some(qt)
 }
 
-fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
+fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> Option<QToken> {
     // let data_str = std::str::from_utf8(data).unwrap();
     let data_str = String::from_utf8_lossy(data);
 
@@ -83,14 +83,17 @@ fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     
     let response = match std::fs::read_to_string(full_path.as_str()) {
         Ok(contents) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents),
-        Err(err) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
+        Err(err) => {
+            return None;
+            // format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
+        },
     };
     #[cfg(feature = "capybara-log")]
     {
         tcp_log(format!("PUSH: {}", response.lines().next().unwrap_or("")));
     }
     match libos.push2(qd, response.as_bytes()) {
-        Ok(qt) => qt,
+        Ok(qt) => Some(qt),
         Err(e) => panic!("push failed: {:?}", e.cause),
     }
 }
@@ -162,14 +165,14 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     }
                 },
                 OperationResult::Pop(_, recvbuf) => {
-                    // This QDesc can no longer be migrated. (currently processing a request)
-                    migratable_qds.remove(&qd);
-
-                    // Request Processing Delay
-                    // thread::sleep(Duration::from_secs(10));
-
-                    qts.push(send_response(&mut libos, qd, &recvbuf));
-                    // qts.insert(0, send_response(&mut libos, qd, &recvbuf));
+                    if let Some(qt) = send_response(&mut libos, qd, &recvbuf) {
+                        // This QDesc can no longer be migrated. (currently processing a request)
+                        migratable_qds.remove(&qd);
+                        // Request Processing Delay
+                        // thread::sleep(Duration::from_secs(10));
+                        qts.push(qt);
+                        // qts.insert(0, send_response(&mut libos, qd, &recvbuf));
+                    }
                 },
                 _ => {
                     println!("RESULT: {:?}", result);
