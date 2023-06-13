@@ -12,20 +12,17 @@ use ::demikernel::{
     OperationResult,
     QDesc,
     QToken,
-    runtime::logging,
 };
 
 #[cfg(feature = "capybara-log")]
 use ::demikernel::tcpmig_profiler::{tcp_log};
 
-use log::debug;
 use std::collections::HashMap;
 use ::std::{
     env,
     net::SocketAddrV4,
     panic,
     str::FromStr,
-    thread, time::Duration,
 };
 
 #[cfg(feature = "profiler")]
@@ -39,29 +36,7 @@ use std::sync::Arc;
 // server()
 //======================================================================================================================
 
-fn get_connection(libos: &mut LibOS, listen_qd: QDesc) -> QToken {
-    match libos.accept(listen_qd) {
-        Ok(qt) => qt,
-        Err(e) => panic!("accept failed: {:?}", e.cause),
-    }
-}
-
-fn get_request(libos: &mut LibOS, qd: QDesc) -> Option<QToken> {
-    /* #[cfg(feature = "tcp-migration")]
-    match libos.notify_migration_safety(qd) {
-        Ok(true) => return None,
-        Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
-        _ => (),
-    }; */
-
-    let qt = match libos.pop(qd) {
-        Ok(qt) => qt,
-        Err(e) => panic!("pop failed: {:?}", e.cause),
-    };
-    Some(qt)
-}
-
-fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> Option<QToken> {
+fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     // let data_str = std::str::from_utf8(data).unwrap();
     let data_str = String::from_utf8_lossy(data);
 
@@ -78,24 +53,21 @@ fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> Option<QToken> {
     }
     let full_path = format!("{}/{}", ROOT, file_name);
     
-    
-    // println!("full_path: {}", full_path);
-    
     let response = match std::fs::read_to_string(full_path.as_str()) {
         Ok(contents) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents),
-        Err(err) => {
-            return None;
-            // format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
-        },
+        Err(_) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n"),
     };
     #[cfg(feature = "capybara-log")]
     {
         tcp_log(format!("PUSH: {}", response.lines().next().unwrap_or("")));
     }
-    match libos.push2(qd, response.as_bytes()) {
-        Ok(qt) => Some(qt),
-        Err(e) => panic!("push failed: {:?}", e.cause),
-    }
+
+    libos.push2(qd, response.as_bytes()).expect("push success")
+}
+
+struct ConnectionState {
+    pushing: bool,
+    pop_qt: QToken,
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
@@ -105,78 +77,57 @@ fn server(local: SocketAddrV4) -> Result<()> {
         r.store(false, Ordering::SeqCst);
     }).expect("Error setting Ctrl-C handler");
 
-    let libos_name: LibOSName = match LibOSName::from_env() {
-        Ok(libos_name) => libos_name.into(),
-        Err(e) => panic!("{:?}", e),
-    };
-    let mut libos: LibOS = match LibOS::new(libos_name) {
-        Ok(libos) => libos,
-        Err(e) => panic!("failed to initialize libos: {:?}", e.cause),
-    };
+    let libos_name: LibOSName = LibOSName::from_env().unwrap().into();
+    let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
+    let sockqd: QDesc = libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0).expect("created socket");
 
-    // Setup peer.
-    let sockqd: QDesc = match libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0) {
-        Ok(qd) => qd,
-        Err(e) => panic!("failed to create socket: {:?}", e.cause),
-    };
-    match libos.bind(sockqd, local) {
-        Ok(()) => (),
-        Err(e) => panic!("bind failed: {:?}", e.cause),
-    };
+    libos.bind(sockqd, local).expect("bind failed");
+    libos.listen(sockqd, 16).expect("listen failed");
 
-    // Mark as a passive one.
-    match libos.listen(sockqd, 16) {
-        Ok(()) => (),
-        Err(e) => panic!("listen failed: {:?}", e.cause),
-    };
+    let mut qts: Vec<QToken> = Vec::new();
+    let mut connstate: HashMap<QDesc, ConnectionState> = HashMap::new();
 
-    let mut qts = vec![get_connection(&mut libos, sockqd)];
-
-    let mut migratable_qds: HashMap<QDesc, QToken> = HashMap::new();
+    qts.push(libos.accept(sockqd).expect("accept"));
 
     loop {
-        if qts.is_empty() || !running.load(Ordering::SeqCst) {
+        if !running.load(Ordering::SeqCst) {
             break;
         }
 
-        let result = match libos.trywait_any2(&qts) {
-            Ok(wait_result) => wait_result,
-            Err(e) => panic!("operation failed: {:?}", e.cause),
-        };
+        let result = libos.trywait_any2(&qts).expect("result");
 
         if let Some((index, qd, result)) = result {
             qts.swap_remove(index);
             match result {
                 OperationResult::Accept(new_qd) => {
-                    if let Some(qt) = get_request(&mut libos, new_qd) {
-                        qts.push(qt);
-                        // qts.insert(0, qt);
-                    }
+                    // Pop from new_qd
+                    let pop_qt = libos.pop(new_qd).expect("pop qt");
+                    qts.push(pop_qt);
+                    connstate.insert(new_qd, ConnectionState {
+                        pushing: false,
+                        pop_qt: pop_qt,
+                    });
 
-                    qts.push(get_connection(&mut libos, qd));
+                    // Re-arm accept
+                    qts.push(libos.accept(qd).expect("accept qtoken"));
                 },
                 OperationResult::Push => {
-                    if let Some(qt) = get_request(&mut libos, qd) {
-                        qts.push(qt);
-                        // qts.insert(0, qt);
-
-                        // This QDesc can be migrated. (waiting for new request)
-                        migratable_qds.insert(qd, qt);
-                    }
+                    connstate.get_mut(&qd).unwrap().pushing = false;
                 },
                 OperationResult::Pop(_, recvbuf) => {
-                    if let Some(qt) = send_response(&mut libos, qd, &recvbuf) {
-                        // This QDesc can no longer be migrated. (currently processing a request)
-                        migratable_qds.remove(&qd);
-                        // Request Processing Delay
-                        // thread::sleep(Duration::from_secs(10));
-                        qts.push(qt);
-                        // qts.insert(0, send_response(&mut libos, qd, &recvbuf));
-                    }
+                    let send_qt = send_response(&mut libos, qd, &recvbuf);
+                    qts.push(send_qt);
+
+                    // queue next pop
+                    let pop_qt = libos.pop(qd).expect("pop qt");
+                    qts.push(pop_qt);
+
+                    let mut state = connstate.get_mut(&qd).unwrap();
+                    state.pushing = true;
+                    state.pop_qt = pop_qt;
                 },
                 _ => {
-                    println!("RESULT: {:?}", result);
-                    unreachable!();
+                    panic!("Unexpected op: RESULT: {:?}", result);
                 },
             }
         }
@@ -185,12 +136,15 @@ fn server(local: SocketAddrV4) -> Result<()> {
         {
             let mut qd_to_remove = None;
 
-            for (&qd, &pop_qt) in migratable_qds.iter() {
-                match libos.notify_migration_safety(qd) {
+            for (qd, state) in connstate.iter() {
+                if state.pushing {
+                    continue;
+                }
+                match libos.notify_migration_safety(*qd) {
                     Ok(true) => {
-                        let index = qts.iter().position(|&qt| qt == pop_qt).expect("`pop_qt` should be in `qts`");
+                        let index = qts.iter().position(|&qt| qt == state.pop_qt).expect("`pop_qt` should be in `qts`");
                         qts.swap_remove(index);
-                        qd_to_remove = Some(qd);
+                        qd_to_remove = Some(*qd);
                         break;
                     },
                     Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
@@ -199,7 +153,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
             }
 
             if let Some(qd) = qd_to_remove {
-                migratable_qds.remove(&qd);
+                connstate.remove(&qd);
             }
         }
     }
