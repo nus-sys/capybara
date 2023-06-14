@@ -693,6 +693,7 @@ impl Inner {
             return Ok(());
         }
 
+	#[cfg(feature = "tcp-migration")]
         if self.tcpmig.is_migrated_out(remote) {
             warn!("Dropped packet received on migrated out connection ({local}, {remote})");
             return Ok(());
