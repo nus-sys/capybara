@@ -212,11 +212,11 @@ server-test:
 	CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml timeout 30 /homes/inho/Capybara/capybara/bin/examples/rust/tcp-push-pop.elf --server 20.0.0.2:22222
 
 tcp-echo:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
+	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
 	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
 	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
 	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-echo.elf \
-	--peer server --local 10.0.1.8:22222 --bufsize 1024
+	--peer server --local 10.0.1.9:10000 --bufsize 1024
 
 tcpmig-single-origin:
 	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
@@ -248,8 +248,8 @@ http-server-fe:
 	$(ELF_DIR)/http-server.elf 10.0.1.8:10000
 
 http-server-be0:
-	sudo -E RUST_LOG="debug" \
-	MIG_THRESHOLD=5 \
+	sudo -E CAPYBARA_LOG="tcp" \
+	MIG_THRESHOLD=0 \
 	RECV_QUEUE_LEN=0 \
 	CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
@@ -257,8 +257,8 @@ http-server-be0:
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
 
 http-server-be1:
-	sudo -E  \
-	MIG_THRESHOLD=5 \
+	sudo -E CAPYBARA_LOG="tcpmig" \
+	MIG_THRESHOLD=0 \
 	RECV_QUEUE_LEN=3000 \
 	CONFIG_PATH=$(CONFIG_DIR)/be1_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
@@ -290,7 +290,8 @@ tcpmig-multi-origin:
 	$(ELF_DIR)/tcpmig-server-multi.elf 10.0.1.8:10000
 
 tcpmig-multi-target0:
-	sudo -E \
+	sudo -E CAPYBARA_LOG="tcpmig" \
+	MIG_THRESHOLD=10000 \
 	IS_FRONTEND=0 \
 	CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
@@ -298,7 +299,8 @@ tcpmig-multi-target0:
 	$(ELF_DIR)/tcpmig-server-multi.elf 10.0.1.9:10000
 
 tcpmig-multi-target1:
-	sudo -E \
+	sudo -E CAPYBARA_LOG="tcpmig" \
+	MIG_THRESHOLD=10000 \
 	CONFIG_PATH=$(CONFIG_DIR)/be1_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 1 \

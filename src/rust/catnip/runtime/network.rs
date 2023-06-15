@@ -110,7 +110,7 @@ impl NetworkRuntime for DPDKRuntime {
                     assert_eq!(rte_pktmbuf_chain(header_mbuf.get_ptr(), body_mbuf.into_raw()), 0);
                 }
                 let mut header_mbuf_ptr = header_mbuf.into_raw();
-                let num_sent = unsafe { rte_eth_tx_burst(self.port_id, self.core_id, &mut header_mbuf_ptr, 1) };
+                let num_sent = unsafe { rte_eth_tx_burst(self.port_id, self.queue_id, &mut header_mbuf_ptr, 1) };
                 assert_eq!(num_sent, 1);
             }
             // Otherwise, write in the inline space.
@@ -131,7 +131,7 @@ impl NetworkRuntime for DPDKRuntime {
                 header_mbuf.trim(header_mbuf.len() - frame_size);
 
                 let mut header_mbuf_ptr = header_mbuf.into_raw();
-                let num_sent = unsafe { rte_eth_tx_burst(self.port_id, self.core_id, &mut header_mbuf_ptr, 1) };
+                let num_sent = unsafe { rte_eth_tx_burst(self.port_id, self.queue_id, &mut header_mbuf_ptr, 1) };
                 assert_eq!(num_sent, 1);
             }
         }
@@ -147,7 +147,7 @@ impl NetworkRuntime for DPDKRuntime {
             let frame_size = std::cmp::max(header_size, MIN_PAYLOAD_SIZE);
             header_mbuf.trim(header_mbuf.len() - frame_size);
             let mut header_mbuf_ptr = header_mbuf.into_raw();
-            let num_sent = unsafe { rte_eth_tx_burst(self.port_id, self.core_id, &mut header_mbuf_ptr, 1) };
+            let num_sent = unsafe { rte_eth_tx_burst(self.port_id, self.queue_id, &mut header_mbuf_ptr, 1) };
             assert_eq!(num_sent, 1);
         }
     }
@@ -160,7 +160,7 @@ impl NetworkRuntime for DPDKRuntime {
             #[cfg(feature = "profiler")]
             timer!("catnip_libos::receive::rte_eth_rx_burst");
 
-            rte_eth_rx_burst(self.port_id, self.core_id, packets.as_mut_ptr(), RECEIVE_BATCH_SIZE as u16)
+            rte_eth_rx_burst(self.port_id, self.queue_id, packets.as_mut_ptr(), RECEIVE_BATCH_SIZE as u16)
         };
         assert!(nb_rx as usize <= RECEIVE_BATCH_SIZE);
 

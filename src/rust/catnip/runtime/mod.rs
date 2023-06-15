@@ -120,7 +120,7 @@ macro_rules! expect_zero {
 pub struct DPDKRuntime {
     mm: MemoryManager,
     port_id: u16,
-    core_id: u16,
+    queue_id: u16,
     pub link_addr: MacAddress,
     pub ipv4_addr: Ipv4Addr,
     pub arp_options: ArpConfig,
@@ -203,7 +203,7 @@ impl DPDKRuntime {
         Self {
             mm,
             port_id,
-            core_id,
+            queue_id: core_id-1, // We are using from core 1 (not core 0), so (queue_id == core_id - 1)
             link_addr,
             ipv4_addr,
             arp_options,
