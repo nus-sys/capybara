@@ -330,7 +330,7 @@ control Ingress(
             if(hdr.tcp.isValid()){
                 hash.apply(hdr.ipv4.src_ip, hdr.tcp.src_port, hash1);
                 hash.apply(hdr.ipv4.dst_ip, hdr.tcp.dst_port, hash2);
-                if(hdr.tcp.flags == 0b00000010){ // SYN
+                if(hdr.tcp.flags == 0b00000010 && hdr.ipv4.dst_ip == FE_IP){ // SYN to FE
                     meta.client_ip = hdr.ipv4.src_ip;
                     meta.client_port = hdr.tcp.src_port;
 
