@@ -7,6 +7,7 @@
 /******  G L O B A L   I N G R E S S   M E T A D A T A  *********/
 
 struct my_ingress_headers_t {
+    bridged_meta_h bridged_meta; // <== To Add
     ethernet_h                  ethernet;
     ipv4_h                      ipv4;
     tcp_h                       tcp;
@@ -16,6 +17,9 @@ struct my_ingress_headers_t {
 }
 
 struct my_ingress_metadata_t { // client ip and port in meta
+    port_mirror_meta_t port_mirror_meta; // <== To Add
+
+
     index_t backend_idx;
     bit<48> owner_mac;
     value32b_t owner_ip;
@@ -190,6 +194,10 @@ control Ingress(
 {
 
     #include "../forwarding.p4"
+
+    PortMirroringIngress() port_mirroring_ingress; // <== To Add
+
+
     calc_hash(CRCPolynomial<bit<32>>(
             coeff=32w0x04C11DB7, reversed=true, msb=false, extended=false,
             init=32w0xFFFFFFFF, xor=32w0xFFFFFFFF)) hash;
@@ -300,26 +308,29 @@ control Ingress(
     }
 
     apply {
-        if(hdr.heartbeat.isValid() || hdr.tcpmig.flag == 0b00100000){
+        port_mirroring_ingress.apply(hdr.bridged_meta, meta.port_mirror_meta, ig_intr_md.ingress_port,
+                                    ig_intr_md.ingress_mac_tstamp, ig_dprsr_md.mirror_type); // <== To Add
+        // if(hdr.heartbeat.isValid() || hdr.tcpmig.flag == 0b00100000){
 
-            hdr.udp.checksum = 0;
-            bit<1> holder_1b_00;
+        //     hdr.udp.checksum = 0;
+        //     bit<1> holder_1b_00;
             
-            if(hdr.heartbeat.isValid()){
-                ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
-                drop();
-            }else{
-                meta.start_migration = 1;
-            }
+        //     if(hdr.heartbeat.isValid()){
+        //         ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+        //         drop();
+        //     }else{
+        //         meta.start_migration = 1;
+        //     }
 
-            min_workload.apply(0, hdr, meta, holder_1b_00);
-            meta.result00 = holder_1b_00; // if it's 1, min_workload has been updated (addresses should be updated too)
-            min_workload_mac_hi32.apply(0, hdr.ethernet.src_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
-            min_workload_mac_lo16.apply(0, hdr.ethernet.src_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
-            min_workload_ip.apply(0, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
-            min_workload_port.apply(0, hdr.udp.src_port, meta, hdr.udp.dst_port);
+        //     min_workload.apply(0, hdr, meta, holder_1b_00);
+        //     meta.result00 = holder_1b_00; // if it's 1, min_workload has been updated (addresses should be updated too)
+        //     min_workload_mac_hi32.apply(0, hdr.ethernet.src_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
+        //     min_workload_mac_lo16.apply(0, hdr.ethernet.src_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
+        //     min_workload_ip.apply(0, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
+        //     min_workload_port.apply(0, hdr.udp.src_port, meta, hdr.udp.dst_port);
 
-        }else if(hdr.ipv4.isValid()){
+        // }else 
+        if(hdr.ipv4.isValid()){
             bit<16> hash1;
             bit<16> hash2;
             bit<1> holder_1b_00;
@@ -418,6 +429,7 @@ control IngressDeparser(packet_out pkt,
     /* Intrinsic */
     in    ingress_intrinsic_metadata_for_deparser_t  ig_dprsr_md)
 {
+    PortMirroringCommonDeparser() port_mirroring_deparser; // <== To Add
     Digest <migration_digest_t>() migration_digest;
 
     Checksum()  ipv4_checksum;
@@ -425,6 +437,8 @@ control IngressDeparser(packet_out pkt,
     // Checksum()  udp_checksum;
 
     apply {
+        port_mirroring_deparser.apply(meta.port_mirror_meta, ig_dprsr_md.mirror_type); // <== To Add
+
         if (ig_dprsr_md.digest_type == TCP_MIGRATION_DIGEST) {
             migration_digest.pack({
                     hdr.ethernet.src_mac,
@@ -516,14 +530,16 @@ struct my_egress_metadata_t {
 
 parser EgressParser(packet_in        pkt,
     /* User */
-    out my_egress_headers_t          hdr,
-    out my_egress_metadata_t         meta,
+    out my_ingress_headers_t          hdr,
+    out my_ingress_metadata_t         meta,
     /* Intrinsic */
     out egress_intrinsic_metadata_t  eg_intr_md)
 {
+    PortMirroringEgressParser() port_mirror_parser; // <== To Add
     /* This is a mandatory state, required by Tofino Architecture */
     state start {
         pkt.extract(eg_intr_md);
+        port_mirror_parser.apply(pkt, meta.port_mirror_meta); // <== To Add 
         transition parse_ethernet;
     }
 
@@ -539,15 +555,18 @@ parser EgressParser(packet_in        pkt,
 
 control Egress(
     /* User */
-    inout my_egress_headers_t                          hdr,
-    inout my_egress_metadata_t                         meta,
+    inout my_ingress_headers_t                          hdr,
+    inout my_ingress_metadata_t                         meta,
     /* Intrinsic */
     in    egress_intrinsic_metadata_t                  eg_intr_md,
     in    egress_intrinsic_metadata_from_parser_t      eg_prsr_md,
     inout egress_intrinsic_metadata_for_deparser_t     eg_dprsr_md,
     inout egress_intrinsic_metadata_for_output_port_t  eg_oport_md)
 {
+    PortMirroringEgress() port_mirroring_egress; // <== To Add
     apply {
+        port_mirroring_egress.apply(hdr.ethernet.src_mac, meta.port_mirror_meta, eg_intr_md.egress_port,
+                        eg_prsr_md.global_tstamp, eg_dprsr_md.mirror_type); // <== To Add
     }
 }
 
@@ -555,12 +574,16 @@ control Egress(
 
 control EgressDeparser(packet_out pkt,
     /* User */
-    inout my_egress_headers_t                       hdr,
-    in    my_egress_metadata_t                      meta,
+    inout my_ingress_headers_t                       hdr,
+    in    my_ingress_metadata_t                      meta,
     /* Intrinsic */
     in    egress_intrinsic_metadata_for_deparser_t  eg_dprsr_md)
 {
+    PortMirroringCommonDeparser() port_mirroring_deparser; // <== To Add
+
     apply {
+        port_mirroring_deparser.apply(meta.port_mirror_meta, eg_dprsr_md.mirror_type); // <== To Add
+
         pkt.emit(hdr);
     }
 }

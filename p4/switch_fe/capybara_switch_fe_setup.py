@@ -252,7 +252,7 @@ def set_bcast(ports):
 
 
 p4 = bfrt.capybara_switch_fe.pipe
-num_backends = 4
+num_backends = 2
 
 ### Setup L2 learning
 sl2 = capybara_switch_fe(default_ttl=10000)
@@ -260,11 +260,10 @@ sl2.setup()
 set_bcast([24, 32, 36])
 
 
-# temporary test
-p4.Ingress.min_workload_mac_hi32.reg.mod(REGISTER_INDEX=0, f1=0x08c0ebb6)
-p4.Ingress.min_workload_mac_lo16.reg.mod(REGISTER_INDEX=0, f1=0xc5ad)
-p4.Ingress.min_workload_ip.reg.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.9'))
-p4.Ingress.min_workload_port.reg.mod(REGISTER_INDEX=0, f1=10001)
+# p4.Ingress.min_workload_mac_hi32.reg.mod(REGISTER_INDEX=0, f1=0x08c0ebb6)
+# p4.Ingress.min_workload_mac_lo16.reg.mod(REGISTER_INDEX=0, f1=0xc5ad)
+# p4.Ingress.min_workload_ip.reg.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.9'))
+# p4.Ingress.min_workload_port.reg.mod(REGISTER_INDEX=0, f1=10001)
 
 
 
@@ -272,8 +271,11 @@ for i in range(num_backends):
     p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
     p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xc5ad)
     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.9'))
-    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + i)
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + 0)
 
+
+port_mirror_setup_file="/home/singtel/inho/Capybara/capybara/p4/includes/setup_port_mirror.py" # <== To Modify and Add
+exec(open(port_mirror_setup_file).read()) # <== To Add
 
 
 bfrt.complete_operations()

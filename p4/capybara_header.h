@@ -1,6 +1,8 @@
 #include <core.p4>
 #include <tna.p4>
 
+#include "includes/port_mirror.p4" // <== To Add
+
 #define ETHERTYPE_TPID    0x8100
 #define ETHERTYPE_IPV4  0x0800
 #define ETHERTYPE_ARP   0x0806
@@ -23,7 +25,7 @@
 #define BE_IP 0x0a000109
 
 
-#define NUM_BACKENDS 4
+#define NUM_BACKENDS 2
 
 
 const int MAC_TABLE_SIZE        = 65536;
