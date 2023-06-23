@@ -70,6 +70,7 @@ async fn retransmit(cause: RetransmitCause, cb: &Rc<ControlBlock>) -> Result<(),
     // Prepare and send the segment.
     let (seq_no, _) = cb.get_send_unacked();
     let mut header: TcpHeader = cb.tcp_header();
+    header.psh = true;
     header.seq_num = seq_no;
     cb.emit(header, Some(segment.bytes), remote_link_addr);
 
