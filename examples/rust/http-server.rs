@@ -222,18 +222,17 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     qts.push(libos.accept(qd).expect("accept qtoken"));
                 },
                 OperationResult::Push => {
-                    connstate.get_mut(&qd).unwrap().pushing -= 1;
+                    let mut state = connstate.get_mut(&qd).unwrap();
+                    state.pushing -= 1;
+                    // queue next pop
+                    let pop_qt = libos.pop(qd).expect("pop qt");
+                    qts.push(pop_qt);
+                    state.pop_qt = pop_qt;
                 },
                 OperationResult::Pop(_, recvbuf) => {
                     let mut state = connstate.get_mut(&qd).unwrap();
                     let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
-
-                    // queue next pop
-                    let pop_qt = libos.pop(qd).expect("pop qt");
-                    qts.push(pop_qt);
-
                     state.pushing += sent;
-                    state.pop_qt = pop_qt;
                 },
                 _ => {
                     panic!("Unexpected op: RESULT: {:?}", result);
