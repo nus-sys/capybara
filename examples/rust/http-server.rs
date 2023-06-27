@@ -142,7 +142,7 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
             return 1;
         }
     }
-
+    println!("**********************CHECK************************\n");
     // Copy new data into buffer
     buffer.get_empty_buf()[..data.len()].copy_from_slice(data);
     buffer.push_data(data.len());
@@ -191,7 +191,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     let sockqd: QDesc = libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0).expect("created socket");
 
     libos.bind(sockqd, local).expect("bind socket");
-    libos.listen(sockqd, 16).expect("listen socket");
+    libos.listen(sockqd, 200).expect("listen socket");
 
     let mut qts: Vec<QToken> = Vec::new();
     let mut connstate: HashMap<QDesc, ConnectionState> = HashMap::new();
@@ -205,38 +205,63 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
         let result = libos.trywait_any2(&qts).expect("result");
 
-        if let Some((index, qd, result)) = result {
-            qts.swap_remove(index);
-            match result {
-                OperationResult::Accept(new_qd) => {
-                    // Pop from new_qd
-                    let pop_qt = libos.pop(new_qd).expect("pop qt");
-                    qts.push(pop_qt);
-                    connstate.insert(new_qd, ConnectionState {
-                        pushing: 0,
-                        pop_qt: pop_qt,
-                        buffer: Buffer::new(),
-                    });
-
-                    // Re-arm accept
-                    qts.push(libos.accept(qd).expect("accept qtoken"));
-                },
-                OperationResult::Push => {
-                    let mut state = connstate.get_mut(&qd).unwrap();
-                    state.pushing -= 1;
-                    // queue next pop
-                    let pop_qt = libos.pop(qd).expect("pop qt");
-                    qts.push(pop_qt);
-                    state.pop_qt = pop_qt;
-                },
-                OperationResult::Pop(_, recvbuf) => {
-                    let mut state = connstate.get_mut(&qd).unwrap();
-                    let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
-                    state.pushing += sent;
-                },
-                _ => {
-                    panic!("Unexpected op: RESULT: {:?}", result);
-                },
+        if let Some(completed_results) = result {
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("\n\n======= OS: I/O operations have been completed, take the results! ======="));
+            }
+            let indices_to_remove: Vec<usize> = completed_results.iter().map(|(index, _, _)| *index).collect();
+            let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect();
+            qts = new_qts;
+            for (index, qd, result) in completed_results {
+                // qts.swap_remove(index);
+    
+                match result {
+                    OperationResult::Accept(new_qd) => {
+                        // Pop from new_qd
+                        let pop_qt = libos.pop(new_qd).expect("pop qt");
+                        qts.push(pop_qt);
+                        connstate.insert(new_qd, ConnectionState {
+                            pushing: 0,
+                            pop_qt: pop_qt,
+                            buffer: Buffer::new(),
+                        });
+    
+                        // Re-arm accept
+                        qts.push(libos.accept(qd).expect("accept qtoken"));
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcp_log(format!("ACCEPT complete ==> request POP and ACCEPT"));
+                        }
+                    },
+                    OperationResult::Push => {
+                        connstate.get_mut(&qd).unwrap().pushing -= 1;
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing));
+                        }
+                    },
+                    OperationResult::Pop(_, recvbuf) => {
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcp_log(format!("POP complete ==> request PUSH and POP"));
+                        }
+                        let mut state = connstate.get_mut(&qd).unwrap();
+                        let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
+                        state.pushing += sent;
+                        // queue next pop
+                        let pop_qt = libos.pop(qd).expect("pop qt");
+                        qts.push(pop_qt);
+                        state.pop_qt = pop_qt;
+                    },
+                    _ => {
+                        panic!("Unexpected op: RESULT: {:?}", result);
+                    },
+                }
+            }
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("******* APP: Okay, handled the results! *******"));
             }
         }
 

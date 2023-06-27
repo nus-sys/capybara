@@ -563,10 +563,10 @@ impl InetStack {
         }
     }
 
-    pub fn trywait_any2(&mut self, qts: &[QToken]) -> Result<Option<(usize, QDesc, OperationResult)>, Fail> {
+    pub fn trywait_any2(&mut self, qts: &[QToken]) -> Result<Option<Vec<(usize, QDesc, OperationResult)>>, Fail> {
         // Poll first, so as to give pending operations a chance to complete.
         self.poll_bg_work();
-
+        let mut completed_handles = Vec::new(); // Create a vector to store completed handle results.
         // Search for any operation that has completed.
         for (i, &qt) in qts.iter().enumerate() {
             // Retrieve associated schedule handle.
@@ -579,14 +579,18 @@ impl InetStack {
             // Found one, so extract the result and return.
             if handle.has_completed() {
                 let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
-                return Ok(Some((i, qd, r)));
+                completed_handles.push((i, qd, r)); // Store the completed handle result.
+            }else{
+                // Return this operation to the scheduling queue by removing the associated key
+                // (which would otherwise cause the operation to be freed).
+                handle.take_key();
             }
-
-            // Return this operation to the scheduling queue by removing the associated key
-            // (which would otherwise cause the operation to be freed).
-            handle.take_key();
         }
-        Ok(None)
+        if completed_handles.is_empty() {
+            Ok(None) // No completed handles found, return None.
+        } else {
+            Ok(Some(completed_handles)) // Return the vector containing completed handle results.
+        }
     }
 
     /// Given a handle representing a task in our scheduler. Return the results of this future
