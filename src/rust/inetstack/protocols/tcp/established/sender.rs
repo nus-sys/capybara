@@ -304,7 +304,7 @@ impl Sender {
             segment.initial_tx.take();
 
             // Clone the segment data for retransmission.
-            let data: DemiBuffer = segment.bytes.clone();
+            let data: Buffer = segment.bytes.clone();
 
             // ToDo: Issue #198 Repacketization - we should send a full MSS (and set the FIN flag if applicable).
 
@@ -315,6 +315,8 @@ impl Sender {
                 if data.len() == 0 {
                     // This buffer is the end-of-send marker.  Retransmit the FIN.
                     header.fin = true;
+                }else{
+                    header.psh = true;
                 }
                 cb.emit(header, Some(data), first_hop_link_addr);
             }
