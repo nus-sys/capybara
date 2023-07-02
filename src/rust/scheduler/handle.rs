@@ -10,6 +10,8 @@ use crate::scheduler::{
     waker64::WAKER_BIT_LENGTH,
 };
 
+use std::fmt;
+
 //==============================================================================
 // Structures
 //==============================================================================
@@ -24,6 +26,8 @@ pub struct SchedulerHandle {
     chunk: WakerPageRef,
 }
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
 //==============================================================================
 // Associate Functions
 //==============================================================================
@@ -64,8 +68,22 @@ impl Drop for SchedulerHandle {
     /// Decreases the reference count of the target [SchedulerHandle].
     fn drop(&mut self) {
         if let Some(key) = self.key.take() {
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("Drop {} from scheduler", key));
+            }
             let subpage_ix: usize = key as usize & (WAKER_BIT_LENGTH - 1);
             self.chunk.mark_dropped(subpage_ix);
+        }
+    }
+}
+
+impl fmt::Debug for SchedulerHandle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(key) = self.key {
+            write!(f, "SchedulerHandle {{ key: {:?} }}", key)
+        } else {
+            write!(f, "SchedulerHandle {{ dropped }}")
         }
     }
 }

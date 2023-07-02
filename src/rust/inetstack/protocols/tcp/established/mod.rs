@@ -46,6 +46,9 @@ use ::std::{
     time::Duration,
 };
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+
 pub struct EstablishedSocket {
     pub cb: Rc<ControlBlock>,
     /// The background co-routines handles various tasks, such as retransmission and acknowledging.
@@ -58,6 +61,10 @@ impl EstablishedSocket {
     pub fn new(cb: ControlBlock, fd: QDesc, dead_socket_tx: mpsc::UnboundedSender<QDesc>) -> Self {
         let cb = Rc::new(cb);
         let future = background(cb.clone(), fd, dead_socket_tx);
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Create new EstablishedSocket, scheduling background task"));
+        }
         let handle: SchedulerHandle = match cb.scheduler.insert(FutureOperation::Background(future.boxed_local())) {
             Some(handle) => handle,
             None => panic!("failed to insert task in the scheduler"),

@@ -289,6 +289,7 @@ impl Sender {
 
         // Slow path: Delegating sending the data to background processing.
         trace!("Queueing Send for background processing");
+        eprintln!("Queueing Send for background processing");
         self.unsent_queue.borrow_mut().push_back(buf);
         self.unsent_seq_no.modify(|s| s + SeqNumber::from(buf_len));
 

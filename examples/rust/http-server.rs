@@ -211,13 +211,25 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 tcp_log(format!("\n\n======= OS: I/O operations have been completed, take the results! ======="));
             }
             let indices_to_remove: Vec<usize> = completed_results.iter().map(|(index, _, _)| *index).collect();
-            let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect();
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("\n\n1, indicies_to_remove: {:?}", indices_to_remove));
+            }
+            let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("\n\n2"));
+            }
             qts = new_qts;
             for (index, qd, result) in completed_results {
                 // qts.swap_remove(index);
     
                 match result {
                     OperationResult::Accept(new_qd) => {
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcp_log(format!("ACCEPT complete ==> request POP and ACCEPT"));
+                        }
                         // Pop from new_qd
                         let pop_qt = libos.pop(new_qd).expect("pop qt");
                         qts.push(pop_qt);
@@ -229,10 +241,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
     
                         // Re-arm accept
                         qts.push(libos.accept(qd).expect("accept qtoken"));
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcp_log(format!("ACCEPT complete ==> request POP and ACCEPT"));
-                        }
                     },
                     OperationResult::Push => {
                         connstate.get_mut(&qd).unwrap().pushing -= 1;

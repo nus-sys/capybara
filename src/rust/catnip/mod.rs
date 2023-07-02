@@ -55,6 +55,8 @@ use ::std::{
 #[cfg(feature = "profiler")]
 use crate::timer;
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::{tcp_log};
 //==============================================================================
 // Structures
 //==============================================================================
@@ -88,6 +90,10 @@ impl CatnipLibOS {
         let now: Instant = Instant::now();
         let clock: TimerRc = TimerRc(Rc::new(Timer::new(now)));
         let scheduler: Scheduler = Scheduler::default();
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Created default scheduler"));
+        }
         let rng_seed: [u8; 32] = [0; 32];
         let inetstack: InetStack = InetStack::new(
             rt.clone(),

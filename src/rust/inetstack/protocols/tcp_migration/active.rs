@@ -232,7 +232,10 @@ impl ActiveMigration {
                 match hdr.stage {
                     MigrationStage::ConnectionStateAck => {
                         // eprintln!("*** Migration completed ***");
-
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcpmig_log(format!("CONN_STATE_ACK for ({}, {})", self.origin, self.client));
+                        }
                         // TODO: Start closing the active migration.
                         return Ok(MigrationRequestStatus::MigrationCompleted);
                     },
@@ -273,6 +276,12 @@ impl ActiveMigration {
     pub fn send_connection_state(&mut self, state: TcpState) {
         assert_eq!(self.last_sent_stage, MigrationStage::PrepareMigration);
 
+        #[cfg(feature = "capybara-log")]
+        {
+            tcpmig_log(format!("[TX] CONNECTION_STATE: ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port));
+            // print the length of recv_queue here
+            tcpmig_log(format!("Length of recv_queue: {}", state.recv_queue.len()));
+        }
         let mut buf = match state.serialize() {
             Ok(buf) => buf,
             Err(e) => panic!("TCPState serialisation failed: {}", e),
@@ -309,18 +318,27 @@ impl ActiveMigration {
 
         const MTU: usize = 1500; // TEMP
         let max_fragment_size =  MTU - ip_hdr.compute_size() - tcpmig_hdr.size();
-
+        #[cfg(feature = "capybara-log")]
+        {
+            tcpmig_log(format!("4"));
+        }
         if buf.len() / max_fragment_size > u16::MAX as usize {
             todo!("Graceful rejection of migration");
         }
-
+        #[cfg(feature = "capybara-log")]
+        {
+            tcpmig_log(format!("5"));
+        }
         let segment = TcpMigSegment::new(
             Ethernet2Header::new(self.remote_link_addr, self.local_link_addr, EtherType2::Ipv4),
             ip_hdr,
             tcpmig_hdr,
             buf,
         );
-
+        #[cfg(feature = "capybara-log")]
+        {
+            tcpmig_log(format!("6"));
+        }
         for fragment in segment.fragments(max_fragment_size) {
             self.rt.transmit(Box::new(fragment));
         }

@@ -100,7 +100,7 @@ struct Inner {
     self_udp_port: u16,
 
     migrated_out_connections: HashSet<SocketAddrV4>,
-
+    additional_mig_delay: u32,
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
     #[allow(unused)]
@@ -253,9 +253,26 @@ impl TcpMigPeer {
                 // Shouldn't be removed yet. Should be after processing migration queue.
             },
             MigrationRequestStatus::MigrationCompleted => {
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcpmig_log(format!("1"));
+                }
                 let (local, client) = (hdr.origin, hdr.client);
-                inner.active_migrations.remove(&(local, client)).expect("active migration should exist");
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcpmig_log(format!("2, active_migrations: {:?}, removing {:?}", 
+                        inner.active_migrations.keys().collect::<Vec<_>>(), (local, client)));
+                }
+                inner.active_migrations.remove(&(local, client)).expect("active migration should exist"); //HERE!
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcpmig_log(format!("3"));
+                }
                 inner.stats.stop_tracking_connection(local, client);
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcpmig_log(format!("4"));
+                }
                 inner.is_currently_migrating = false;
                 #[cfg(feature = "capybara-log")]
                 {
@@ -270,15 +287,15 @@ impl TcpMigPeer {
 
     pub fn initiate_migration(&mut self) {
         // thread::sleep(Duration::from_nanos(1));
-        let delay = env::var("MIG_THRESHOLD")
-        .unwrap_or_else(|_| String::from("0")) // Default value if DELAY is not set
-        .parse::<u32>()
-        .expect("Invalid DELAY value");
-
-        for _ in 0..delay {
-            thread::yield_now();
-        }
         let mut inner = self.inner.borrow_mut();
+        
+        {
+            #[cfg(feature = "tcp-migration-profiler")]
+            tcpmig_profile!("additional_delay");
+            for _ in 0..inner.additional_mig_delay {
+                thread::yield_now();
+            }
+        }
 
         let (origin, client) = match inner.stats.get_connection_to_migrate_out() {
             Some(conn) => conn,
@@ -396,7 +413,7 @@ impl TcpMigPeer {
         };
         inner.active_migrations.remove(&(origin, client)).expect("active migration should exist");
         inner.migrated_out_connections.remove(&client);
-        eprintln!("migrated_out_connections: {:?}", inner.migrated_out_connections);
+        // eprintln!("migrated_out_connections: {:?}", inner.migrated_out_connections);
     }
 
     pub fn update_incoming_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {
@@ -515,6 +532,10 @@ impl Inner {
             recv_queue_length_threshold,
             self_udp_port: SELF_UDP_PORT, // TEMP
             migrated_out_connections: HashSet::new(),
+            additional_mig_delay: env::var("MIG_DELAY")
+            .unwrap_or_else(|_| String::from("0")) // Default value if DELAY is not set
+            .parse::<u32>()
+            .expect("Invalid DELAY value"),
             //background: handle,
         }
     }

@@ -487,7 +487,7 @@ impl TcpPeer {
         };
         #[cfg(feature = "capybara-log")]
         {
-            tcp_log(format!("poll_recv on {:?}", key));
+            tcp_log(format!("\n\npolling POP on {:?}", key));
         }
         match inner.established.get(&key) {
             Some(ref s) => s.poll_recv(ctx),
@@ -514,8 +514,14 @@ impl TcpPeer {
         let mut inner = self.inner.borrow_mut();
         let key = match inner.sockets.get(&fd) {
             Some(Socket::Established { local, remote }) => (*local, *remote),
-            Some(..) => return Err(Fail::new(ENOTCONN, "connection not established")),
-            None => return Err(Fail::new(EBADF, "bad queue descriptor")),
+            Some(..) => {
+                eprintln!("connection not established");
+                return Err(Fail::new(ENOTCONN, "connection not established"))
+            },
+            None => {
+                eprintln!("bad queue descriptor");
+                return Err(Fail::new(EBADF, "bad queue descriptor"))
+            },
         };
         let send_result = match inner.established.get(&key) {
             Some(ref s) => s.send(buf),
@@ -611,6 +617,10 @@ impl Inner {
         let ephemeral_ports: EphemeralPorts = EphemeralPorts::new(&mut rng);
         let nonce: u32 = rng.gen();
 
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Creating new TcpPeer::Inner"));
+        }
         Self {
             isn_generator: IsnGenerator::new(nonce),
             ephemeral_ports,
@@ -794,7 +804,7 @@ impl TcpPeer {
             // eprintln!("*** Can migrate out ***");
             #[cfg(feature = "capybara-log")]
             {
-                tcpmig_log(format!("Migrate Out ({}, {})", local, remote));
+                tcpmig_log(format!("\n\nMigrate Out ({}, {})", local, remote));
             }
             let state = inner.migrate_out_tcp_connection(qd)?;
             inner.tcpmig.migrate_out(handle, state);
@@ -1007,6 +1017,10 @@ impl Inner {
             buf[tcp_hdr_size..].copy_from_slice(&data);
 
             let buf = Buffer::Heap(crate::runtime::memory::DataBuffer::from_slice(&buf)); */
+            #[cfg(feature = "capybara-log")]
+            {
+                tcpmig_log(format!("take_buffer_queue"));
+            }
             self.receive(&ip_hdr, buf)?;
         }
         self.tcpmig.complete_migrating_in(local, remote);

@@ -41,6 +41,12 @@ use ::std::{
         Waker,
     },
 };
+use std::ptr;
+
+
+
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
 
 //==============================================================================
 // Structures
@@ -82,6 +88,10 @@ impl<F: Future<Output = ()> + Unpin> Inner<F> {
             self.pages.push(WakerPageRef::default());
         }
         let (page, subpage_ix): (&WakerPageRef, usize) = self.get_page(key as u64);
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("page_id: {}, {} ", key >> WAKER_BIT_LENGTH_SHIFT, subpage_ix));
+        }
         page.initialize(subpage_ix);
         Some(key as u64)
     }
@@ -94,6 +104,10 @@ impl Scheduler {
         let mut inner: RefMut<Inner<Box<dyn SchedulerFuture>>> = self.inner.borrow_mut();
         let key: u64 = handle.take_key().unwrap();
         let (page, subpage_ix): (&WakerPageRef, usize) = inner.get_page(key);
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Take {} from Scheduler", key));
+        }
         assert!(!page.was_dropped(subpage_ix));
         page.clear(subpage_ix);
         inner.slab.remove_unpin(key as usize).unwrap()
@@ -112,6 +126,12 @@ impl Scheduler {
     pub fn insert<F: SchedulerFuture>(&self, future: F) -> Option<SchedulerHandle> {
         let mut inner: RefMut<Inner<Box<dyn SchedulerFuture>>> = self.inner.borrow_mut();
         let key: u64 = inner.insert(Box::new(future))?;
+
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Insert {} to Scheduler", key));
+        }
+
         let (page, _): (&WakerPageRef, usize) = inner.get_page(key);
         Some(SchedulerHandle::new(key, page.clone()))
     }
@@ -131,6 +151,10 @@ impl Scheduler {
             // There is some notified task in this page, so iterate through it.
             if notified != 0 {
                 for subpage_ix in BitIter::from(notified) {
+                    // #[cfg(feature = "capybara-log")]
+                    // {
+                    //     tcp_log(format!("Polling page_id: {}, {}", page_ix, subpage_ix));
+                    // }
                     // Handle notified tasks only.
                     // Get future using our page indices and poll it!
                     let ix: usize = (page_ix << WAKER_BIT_LENGTH_SHIFT) + subpage_ix;
@@ -142,11 +166,36 @@ impl Scheduler {
 
                     let pinned_ref: Pin<&mut Box<dyn SchedulerFuture>> = inner.slab.get_pin_mut(ix).unwrap();
                     let pinned_ptr = unsafe { Pin::into_inner_unchecked(pinned_ref) as *mut _ };
+                    
+                    // if inner.pages[page_ix].has_completed(subpage_ix) {
+                    //     panic!("Polling something completed");
+                    // }
 
                     // Poll future.
                     drop(inner);
                     let pinned_ref = unsafe { Pin::new_unchecked(&mut *pinned_ptr) };
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("Before Polling page_id: {}, {}, // pinned_ref: {:?}", 
+                                            page_ix, subpage_ix, ptr::addr_of!(*pinned_ref)));
+
+                        // let pinned_ptr = unsafe { Pin::into_inner_unchecked(pinned_ref) as *mut _ };
+                        let value_ptr: *const Box<dyn SchedulerFuture<Output = ()>> = pinned_ptr as *const _;
+                        let value_bytes: &[u8] = unsafe {
+                            std::slice::from_raw_parts(value_ptr as *const u8, std::mem::size_of::<Box<dyn SchedulerFuture<Output = ()>>>())
+                        };
+                        
+                        let hex_string: String = value_bytes
+                            .iter()
+                            .map(|byte| format!("{:02X}", byte))
+                            .collect();
+                        tcp_log(format!("Value: {}", hex_string));
+                    }
                     let poll_result: Poll<()> = Future::poll(pinned_ref, &mut sub_ctx);
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("After Polling page_id: {}, {}", page_ix, subpage_ix));
+                    }
                     inner = self.inner.borrow_mut();
 
                     match poll_result {

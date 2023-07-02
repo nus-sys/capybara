@@ -142,13 +142,13 @@ impl Receiver {
 
     pub fn push(&self, buf: Buffer) {
         let buf_len: u32 = buf.len() as u32;
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("PUSH to recv_queue"));
-        }
         self.recv_queue.borrow_mut().push_back(buf);
         self.receive_next
             .set(self.receive_next.get() + SeqNumber::from(buf_len as u32));
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Insert payload into recv_queue ==> len(recv_queue): {}", self.recv_queue_len()));
+        }
     }
 
     pub fn recv_queue_len(&self) -> usize {
@@ -246,6 +246,10 @@ impl ControlBlock {
         cc_constructor: CongestionControlConstructor,
         congestion_control_options: Option<congestion_control::Options>,
     ) -> Self {
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Creating ControlBlock"));
+        }
         let sender = Sender::new(sender_seq_no, sender_window_size, sender_window_scale, sender_mss);
         Self {
             local,
@@ -397,6 +401,10 @@ impl ControlBlock {
     // This is the main TCP receive routine.
     //
     pub fn receive(&self, mut header: &mut TcpHeader, mut data: Buffer) {
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("CTRLBLK RECEIVE seq_num: {}", header.seq_num));
+        }
         debug!(
             "{:?} Connection Receiving {} bytes + {:?}",
             self.state.get(),
@@ -450,7 +458,10 @@ impl ControlBlock {
         let receive_next: SeqNumber = self.receiver.receive_next.get();
 
         let after_receive_window: SeqNumber = receive_next + SeqNumber::from(self.get_receive_window_size());
-
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("RX WINDOW SIZE: {}", self.get_receive_window_size()));
+        }
         // Check if this segment fits in our receive window.
         // In the optimal case it starts at RCV.NXT, so we check for that first.
         //
@@ -581,7 +592,17 @@ impl ControlBlock {
                 },
 
                 // Should never happen.
-                state => panic!("Bad TCP state {:?}", state),
+                // IH: receiving multiple RSTs from a connection can happen.
+                // For example, Caladan client generates RST if it receives
+                // some pkts with ACK flag from a closed connection, which is reasonable.
+                // Since the client is open-loop, it's possible that the client sends all
+                // requests as scheduled, then close the connection, while the server 
+                // was lagging behind on the stream due to some overwhelming workload from 
+                // other connections. Then, client will generate the first RST when it closes
+                // the connection, and then it will receive some late responses from the server,
+                // which results in more RST pkts from the client. 
+                // So, it should not panic here.  
+                state => { print!("Bad TCP state {:?}", state) },
             }
 
             // Note: We should never get here.
@@ -724,7 +745,7 @@ impl ControlBlock {
             debug!("Received out-of-order segment");
             #[cfg(feature = "capybara-log")]
             {
-                tcp_log(format!("Out-of-order"));
+                tcp_log(format!("Out-of-order // seg_start: {}, receive_next: {}", seg_start, receive_next));
             }
             // This segment is out-of-order.  If it carries data, and/or a FIN, we should store it for later processing
             // after the "hole" in the sequence number space has been filled.
@@ -757,10 +778,6 @@ impl ControlBlock {
             match self.state.get() {
                 State::Established | State::FinWait1 | State::FinWait2 => {
                     // We can only legitimately receive data in ESTABLISHED, FIN-WAIT-1, and FIN-WAIT-2.
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("Received PAYLOAD"));
-                    }
                     header.fin |= self.receive_data(seg_start, data);
                     should_schedule_ack = true;
                 },
@@ -771,7 +788,11 @@ impl ControlBlock {
         // Check the FIN bit.
         if header.fin {
             trace!("Received FIN");
-            eprintln!("[RX] FIN");
+            // eprintln!("[RX] FIN");
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("FIN"));
+            }
             // ToDo: Signal the user "connection closing" and return any pending Receive requests.
 
             // Advance RCV.NXT over the FIN.
@@ -803,7 +824,10 @@ impl ControlBlock {
 
             // Since we consumed the FIN we ACK immediately rather than opportunistically.
             // ToDo: Consider doing this opportunistically.  Note our current tests expect the immediate behavior.
-            println!("Received FIN => send ACK");
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("Sending ACK for the FIN"));
+            }
             self.send_ack();
             return;
         }
@@ -918,7 +942,7 @@ impl ControlBlock {
             } else {
                 0
             };
-            tcp_log(format!("\n\n[TX] {} => {}: // {} bytes", 
+            tcp_log(format!("[TX] {} => {}: // {} bytes", 
                                         self.local.ip(), self.remote.ip(), len));
         }
         let segment = TcpSegment {
@@ -996,7 +1020,7 @@ impl ControlBlock {
             *self.waker.borrow_mut() = Some(ctx.waker().clone());
             #[cfg(feature = "capybara-log")]
             {
-                tcp_log(format!("poll => recv_queue empty"));
+                tcp_log(format!("Pending (nothing in recv_queue)"));
             }
             return Poll::Pending;
         }
@@ -1008,7 +1032,8 @@ impl ControlBlock {
         
         #[cfg(feature = "capybara-log")]
         {
-            tcp_log(format!("poll => Ready"));
+            let queue_length = self.receiver.recv_queue.borrow().len();
+            tcp_log(format!("Ready, take the segment ==> len(recv_queue): {}", queue_length));
         }
         Poll::Ready(Ok(segment))
     }
@@ -1169,6 +1194,10 @@ impl ControlBlock {
         // Note: unlike updating receive_next (see above comment) we only do this once (i.e. outside the while loop).
         // ToDo: Verify that this is the right place and time to do this.
         if let Some(w) = self.waker.borrow_mut().take() {
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("Wake recv!"));
+            }
             w.wake()
         }
 
@@ -1250,7 +1279,7 @@ impl ControlBlock {
             user_is_done_sending: Cell::new(false),
             cc: cc_constructor(mss, seq_no, congestion_control_options),
             retransmit_deadline: WatchedValue::new(None),
-            rto: RefCell::new(RtoCalculator::new()), // Check
+            rto_calculator: RefCell::new(RtoCalculator::new()), // Check
         }
     }
 

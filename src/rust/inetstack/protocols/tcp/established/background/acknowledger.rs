@@ -13,10 +13,14 @@ use ::futures::{
 use ::std::rc::Rc;
 
 #[cfg(feature = "capybara-log")]
-use crate::{tcpmig_profiler::tcp_log};
+use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
 
 pub async fn acknowledger(cb: Rc<ControlBlock>) -> Result<!, Fail> {
     loop {
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("acknowledger polled"));
+        }
         // TODO: Implement TCP delayed ACKs, subject to restrictions from RFC 1122
         // - TCP should implement a delayed ACK
         // - The delay must be less than 500ms
@@ -24,16 +28,48 @@ pub async fn acknowledger(cb: Rc<ControlBlock>) -> Result<!, Fail> {
 
         // TODO: Implement SACKs
         let (ack_deadline, ack_deadline_changed) = cb.get_ack_deadline();
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("1"));
+        }
         futures::pin_mut!(ack_deadline_changed);
-
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("2"));
+        }
         let ack_future = match ack_deadline {
-            Some(t) => Either::Left(cb.clock.wait_until(cb.clock.clone(), t).fuse()),
-            None => Either::Right(future::pending()),
+            Some(t) => {
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcp_log(format!("3"));
+                }
+                Either::Left(cb.clock.wait_until(cb.clock.clone(), t).fuse())
+            },
+            None => {
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcp_log(format!("4"));
+                }
+                Either::Right(future::pending())
+            },
         };
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("5"));
+        }
         futures::pin_mut!(ack_future);
-
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("6"));
+        }
         futures::select_biased! {
-            _ = ack_deadline_changed => continue,
+            _ = ack_deadline_changed => {
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcp_log(format!("7"));
+                }
+                continue
+            },
             _ = ack_future => {
                 #[cfg(feature = "capybara-log")]
                 {
@@ -41,6 +77,10 @@ pub async fn acknowledger(cb: Rc<ControlBlock>) -> Result<!, Fail> {
                 }
                 cb.send_ack();
             },
+        }
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("8"));
         }
     }
 }

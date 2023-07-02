@@ -232,7 +232,10 @@ impl PassiveSocket {
                 "Window scale: local {}, remote {}",
                 local_window_scale, remote_window_scale
             );
-
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("Removing PassiveSocket"));
+            }
             self.inflight.remove(&remote);
             let cb = ControlBlock::new(
                 self.local,
@@ -289,6 +292,10 @@ impl PassiveSocket {
             self.arp.clone(),
             self.ready.clone(),
         );
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Scheduling PassiveSocket background"));
+        }
         let handle: SchedulerHandle = match self.scheduler.insert(FutureOperation::Background(future.boxed_local())) {
             Some(handle) => handle,
             None => panic!("failed to insert task in the scheduler"),
