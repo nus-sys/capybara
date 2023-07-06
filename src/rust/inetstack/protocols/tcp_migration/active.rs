@@ -297,7 +297,8 @@ impl ActiveMigration {
         {
             tcpmig_log(format!("[TX] CONNECTION_STATE: ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port));
         }
-        self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::from_raw_parts(buf.as_mut_ptr(), buf.len()).expect("empty TcpState buffer")));
+        let data_buffer = DataBuffer::from_slice(&buf); 
+        self.send(tcpmig_hdr, Buffer::Heap(data_buffer));
     }
 
     pub fn buffer_packet(&mut self, ip_hdr: Ipv4Header, tcp_hdr: TcpHeader, buf: Buffer) {
