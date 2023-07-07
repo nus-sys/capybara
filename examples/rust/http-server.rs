@@ -191,7 +191,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     let sockqd: QDesc = libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0).expect("created socket");
 
     libos.bind(sockqd, local).expect("bind socket");
-    libos.listen(sockqd, 200).expect("listen socket");
+    libos.listen(sockqd, 300).expect("listen socket");
 
     let mut qts: Vec<QToken> = Vec::new();
     let mut connstate: HashMap<QDesc, ConnectionState> = HashMap::new();

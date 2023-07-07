@@ -286,16 +286,23 @@ impl ActiveMigration {
             Ok(buf) => buf,
             Err(e) => panic!("TCPState serialisation failed: {}", e),
         };
-
+        #[cfg(feature = "capybara-log")]
+        {
+            tcpmig_log(format!("1"));
+        }
         let tcpmig_hdr = TcpMigHeader::new(self.origin, self.client, 
                                                         0, 
                                                         MigrationStage::ConnectionState, 
                                                         self.self_udp_port, 
                                                         self.dest_udp_port); // PORT should be the sender of PREPARE_MIGRATION_ACK
+        #[cfg(feature = "capybara-log")]
+        {
+            tcpmig_log(format!("2"));
+        }
         self.last_sent_stage = MigrationStage::ConnectionState;
         #[cfg(feature = "capybara-log")]
         {
-            tcpmig_log(format!("[TX] CONNECTION_STATE: ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port));
+            tcpmig_log(format!("3"));
         }
         let data_buffer = DataBuffer::from_slice(&buf); 
         self.send(tcpmig_hdr, Buffer::Heap(data_buffer));
