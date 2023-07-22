@@ -190,6 +190,9 @@ pub struct TcpState {
 
     pub receiver_window_size: u32,
     pub receiver_window_scale: u32,
+
+    out_of_order_queue: VecDeque<(SeqNumber, Buffer)>,
+    out_of_order_fin: Option<SeqNumber>,
 }
 
 //==============================================================================
@@ -860,6 +863,9 @@ impl Inner {
 
                             cb.get_receiver_max_window_size(),
                             cb.get_receiver_window_scale(),
+
+                            cb.take_out_of_order_queue(),
+                            cb.out_of_order_fin.get(),
                         ))
                     },
                     None => {
@@ -956,6 +962,8 @@ impl Inner {
             self.tcp_config.get_ack_delay_timeout(),
             state.receiver_window_size,
             state.receiver_window_scale,
+            state.out_of_order_queue,
+            state.out_of_order_fin,
             sender,
             receiver,
             congestion_control::None::new,
@@ -1055,6 +1063,9 @@ impl TcpState {
 
         receiver_window_size: u32,
         receiver_window_scale: u32,
+
+        out_of_order_queue: VecDeque<(SeqNumber, Buffer)>,
+        out_of_order_fin: Option<SeqNumber>,
     ) -> Self {
         Self {
             local,
@@ -1077,6 +1088,9 @@ impl TcpState {
 
             receiver_window_size,
             receiver_window_scale,
+
+            out_of_order_queue,
+            out_of_order_fin,
         }
     }
 

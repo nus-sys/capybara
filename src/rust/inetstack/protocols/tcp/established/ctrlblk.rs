@@ -1250,6 +1250,8 @@ impl ControlBlock {
         ack_delay_timeout: Duration,
         receiver_window_size: u32,
         receiver_window_scale: u32,
+        out_of_order_queue: VecDeque<(SeqNumber, Buffer)>,
+        out_of_order_fin: Option<SeqNumber>,
         sender: Sender,
         receiver: Receiver,
         cc_constructor: CongestionControlConstructor,
@@ -1273,8 +1275,8 @@ impl ControlBlock {
             receive_buffer_size: receiver_window_size,
             window_scale: receiver_window_scale,
             waker: RefCell::new(None),
-            out_of_order: RefCell::new(VecDeque::new()),
-            out_of_order_fin: Cell::new(Option::None),
+            out_of_order: RefCell::new(out_of_order_queue),
+            out_of_order_fin: Cell::new(out_of_order_fin),
             receiver,
             user_is_done_sending: Cell::new(false),
             cc: cc_constructor(mss, seq_no, congestion_control_options),
@@ -1309,5 +1311,11 @@ impl ControlBlock {
 
     pub fn take_unacked_queue(&self) -> VecDeque<UnackedSegment> {
         self.sender.take_unacked_queue()
+    }
+
+    pub fn take_out_of_order_queue(&self) -> VecDeque<(SeqNumber, Buffer)> {
+        let mut temp = VecDeque::<(SeqNumber, Buffer)>::with_capacity(0);
+        std::mem::swap(&mut temp, &mut *self.out_of_order.borrow_mut());
+        temp
     }
 }
