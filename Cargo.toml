@@ -27,6 +27,7 @@ arrayvec = "0.7.4"
 async-trait = "0.1.72"
 anyhow = "1.0.72"
 bit-iter = "1.1.1"
+byteorder = "1.4.3"
 cfg-if = "1.0.0"
 crc = "3.0.1"
 clap = "4.3.17"
@@ -36,7 +37,9 @@ flexi_logger = "0.25.5"
 futures = "0.3.28"
 libc = "0.2.147"
 log = "0.4.19"
+postcard = { version = "1.0.4", features = ["alloc"] }
 rand = { version = "0.8.5", features = ["small_rng"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 slab = "0.4.8"
 yaml-rust = "0.4.5"
 x86 = "0.52.0"
@@ -148,6 +151,9 @@ libdpdk = [ "dpdk-rs" ]
 mlx4 = [ "dpdk-rs/mlx4" ]
 mlx5 = [ "dpdk-rs/mlx5" ]
 profiler = [  ]
+tcp-migration = [  ]
+tcp-migration-profiler = [ "tcp-migration" ]
+capybara-log = [  ]
 
 #=======================================================================================================================
 # Profile

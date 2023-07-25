@@ -38,9 +38,11 @@ use ::std::{
 // TODO: We currently allocate these on the fly when we add a buffer to the queue.  Would be more efficient to have a
 // buffer structure that held everything we need directly, thus avoiding this extra wrapper.
 //
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct UnackedSegment {
     pub bytes: DemiBuffer,
     // Set to `None` on retransmission to implement Karn's algorithm.
+    #[serde(skip)]
     pub initial_tx: Option<Instant>,
 }
 
@@ -416,5 +418,69 @@ impl<const N: usize> Sender<N> {
 
     pub fn remote_mss(&self) -> usize {
         self.mss
+    }
+}
+
+//==============================================================================
+// TCP Migration
+//==============================================================================
+
+#[cfg(feature = "tcp-migration")]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct SenderState {
+    unsent_seq_no: SeqNumber,
+    send_unacked: SeqNumber,
+    send_next: SeqNumber,
+    send_window: u32,
+    send_window_last_update_seq: SeqNumber,
+    send_window_last_update_ack: SeqNumber,
+    window_scale: u8,
+    mss: usize,
+    unacked_queue: VecDeque<UnackedSegment>,
+    unsent_queue: VecDeque<DemiBuffer>,
+}
+
+#[cfg(feature = "tcp-migration")]
+impl<const N: usize> Sender<N> {
+    pub(super) fn to_state(&self) -> SenderState {
+        SenderState {
+            unsent_seq_no: self.unsent_seq_no.get(),
+            send_unacked: self.send_unacked.get(),
+            send_next: self.send_next.get(),
+            send_window: self.send_window.get(),
+            send_window_last_update_seq: self.send_window_last_update_seq.get(),
+            send_window_last_update_ack: self.send_window_last_update_ack.get(),
+            window_scale: self.window_scale,
+            mss: self.mss,
+            unacked_queue: self.take_unacked_queue(),
+            unsent_queue: self.take_unsent_queue(),
+        }
+    }
+
+    pub (super) fn from_state(state: SenderState) -> Self {
+        Sender {
+            unsent_seq_no: WatchedValue::new(state.unsent_seq_no),
+            send_unacked: WatchedValue::new(state.send_unacked),
+            send_next: WatchedValue::new(state.send_next),
+            send_window: WatchedValue::new(state.send_window),
+            send_window_last_update_seq: Cell::new(state.send_window_last_update_seq),
+            send_window_last_update_ack: Cell::new(state.send_window_last_update_ack),
+            window_scale: state.window_scale,
+            mss: state.mss,
+            unacked_queue: RefCell::new(state.unacked_queue),
+            unsent_queue: RefCell::new(state.unsent_queue),
+        }
+    }
+
+    fn take_unsent_queue(&self) -> VecDeque<DemiBuffer> {
+        let mut temp = VecDeque::<DemiBuffer>::with_capacity(0);
+        std::mem::swap(&mut temp, &mut *self.unsent_queue.borrow_mut());
+        temp
+    }
+
+    fn take_unacked_queue(&self) -> VecDeque<UnackedSegment> {
+        let mut temp = VecDeque::<UnackedSegment>::with_capacity(0);
+        std::mem::swap(&mut temp, &mut *self.unacked_queue.borrow_mut());
+        temp
     }
 }

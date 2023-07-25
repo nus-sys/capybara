@@ -993,6 +993,33 @@ impl TryFrom<&[u8]> for DemiBuffer {
     }
 }
 
+//==============================================================================
+// Crate Serde Trait Implementations
+//==============================================================================
+
+impl serde::Serialize for DemiBuffer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> 
+    where S: 
+        serde::Serializer,
+    {
+        // TODO: See if it can be done without making a new vector.
+        self.to_vec().serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DemiBuffer {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D:
+        serde::Deserializer<'de>,
+    {
+        match Self::from_slice(&Vec::<u8>::deserialize(deserializer)?) {
+            Ok(buf) => Ok(buf),
+            Err(_) => panic!("serialised buffer corrupted"),
+        }
+    }
+}
+
+
 // Unit tests for `DemiBuffer` type.
 // Note that due to DPDK being a configurable option, all of these unit tests are only for heap-allocated `DemiBuffer`s.
 #[cfg(test)]

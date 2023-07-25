@@ -12,6 +12,7 @@ use super::{
     passive_open::PassiveSocket,
     queue::TcpQueue,
 };
+
 use crate::{
     inetstack::protocols::{
         arp::ArpPeer,
@@ -84,6 +85,11 @@ use ::std::{
 #[cfg(feature = "profiler")]
 use crate::timer;
 
+#[cfg(feature = "tcp-migration")]
+use crate::inetstack::protocols::tcpmig::TcpMigPeer;
+#[cfg(feature = "tcp-migration")]
+use super::established::ControlBlockState;
+
 //==============================================================================
 // Enumerations
 //==============================================================================
@@ -94,6 +100,9 @@ pub enum Socket<const N: usize> {
     Connecting(ActiveOpenSocket<N>),
     Established(EstablishedSocket<N>),
     Closing(EstablishedSocket<N>),
+    
+    #[cfg(feature = "tcp-migration")]
+    MigratedOut,
 }
 
 #[derive(PartialEq, Eq, Hash)]
@@ -122,10 +131,22 @@ pub struct Inner<const N: usize> {
     arp: ArpPeer<N>,
     rng: Rc<RefCell<SmallRng>>,
     dead_socket_tx: mpsc::UnboundedSender<QDesc>,
+
+    #[cfg(feature = "tcp-migration")]
+    tcpmig: TcpMigPeer<N>,
 }
 
 pub struct TcpPeer<const N: usize> {
     pub(super) inner: Rc<RefCell<Inner<N>>>,
+}
+
+#[cfg(feature = "tcp-migration")]
+/// State needed for TCP Migration.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct TcpState {
+    pub local: SocketAddrV4,
+    pub remote: SocketAddrV4,
+    cb_state: ControlBlockState,
 }
 
 //==============================================================================
@@ -143,6 +164,9 @@ impl<const N: usize> TcpPeer<N> {
         tcp_config: TcpConfig,
         arp: ArpPeer<N>,
         rng_seed: [u8; 32],
+
+        #[cfg(feature = "tcp-migration")]
+        tcpmig: TcpMigPeer<N>,
     ) -> Result<Self, Fail> {
         let (tx, rx) = mpsc::unbounded();
         let inner = Rc::new(RefCell::new(Inner::new(
@@ -157,6 +181,9 @@ impl<const N: usize> TcpPeer<N> {
             rng_seed,
             tx,
             rx,
+
+            #[cfg(feature = "tcp-migration")]
+            tcpmig,
         )));
         Ok(Self { inner })
     }
@@ -198,6 +225,11 @@ impl<const N: usize> TcpPeer<N> {
             addr.set_port(new_port);
         }
 
+        #[cfg(feature = "tcp-migration")]
+        {
+            inner.tcpmig.set_port(addr.port());
+        }
+
         // Issue operation.
         let ret: Result<(), Fail> = match inner.qtable.borrow_mut().get_mut(&qd) {
             Some(InetQueue::Tcp(queue)) => match queue.get_socket() {
@@ -210,6 +242,8 @@ impl<const N: usize> TcpPeer<N> {
                 Socket::Connecting(_) => return Err(Fail::new(libc::EINVAL, "socket is connecting")),
                 Socket::Established(_) => return Err(Fail::new(libc::EINVAL, "socket is connected")),
                 Socket::Closing(_) => return Err(Fail::new(libc::EINVAL, "socket is closed")),
+                #[cfg(feature = "tcp-migration")]
+                Socket::MigratedOut => return Err(Fail::new(libc::EINVAL, "socket is migrated out")),
             },
             _ => Err(Fail::new(libc::EBADF, "invalid queue descriptor")),
         };
@@ -232,8 +266,8 @@ impl<const N: usize> TcpPeer<N> {
         }
     }
 
-    pub fn receive(&self, ip_header: &Ipv4Header, buf: DemiBuffer) -> Result<(), Fail> {
-        self.inner.borrow().receive(ip_header, buf)
+    pub fn receive(&mut self, ip_header: &Ipv4Header, buf: DemiBuffer) -> Result<(), Fail> {
+        self.inner.borrow_mut().receive(ip_header, buf)
     }
 
     // Marks the target socket as passive.
@@ -280,6 +314,8 @@ impl<const N: usize> TcpPeer<N> {
                 Socket::Connecting(_) => return Err(Fail::new(libc::EINVAL, "socket is connecting")),
                 Socket::Established(_) => return Err(Fail::new(libc::EINVAL, "socket is connected")),
                 Socket::Closing(_) => return Err(Fail::new(libc::EINVAL, "socket is closed")),
+                #[cfg(feature = "tcp-migration")]
+                Socket::MigratedOut => return Err(Fail::new(libc::EINVAL, "socket is migrated out")),
             },
             _ => Err(Fail::new(libc::EBADF, "invalid queue descriptor")),
         }
@@ -320,9 +356,10 @@ impl<const N: usize> TcpPeer<N> {
             _ => return Poll::Ready(Err(Fail::new(libc::EBADF, "invalid queue descriptor"))),
         };
 
+        let local: SocketAddrV4 = cb.get_local();
+        let remote: SocketAddrV4 = cb.get_remote();
+
         let established: EstablishedSocket<N> = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
-        let local: SocketAddrV4 = established.cb.get_local();
-        let remote: SocketAddrV4 = established.cb.get_remote();
         match inner.qtable.borrow_mut().get_mut(&new_qd) {
             Some(InetQueue::Tcp(queue)) => queue.set_socket(Socket::Established(established)),
             _ => panic!("Should have been pre-allocated!"),
@@ -334,6 +371,20 @@ impl<const N: usize> TcpPeer<N> {
         {
             panic!("duplicate queue descriptor in established sockets table");
         }
+
+        #[cfg(feature = "tcp-migration")]
+        if inner.tcpmig.take_connection(local, remote) {
+            #[cfg(feature = "tcp-migration-profiler")]
+            tcpmig_profile!("migrated_accept");
+            
+            if let Err(e) = inner.migrate_in_tcp_connection(local, remote) {
+                warn!("Dropped migrated-in connection");
+                inner.qtable.borrow_mut().free(&new_qd);
+                inner.addresses.remove(&SocketId::Active(local, remote));
+                return Poll::Ready(Err(e));
+            };
+        };
+
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         Poll::Ready(Ok((new_qd, remote)))
     }
@@ -378,6 +429,8 @@ impl<const N: usize> TcpPeer<N> {
                 Socket::Connecting(_) => return Err(Fail::new(libc::EALREADY, "socket is connecting")),
                 Socket::Established(_) => return Err(Fail::new(libc::EISCONN, "socket is connected")),
                 Socket::Closing(_) => return Err(Fail::new(libc::EINVAL, "socket is closed")),
+                #[cfg(feature = "tcp-migration")]
+                Socket::MigratedOut => return Err(Fail::new(libc::EINVAL, "socket is migrated out")),
             },
             _ => return Err(Fail::new(libc::EBADF, "invalid queue descriptor"))?,
         };
@@ -397,6 +450,8 @@ impl<const N: usize> TcpPeer<N> {
                 Socket::Connecting(_) => Poll::Ready(Err(Fail::new(libc::EINPROGRESS, "socket connecting"))),
                 Socket::Inactive(_) => Poll::Ready(Err(Fail::new(libc::EBADF, "socket inactive"))),
                 Socket::Listening(_) => Poll::Ready(Err(Fail::new(libc::ENOTCONN, "socket listening"))),
+                #[cfg(feature = "tcp-migration")]
+                Socket::MigratedOut => Poll::Ready(Err(Fail::new(libc::EBADF, "socket migrated out"))),
             },
             _ => Poll::Ready(Err(Fail::new(libc::EBADF, "bad queue descriptor"))),
         }
@@ -473,6 +528,13 @@ impl<const N: usize> TcpPeer<N> {
                         error!("do_close(): {}", &cause);
                         return Err(Fail::new(libc::ENOTSUP, &cause));
                     },
+
+                    #[cfg(feature = "tcp-migration")]
+                    Socket::MigratedOut => {
+                        let cause: String = format!("cannot close a socket that is migrated out (qd={:?})", qd);
+                        error!("do_close(): {}", &cause);
+                        return Err(Fail::new(libc::ENOTSUP, &cause));
+                    },
                 }
             },
             _ => return Err(Fail::new(libc::EBADF, "bad queue descriptor")),
@@ -515,13 +577,20 @@ impl<const N: usize> TcpPeer<N> {
                         error!("do_close(): {}", &cause);
                         return Err(Fail::new(libc::ENOTSUP, &cause));
                     },
+
+                    #[cfg(feature = "tcp-migration")]
+                    Socket::MigratedOut => {
+                        let cause: String = format!("cannot close a socket that is migrated out (qd={:?})", qd);
+                        error!("do_close(): {}", &cause);
+                        return Err(Fail::new(libc::ENOTSUP, &cause));
+                    },
                 }
             },
             _ => return Err(Fail::new(libc::EBADF, "bad queue descriptor")),
         };
         // Schedule a co-routine to all of the cleanup
         Ok(CloseFuture {
-            qd: qd,
+            qd,
             inner: self.inner.clone(),
         })
     }
@@ -576,6 +645,9 @@ impl<const N: usize> Inner<N> {
         rng_seed: [u8; 32],
         dead_socket_tx: mpsc::UnboundedSender<QDesc>,
         _dead_socket_rx: mpsc::UnboundedReceiver<QDesc>,
+
+        #[cfg(feature = "tcp-migration")]
+        tcpmig: TcpMigPeer<N>,
     ) -> Self {
         let mut rng: SmallRng = SmallRng::from_seed(rng_seed);
         let ephemeral_ports: EphemeralPorts = EphemeralPorts::new(&mut rng);
@@ -583,21 +655,27 @@ impl<const N: usize> Inner<N> {
         Self {
             isn_generator: IsnGenerator::new(nonce),
             ephemeral_ports,
-            rt: rt,
+            rt,
             scheduler,
             qtable: qtable.clone(),
             addresses: HashMap::<SocketId, QDesc>::new(),
-            clock: clock,
-            local_link_addr: local_link_addr,
-            local_ipv4_addr: local_ipv4_addr,
-            tcp_config: tcp_config,
-            arp: arp,
+            clock,
+            local_link_addr,
+            local_ipv4_addr,
+            tcp_config,
+            arp,
             rng: Rc::new(RefCell::new(rng)),
-            dead_socket_tx: dead_socket_tx,
+            dead_socket_tx,
+
+            #[cfg(feature = "tcp-migration")]
+            tcpmig,
         }
     }
 
-    fn receive(&self, ip_hdr: &Ipv4Header, buf: DemiBuffer) -> Result<(), Fail> {
+    fn receive(&mut self, ip_hdr: &Ipv4Header, buf: DemiBuffer) -> Result<(), Fail> {
+        #[cfg(feature = "tcp-migration")]
+        let cloned_buf = buf.clone();
+
         let (mut tcp_hdr, data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
         debug!("TCP received {:?}", tcp_hdr);
         let local = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
@@ -605,6 +683,12 @@ impl<const N: usize> Inner<N> {
 
         if remote.ip().is_broadcast() || remote.ip().is_multicast() || remote.ip().is_unspecified() {
             return Err(Fail::new(libc::EINVAL, "invalid address type"));
+        }
+
+        #[cfg(feature = "tcp-migration")]
+        // Check if migrating queue exists. If yes, push buffer to queue.
+        if let Ok(()) = self.tcpmig.try_buffer_packet(local, remote, ip_hdr.clone(), tcp_hdr.clone(), cloned_buf) {
+            return Ok(());
         }
 
         // grab the queue descriptor based on the incoming.
@@ -621,6 +705,33 @@ impl<const N: usize> Inner<N> {
             Some(InetQueue::Tcp(queue)) => match queue.get_mut_socket() {
                 Socket::Established(socket) => {
                     debug!("Routing to established connection: {:?}", socket.endpoints());
+
+                    #[cfg(feature = "tcp-migration")]
+                    {
+                        // Stop tracking connection if FIN or RST received.
+                        if tcp_hdr.fin || tcp_hdr.rst {
+                            #[cfg(feature = "capybara-log")]
+                            {
+                                tcp_log(format!("RX FIN or RST => tcpmig stops tracking this conn"));
+                            }
+                            self.tcpmig.stop_tracking_connection_stats(local, remote);
+                        }
+                        else {
+                            // println!("receive");
+                            self.tcpmig.update_incoming_stats(local, remote, socket.cb.recv_queue_len());
+                            // self.tcpmig.queue_length_heartbeat();
+
+                            // Possible decision-making point.
+                            if self.tcpmig.should_migrate() {
+                                #[cfg(feature = "tcp-migration-profiler")]
+                                tcpmig_profile!("prepare");
+                                // eprintln!("*** Should Migrate ***");
+                                // self.tcpmig.print_stats();
+                                self.tcpmig.initiate_migration();
+                            }
+                        }
+                    }
+
                     socket.receive(&mut tcp_hdr, data);
                     return Ok(());
                 },
@@ -637,6 +748,11 @@ impl<const N: usize> Inner<N> {
                 Socket::Closing(socket) => {
                     debug!("Routing to closing connection: {:?}", socket.endpoints());
                     socket.receive(&mut tcp_hdr, data);
+                    return Ok(());
+                },
+                #[cfg(feature = "tcp-migration")]
+                Socket::MigratedOut => {
+                    warn!("Dropped packet, received on migrated out connection ({local}, {remote})");
                     return Ok(());
                 },
             },
@@ -716,6 +832,9 @@ impl<const N: usize> Inner<N> {
                     Socket::Connecting(_) => unimplemented!("Do not support async close for listening sockets yet"),
                     // Closing a closing socket.
                     Socket::Established(_) => unreachable!("Should have moved this socket to closing already!"),
+                    #[cfg(feature = "tcp-migration")]
+                    // Closing a migrated out socket.
+                    Socket::MigratedOut => unimplemented!("Do not support async close for migrated out sockets yet"),
                 }
             },
             _ => return Poll::Ready(Err(Fail::new(libc::EBADF, "bad queue descriptor"))),
@@ -728,5 +847,168 @@ impl<const N: usize> Inner<N> {
             self.addresses.remove(&addr);
         }
         Poll::Ready(Ok(()))
+    }
+}
+
+//==============================================================================
+// TCP Migration
+//==============================================================================
+
+#[cfg(feature = "tcp-migration")]
+impl<const N: usize> TcpPeer<N> {
+    pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
+        let mut inner = self.inner.borrow_mut();
+        let (local, remote) = match inner.qtable.borrow().get(&qd) {
+            Some(InetQueue::Tcp(socket)) => {
+                match socket.get_socket() {
+                    Socket::Established(socket) => socket.endpoints(),
+                    _ => return Err(Fail::new(libc::EBADF, "bad queue descriptor")),
+                }
+            },
+            _ => return Err(Fail::new(libc::EBADF, "bad queue descriptor")),
+        };
+        
+        if let Some(handle) = inner.tcpmig.can_migrate_out(local, remote) {
+            #[cfg(feature = "tcp-migration-profiler")]
+            tcpmig_profile!("migrate");
+
+            // eprintln!("*** Can migrate out ***");
+            #[cfg(feature = "capybara-log")]
+            {
+                tcpmig_log(format!("\n\nMigrate Out ({}, {})", local, remote));
+            }
+            let state = inner.migrate_out_tcp_connection(qd)?;
+            inner.tcpmig.migrate_out(handle, state);
+            return Ok(true)
+        }
+
+        Ok(false)
+    }
+
+    pub fn notify_passive(&mut self, state: TcpState) -> Result<(), Fail> {
+        self.inner.borrow_mut().notify_passive(state)
+    }
+}
+
+#[cfg(feature = "tcp-migration")]
+impl<const N: usize> Inner<N> {
+    fn take_tcp_state(&mut self, qd: QDesc) -> Result<TcpState, Fail> {
+        info!("Retrieving TCP State for QDesc {:?}!", qd);
+
+        match self.qtable.borrow().get(&qd) {
+            Some(InetQueue::Tcp(socket)) => {
+                match socket.get_socket() {
+                    Socket::Established(socket) => {
+                        let (local, remote) = socket.endpoints();
+                        let cb_state = socket.cb.to_state();
+                        Ok(TcpState::new(local, remote, cb_state))
+                    },
+                    _ => Err(Fail::new(libc::EBADF, "bad queue descriptor")),
+                }
+            },
+            _ => Err(Fail::new(libc::EBADF, "bad queue descriptor")),
+        }
+    }
+
+    pub fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> Result<TcpState, Fail> {
+        let state = self.take_tcp_state(qd)?;
+        
+        let mut qtable = self.qtable.borrow_mut();
+        let socket = match qtable.get_mut(&qd) {
+            Some(InetQueue::Tcp(socket)) => socket.get_mut_socket(),
+            _ => return Err(Fail::new(libc::EBADF, "bad queue descriptor")),
+        };
+        
+        let (local, remote) = match socket {
+            Socket::Established(socket) => socket.endpoints(),
+            _ => return Err(Fail::new(libc::EBADF, "bad queue descriptor")),
+        };
+
+        // Change status of our socket to MigratedOut
+        *socket = Socket::MigratedOut;
+
+        // Remove connection from `addresses`.
+        self.addresses.remove(&SocketId::Active(local, remote)).expect("Connection not in addresses.");
+
+        Ok(state)
+    }
+
+    fn notify_passive(&mut self, state: TcpState) -> Result<(), Fail> {
+        let cb = ControlBlock::from_state(
+            state.cb_state,
+            self.rt.clone(),
+            self.scheduler.clone(),
+            self.clock.clone(),
+            self.local_link_addr,
+            self.tcp_config.clone(),
+            self.arp.clone(),
+            self.tcp_config.get_ack_delay_timeout(),
+        );
+
+        let qd = match self.addresses.get(&SocketId::Passive(state.local)) {
+            Some(qd) => *qd,
+            _ => return Err(Fail::new(libc::EBADF, "not a listening socket")),
+        };
+
+        let mut qtable = self.qtable.borrow_mut();
+        match qtable.get_mut(&qd) {
+            Some(InetQueue::Tcp(socket)) => {
+                match socket.get_mut_socket() {
+                    Socket::Listening(socket) => socket.push_migrated_in(cb),
+                    _ => return Err(Fail::new(libc::EBADF, "not a listening socket")),
+                }
+            },
+            _ => return Err(Fail::new(libc::EBADF, "not a listening socket")),
+        }
+
+        Ok(())
+    }
+
+    pub fn migrate_in_tcp_connection(&mut self, local: SocketAddrV4, remote: SocketAddrV4) -> Result<(), Fail> {
+        for (ip_hdr, _, buf) in self.tcpmig.take_buffer_queue(local, remote)? {
+            /* let tcp_hdr_size = tcp_hdr.compute_size();
+            let mut buf = vec![0u8; tcp_hdr_size + data.len()];
+            tcp_hdr.serialize(&mut buf, &ip_hdr, &data, inner.tcp_config.get_rx_checksum_offload());
+
+            // Find better way than cloning data.
+            buf[tcp_hdr_size..].copy_from_slice(&data);
+
+            let buf = Buffer::Heap(crate::runtime::memory::DataBuffer::from_slice(&buf)); */
+            #[cfg(feature = "capybara-log")]
+            {
+                tcpmig_log(format!("take_buffer_queue"));
+            }
+            self.receive(&ip_hdr, buf)?;
+        }
+        self.tcpmig.complete_migrating_in(local, remote);
+        #[cfg(feature = "capybara-log")]
+        {
+            tcpmig_log(format!("\n\n!!! Accepted ({}, {}) !!!\n\n", local, remote));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "tcp-migration")]
+impl TcpState {
+    fn new(
+        local: SocketAddrV4,
+        remote: SocketAddrV4,
+        cb_state: ControlBlockState,
+    ) -> Self {
+        Self {
+            local,
+            remote,
+            cb_state,
+        }
+    }
+
+    pub fn serialize(&self) -> Result<Vec<u8>, postcard::Error> {
+        postcard::to_allocvec(self)
+    }
+
+    pub fn deserialize(serialized: &[u8]) -> Result<Self, postcard::Error> {
+        // TODO: Check if having all `UnackedSegment` timestamps as `None` affects anything.
+        postcard::from_bytes(serialized)
     }
 }

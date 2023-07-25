@@ -12,6 +12,13 @@ use super::{
         UnackedSegment,
     },
 };
+
+#[cfg(feature = "tcp-migration")]
+use super::{
+    sender::SenderState,
+    congestion_control::CongestionControl,
+};
+
 use crate::{
     inetstack::protocols::{
         arp::ArpPeer,
@@ -1130,5 +1137,124 @@ impl<const N: usize> ControlBlock<N> {
         }
 
         false
+    }
+}
+
+//==============================================================================
+// TCP Migration
+//==============================================================================
+
+#[cfg(feature = "tcp-migration")]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ReceiverState {
+    reader_next: SeqNumber,
+    receive_next: SeqNumber,
+    recv_queue: VecDeque<DemiBuffer>,
+}
+
+#[cfg(feature = "tcp-migration")]
+impl Receiver {
+    fn to_state(&self) -> ReceiverState {
+        ReceiverState {
+            reader_next: self.reader_next.get(),
+            receive_next: self.receive_next.get(),
+            recv_queue: self.take_receive_queue(),
+        }
+    }
+
+    fn from_state(state: ReceiverState) -> Self {
+        Self {
+            reader_next: Cell::new(state.reader_next),
+            receive_next: Cell::new(state.receive_next),
+            recv_queue: RefCell::new(state.recv_queue),
+        }
+    }
+
+    fn take_receive_queue(&self) -> VecDeque<DemiBuffer> {
+        let mut temp = VecDeque::<DemiBuffer>::with_capacity(0);
+        std::mem::swap(&mut temp, &mut *self.recv_queue.borrow_mut());
+        temp
+    }
+}
+
+#[cfg(feature = "tcp-migration")]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ControlBlockState {
+    local: SocketAddrV4,
+    remote: SocketAddrV4,
+    receive_buffer_size: u32,
+    window_scale: u32,
+    out_of_order_queue: VecDeque<(SeqNumber, DemiBuffer)>,
+    out_of_order_fin: Option<SeqNumber>,
+    sender_state: SenderState,
+    receiver_state: ReceiverState,
+}
+
+#[cfg(feature = "tcp-migration")]
+impl<const N: usize> ControlBlock<N> {
+    pub fn to_state(&self) -> ControlBlockState {
+        ControlBlockState {
+            local: self.local,
+            remote: self.remote,
+            receive_buffer_size: self.receive_buffer_size,
+            window_scale: self.window_scale,
+            out_of_order_queue: self.take_out_of_order_queue(),
+            out_of_order_fin: self.out_of_order_fin.get(),
+            sender_state: self.sender.to_state(),
+            receiver_state: self.receiver.to_state(),
+        }
+    }
+
+    pub fn from_state(
+        state: ControlBlockState,
+        rt: Rc<dyn NetworkRuntime<N>>,
+        scheduler: Scheduler,
+        clock: TimerRc,
+        local_link_addr: MacAddress,
+        tcp_config: TcpConfig,
+        arp: ArpPeer<N>,
+        ack_delay_timeout: Duration,
+    ) -> Self {
+        let sender = Sender::from_state(state.sender_state);
+        let receiver = Receiver::from_state(state.receiver_state);
+
+        let mss = sender.get_mss();
+        let seq_no = sender.get_send_unacked().0;
+        let cc_constructor = congestion_control::None::new;
+
+        Self {
+            local: state.local,
+            remote: state.remote,
+            rt,
+            scheduler,
+            clock,
+            local_link_addr,
+            tcp_config,
+            arp: Rc::new(arp),
+            sender,
+            state: Cell::new(State::Established),
+            ack_delay_timeout,
+            ack_deadline: WatchedValue::new(None),
+            receive_buffer_size: state.receive_buffer_size,
+            window_scale: state.window_scale,
+            waker: RefCell::new(None),
+            out_of_order: RefCell::new(state.out_of_order_queue),
+            out_of_order_fin: Cell::new(state.out_of_order_fin),
+            receiver,
+            user_is_done_sending: Cell::new(false),
+            cc: cc_constructor(mss, seq_no, None),
+            retransmit_deadline: WatchedValue::new(None),
+            rto_calculator: RefCell::new(RtoCalculator::new()), // Check
+        }
+    }
+
+    fn take_out_of_order_queue(&self) -> VecDeque<(SeqNumber, DemiBuffer)> {
+        let mut temp = VecDeque::<(SeqNumber, DemiBuffer)>::with_capacity(0);
+        std::mem::swap(&mut temp, &mut *self.out_of_order.borrow_mut());
+        temp
+    }
+
+    pub fn recv_queue_len(&self) -> usize {
+        self.receiver.recv_queue.borrow().len()
     }
 }

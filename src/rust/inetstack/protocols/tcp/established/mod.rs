@@ -12,6 +12,12 @@ pub use self::ctrlblk::{
     State,
 };
 
+#[cfg(feature = "tcp-migration")]
+pub use self::{
+    sender::UnackedSegment,
+    ctrlblk::ControlBlockState,
+};
+
 use crate::{
     inetstack::protocols::tcp::segment::TcpHeader,
     runtime::{

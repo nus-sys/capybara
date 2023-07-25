@@ -20,7 +20,10 @@ mod tests;
 //==============================================================================
 
 pub use self::{
-    datagram::UdpHeader,
+    datagram::{
+        UdpHeader,
+        UdpDatagram,
+    },
     futures::UdpPopFuture,
     peer::UdpPeer,
 };

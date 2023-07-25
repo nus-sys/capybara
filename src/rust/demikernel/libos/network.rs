@@ -347,3 +347,23 @@ impl NetworkLibOS {
         }
     }
 }
+
+#[cfg(feature = "tcp-migration")]
+impl NetworkLibOS {
+    pub fn notify_migration_safety(&mut self, _qd: QDesc) -> Result<bool, Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
+            #[cfg(all(feature = "catnapw-libos", target_os = "windows"))]
+            NetworkLibOS::CatnapW(libos) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.notify_migration_safety(_qd),
+            #[cfg(feature = "catloop-libos")]
+            NetworkLibOS::Catloop(libos) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
+        }
+    }
+}

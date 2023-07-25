@@ -386,3 +386,14 @@ impl LibOS {
         }
     }
 }
+
+#[cfg(feature = "tcp-migration")]
+impl LibOS {
+    /// Returns true if migration was done.
+    pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.notify_migration_safety(qd),
+            LibOS::MemoryLibOS(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration not supported for memory LibOSs")),
+        }
+    }
+}

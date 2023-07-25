@@ -364,3 +364,10 @@ impl<const N: usize> PassiveSocket<N> {
         }
     }
 }
+
+#[cfg(feature = "tcp-migration")]
+impl<const N: usize> PassiveSocket<N> {
+    pub fn push_migrated_in(&mut self, cb: ControlBlock<N>) {
+        self.ready.borrow_mut().push_ok(cb)
+    }
+}

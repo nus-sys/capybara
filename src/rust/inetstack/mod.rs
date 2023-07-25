@@ -710,3 +710,10 @@ impl<const N: usize> InetStack<N> {
         self.ts_iters = (self.ts_iters + 1) % TIMER_RESOLUTION;
     }
 }
+
+#[cfg(feature = "tcp-migration")]
+impl<const N: usize> InetStack<N> {
+    pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
+        self.ipv4.tcp.notify_migration_safety(qd)
+    }
+}

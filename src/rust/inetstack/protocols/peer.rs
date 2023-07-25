@@ -39,11 +39,20 @@ use ::std::{
 #[cfg(test)]
 use crate::runtime::QDesc;
 
+#[cfg(feature = "tcp-migration")]
+use crate::inetstack::protocols::tcpmig::{
+    segment::TcpMigHeader,
+    TcpMigPeer,
+};
+
 pub struct Peer<const N: usize> {
     local_ipv4_addr: Ipv4Addr,
     icmpv4: Icmpv4Peer<N>,
     pub tcp: TcpPeer<N>,
     pub udp: UdpPeer<N>,
+
+    #[cfg(feature = "tcp-migration")]
+    tcpmig: TcpMigPeer<N>,
 }
 
 impl<const N: usize> Peer<N> {
@@ -79,6 +88,14 @@ impl<const N: usize> Peer<N> {
             arp.clone(),
             rng_seed,
         )?;
+
+        #[cfg(feature = "tcp-migration")]
+        let tcpmig = TcpMigPeer::new(
+            rt.clone(),
+            local_link_addr,
+            local_ipv4_addr,
+        )?;
+
         let tcp: TcpPeer<N> = TcpPeer::new(
             rt.clone(),
             scheduler.clone(),
@@ -89,6 +106,9 @@ impl<const N: usize> Peer<N> {
             tcp_config,
             arp,
             rng_seed,
+
+            #[cfg(feature = "tcp-migration")]
+            tcpmig.clone()
         )?;
 
         Ok(Peer {
@@ -96,6 +116,9 @@ impl<const N: usize> Peer<N> {
             icmpv4,
             tcp,
             udp,
+
+            #[cfg(feature = "tcp-migration")]
+            tcpmig,
         })
     }
 
@@ -108,7 +131,15 @@ impl<const N: usize> Peer<N> {
         match header.get_protocol() {
             IpProtocol::ICMPv4 => self.icmpv4.receive(&header, payload),
             IpProtocol::TCP => self.tcp.receive(&header, payload),
-            IpProtocol::UDP => self.udp.do_receive(&header, payload),
+            IpProtocol::UDP => {
+                #[cfg(feature = "tcp-migration")]
+                if TcpMigHeader::is_tcpmig(&payload) {
+                    // TCPMIG packet.
+                    return self.tcpmig.receive(&mut self.tcp, &header, payload)
+                }
+                // Standard UDP packet.
+                self.udp.do_receive(&header, payload)
+            },
         }
     }
 
