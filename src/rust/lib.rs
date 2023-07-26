@@ -18,6 +18,9 @@ mod pal;
 #[cfg(feature = "profiler")]
 pub mod perftools;
 
+#[cfg(any(feature = "tcp-migration-profiler", feature = "capybara-log"))]
+pub mod tcpmig_profiler;
+
 pub mod scheduler;
 
 pub mod runtime;

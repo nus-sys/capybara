@@ -32,7 +32,7 @@ use crate::{
 use crate::{tcpmig_profile, tcpmig_profile_merge_previous};
 
 #[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+use crate::tcpmig_profiler::tcpmig_log;
 
 use std::collections::VecDeque;
 use ::std::{
@@ -280,7 +280,7 @@ impl<const N: usize> ActiveMigration<N> {
         {
             tcpmig_log(format!("[TX] CONNECTION_STATE: ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port));
             // print the length of recv_queue here
-            tcpmig_log(format!("Length of recv_queue: {}", state.recv_queue.len()));
+            tcpmig_log(format!("Length of recv_queue: {}", state.recv_queue_len()));
         }
         let buf = match state.serialize() {
             Ok(buf) => buf,

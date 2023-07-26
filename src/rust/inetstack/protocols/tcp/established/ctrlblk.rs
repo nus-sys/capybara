@@ -1258,3 +1258,10 @@ impl<const N: usize> ControlBlock<N> {
         self.receiver.recv_queue.borrow().len()
     }
 }
+
+#[cfg(feature = "tcp-migration")]
+impl ControlBlockState {
+    pub fn recv_queue_len(&self) -> usize {
+        self.receiver_state.recv_queue.len()
+    }
+}

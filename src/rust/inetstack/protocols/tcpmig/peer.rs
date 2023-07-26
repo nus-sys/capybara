@@ -49,7 +49,7 @@ use ::std::{
 use crate::timer;
 
 #[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+use crate::tcpmig_profiler::tcpmig_log;
 
 
 //======================================================================================================================

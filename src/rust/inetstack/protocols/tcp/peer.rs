@@ -89,6 +89,11 @@ use crate::timer;
 use crate::inetstack::protocols::tcpmig::TcpMigPeer;
 #[cfg(feature = "tcp-migration")]
 use super::established::ControlBlockState;
+#[cfg(feature = "tcp-migration-profiler")]
+use crate::{
+    tcpmig_profiler::{tcpmig_log, tcp_log},
+    tcpmig_profile
+};
 
 //==============================================================================
 // Enumerations
@@ -1010,5 +1015,10 @@ impl TcpState {
     pub fn deserialize(serialized: &[u8]) -> Result<Self, postcard::Error> {
         // TODO: Check if having all `UnackedSegment` timestamps as `None` affects anything.
         postcard::from_bytes(serialized)
+    }
+
+    // For logging
+    pub fn recv_queue_len(&self) -> usize {
+        self.cb_state.recv_queue_len()
     }
 }
