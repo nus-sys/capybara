@@ -32,6 +32,7 @@ cfg-if = "1.0.0"
 crc = "3.0.1"
 clap = "4.3.17"
 crossbeam-channel = "0.5.8"
+ctrlc = "3.2.1"
 eui48 = "1.1.0"
 flexi_logger = "0.25.5"
 futures = "0.3.28"
@@ -133,6 +134,18 @@ path = "examples/rust/tcp-push-pop.rs"
 [[example]]
 name = "tcp-ping-pong"
 path = "examples/rust/tcp-ping-pong.rs"
+
+[[example]]
+name = "tcpmig-server-multi"
+path = "examples/rust/tcpmig-server-multi.rs"
+
+[[example]]
+name = "tcpmig-server-single"
+path = "examples/rust/tcpmig-server-single.rs"
+
+[[example]]
+name = "tcpmig-client"
+path = "examples/rust/tcpmig-client.rs"
 
 #=======================================================================================================================
 # Features
