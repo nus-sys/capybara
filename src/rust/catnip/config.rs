@@ -51,15 +51,22 @@ impl Config {
         // FIXME: this function should return a Result.
 
         match self.0["dpdk"]["eal_init"] {
-            Yaml::Array(ref arr) => arr
-                .iter()
-                .map(|a| {
-                    a.as_str()
-                        .ok_or_else(|| anyhow::format_err!("Non string argument"))
-                        .and_then(|s| CString::new(s).map_err(|e| e.into()))
-                })
-                .collect::<Result<Vec<_>, Error>>()
-                .unwrap(),
+            Yaml::Array(ref arr) => {
+                let mut previous_arg = "";
+                arr.iter()
+                    .map(|a| {
+                        let value = a.as_str().ok_or_else(|| anyhow::format_err!("Non string argument")).unwrap();
+                        let arg = if previous_arg == "-l" && value == "" {
+                            std::env::var("CORE_ID").unwrap_or_else(|_| String::from("1")) // Pin to Core 1 if CORE_ID is not set
+                        } else {
+                            value.to_string()
+                        };
+                        previous_arg = value;
+                        CString::new(arg).map_err(|e| e.into())
+                    })
+                    .collect::<Result<Vec<_>, Error>>()
+                    .unwrap()
+            }
             _ => panic!("Malformed YAML config"),
         }
     }

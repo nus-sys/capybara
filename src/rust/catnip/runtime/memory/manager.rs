@@ -17,6 +17,7 @@ use crate::{
         libdpdk::{
             rte_mbuf,
             rte_mempool,
+            rte_eal_process_type,
         },
         memory::DemiBuffer,
         types::{

@@ -94,7 +94,7 @@ impl<const N: usize> NetworkRuntime<N> for DPDKRuntime {
                     // Attach the body MBuf onto the header MBuf's buffer chain.
                     assert_eq!(rte_pktmbuf_chain(header_mbuf_ptr, body_mbuf), 0);
                 }
-                let num_sent = unsafe { rte_eth_tx_burst(self.port_id, 0, &mut header_mbuf_ptr, 1) };
+                let num_sent = unsafe { rte_eth_tx_burst(self.port_id, self.queue_id, &mut header_mbuf_ptr, 1) };
                 assert_eq!(num_sent, 1);
             }
             // Otherwise, write in the inline space.
@@ -114,7 +114,7 @@ impl<const N: usize> NetworkRuntime<N> for DPDKRuntime {
                 header_mbuf.trim(header_mbuf.len() - frame_size).unwrap();
 
                 let mut header_mbuf_ptr: *mut rte_mbuf = header_mbuf.into_mbuf().expect("mbuf cannot be empty");
-                let num_sent = unsafe { rte_eth_tx_burst(self.port_id, 0, &mut header_mbuf_ptr, 1) };
+                let num_sent = unsafe { rte_eth_tx_burst(self.port_id, self.queue_id, &mut header_mbuf_ptr, 1) };
                 assert_eq!(num_sent, 1);
             }
         }
@@ -130,7 +130,7 @@ impl<const N: usize> NetworkRuntime<N> for DPDKRuntime {
             let frame_size = std::cmp::max(header_size, MIN_PAYLOAD_SIZE);
             header_mbuf.trim(header_mbuf.len() - frame_size).unwrap();
             let mut header_mbuf_ptr: *mut rte_mbuf = header_mbuf.into_mbuf().expect("mbuf cannot be empty");
-            let num_sent = unsafe { rte_eth_tx_burst(self.port_id, 0, &mut header_mbuf_ptr, 1) };
+            let num_sent = unsafe { rte_eth_tx_burst(self.port_id, self.queue_id, &mut header_mbuf_ptr, 1) };
             assert_eq!(num_sent, 1);
         }
     }
@@ -143,7 +143,7 @@ impl<const N: usize> NetworkRuntime<N> for DPDKRuntime {
             #[cfg(feature = "profiler")]
             timer!("catnip_libos::receive::rte_eth_rx_burst");
 
-            rte_eth_rx_burst(self.port_id, 0, packets.as_mut_ptr(), N as u16)
+            rte_eth_rx_burst(self.port_id, self.queue_id, packets.as_mut_ptr(), N as u16)
         };
         assert!(nb_rx as usize <= N);
 
