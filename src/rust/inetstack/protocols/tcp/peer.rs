@@ -91,7 +91,6 @@ use crate::inetstack::protocols::tcpmig::TcpMigPeer;
 use super::established::ControlBlockState;
 #[cfg(feature = "tcp-migration-profiler")]
 use crate::{
-    tcpmig_profiler::{tcpmig_log, tcp_log},
     tcpmig_profile
 };
 #[cfg(feature = "capybara-log")]
