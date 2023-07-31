@@ -6,10 +6,10 @@
 //======================================================================================================================
 
 use ::anyhow::Result;
+use demikernel::{demi_sgarray_t, runtime::types::demi_opcode_t};
 use ::demikernel::{
     LibOS,
     LibOSName,
-    OperationResult,
     QDesc,
     QToken,
 };
@@ -17,7 +17,7 @@ use ::demikernel::{
 #[cfg(feature = "capybara-log")]
 use ::demikernel::tcpmig_profiler::{tcp_log};
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -122,7 +122,8 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         tcp_log(format!("PUSH: {}", response.lines().next().unwrap_or("")));
     }
 
-    libos.push2(qd, response.as_bytes()).expect("push success")
+    let sga = mksga(libos, response.as_bytes()).unwrap();
+    libos.push(qd, &sga).expect("push success")
 }
 
 #[inline(always)]
@@ -203,69 +204,71 @@ fn server(local: SocketAddrV4) -> Result<()> {
             break;
         }
 
-        let result = libos.trywait_any2(&qts).expect("result");
+        let result = match libos.wait_any(&qts, Some(Duration::from_micros(1))){
+            Ok(wait_result) => Some(wait_result),
+            Err(e) if e.errno == libc::ETIMEDOUT => None,
+            Err(e) => panic!("result failed: {:?}", e.cause),
+        };
 
-        if let Some(completed_results) = result {
+        if let Some((index_to_remove, completed_result)) = result {
             #[cfg(feature = "capybara-log")]
             {
-                tcp_log(format!("\n\n======= OS: I/O operations have been completed, take the results! ======="));
+                tcp_log(format!("\n\n======= OS: I/O operation has been completed, take the result! ======="));
             }
-            let indices_to_remove: Vec<usize> = completed_results.iter().map(|(index, _, _)| *index).collect();
             #[cfg(feature = "capybara-log")]
             {
-                tcp_log(format!("\n\n1, indicies_to_remove: {:?}", indices_to_remove));
+                tcp_log(format!("\n\n1, index_to_remove: {:?}", index_to_remove));
             }
-            let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
+            qts.swap_remove(index_to_remove);
             #[cfg(feature = "capybara-log")]
             {
                 tcp_log(format!("\n\n2"));
             }
-            qts = new_qts;
-            for (index, qd, result) in completed_results {
-                // qts.swap_remove(index);
-    
-                match result {
-                    OperationResult::Accept(new_qd) => {
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcp_log(format!("ACCEPT complete ==> request POP and ACCEPT"));
-                        }
-                        // Pop from new_qd
-                        let pop_qt = libos.pop(new_qd).expect("pop qt");
-                        qts.push(pop_qt);
-                        connstate.insert(new_qd, ConnectionState {
-                            pushing: 0,
-                            pop_qt: pop_qt,
-                            buffer: Buffer::new(),
-                        });
-    
-                        // Re-arm accept
-                        qts.push(libos.accept(qd).expect("accept qtoken"));
-                    },
-                    OperationResult::Push => {
-                        connstate.get_mut(&qd).unwrap().pushing -= 1;
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing));
-                        }
-                    },
-                    OperationResult::Pop(_, recvbuf) => {
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcp_log(format!("POP complete ==> request PUSH and POP"));
-                        }
-                        let mut state = connstate.get_mut(&qd).unwrap();
-                        let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
-                        state.pushing += sent;
-                        // queue next pop
-                        let pop_qt = libos.pop(qd).expect("pop qt");
-                        qts.push(pop_qt);
-                        state.pop_qt = pop_qt;
-                    },
-                    _ => {
-                        panic!("Unexpected op: RESULT: {:?}", result);
-                    },
-                }
+            match completed_result.qr_opcode {
+                demi_opcode_t::DEMI_OPC_ACCEPT => {
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("ACCEPT complete ==> request POP and ACCEPT"));
+                    }
+                    // Pop from new_qd
+                    let new_qd = unsafe { completed_result.qr_value.ares.qd.into() };
+                    let pop_qt = libos.pop(new_qd, None).expect("pop qt");
+                    qts.push(pop_qt);
+                    connstate.insert(new_qd, ConnectionState {
+                        pushing: 0,
+                        pop_qt,
+                        buffer: Buffer::new(),
+                    });
+
+                    // Re-arm accept
+                    qts.push(libos.accept(completed_result.qr_qd.into()).expect("accept qtoken"));
+                },
+                demi_opcode_t::DEMI_OPC_PUSH => {
+                    connstate.get_mut(&completed_result.qr_qd.into()).unwrap().pushing -= 1;
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing));
+                    }
+                },
+                demi_opcode_t::DEMI_OPC_POP => {
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("POP complete ==> request PUSH and POP"));
+                    }
+                    let qd = completed_result.qr_qd.into();
+                    let sga = unsafe { completed_result.qr_value.sga };
+                    let recvbuf = unsafe { std::slice::from_raw_parts(sga.sga_segs[0].sgaseg_buf as *const u8, sga.sga_segs[0].sgaseg_len as usize) };
+                    let mut state = connstate.get_mut(&qd).unwrap();
+                    let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
+                    state.pushing += sent;
+                    // queue next pop
+                    let pop_qt = libos.pop(qd, None).expect("pop qt");
+                    qts.push(pop_qt);
+                    state.pop_qt = pop_qt;
+                },
+                _ => {
+                    panic!("Unexpected op: RESULT: {:?}", completed_result.qr_opcode);
+                },
             }
             #[cfg(feature = "capybara-log")]
             {
@@ -347,4 +350,41 @@ pub fn main() -> Result<()> {
     usage(&args[0]);
 
     Ok(())
+}
+
+// Makes a scatter-gather array.
+fn mksga(libos: &mut LibOS, bytes: &[u8]) -> Result<demi_sgarray_t> {
+    // Allocate scatter-gather array.
+    let sga: demi_sgarray_t = match libos.sgaalloc(bytes.len()) {
+        Ok(sga) => sga,
+        Err(e) => anyhow::bail!("failed to allocate scatter-gather array: {:?}", e),
+    };
+
+    // Ensure that scatter-gather array has the requested size.
+    // If error, free scatter-gather array.
+    if sga.sga_segs[0].sgaseg_len as usize != bytes.len() {
+        freesga(libos, sga);
+        let seglen: usize = sga.sga_segs[0].sgaseg_len as usize;
+        anyhow::bail!(
+            "failed to allocate scatter-gather array: expected size={:?} allocated size={:?}",
+            bytes.len(),
+            seglen
+        );
+    }
+
+    // Fill in scatter-gather array.
+    let ptr: *mut u8 = sga.sga_segs[0].sgaseg_buf as *mut u8;
+    let len: usize = sga.sga_segs[0].sgaseg_len as usize;
+    let slice: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
+    slice.copy_from_slice(bytes);
+
+    Ok(sga)
+}
+
+/// Free scatter-gather array and warn on error.
+fn freesga(libos: &mut LibOS, sga: demi_sgarray_t) {
+    if let Err(e) = libos.sgafree(sga) {
+        log::error!("sgafree() failed (error={:?})", e);
+        log::warn!("leaking sga");
+    }
 }
