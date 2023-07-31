@@ -23,6 +23,9 @@ use ::std::{
     },
 };
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::tcp_log;
+
 pub struct ConnectFuture<const N: usize> {
     pub qd: QDesc,
     pub inner: Rc<RefCell<Inner<N>>>,
@@ -98,6 +101,10 @@ impl Future for PushFuture {
     type Output = Result<(), Fail>;
 
     fn poll(self: Pin<&mut Self>, _context: &mut Context) -> Poll<Self::Output> {
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("\n\npolling PUSH"));
+        }
         match self.get_mut().err.take() {
             None => Poll::Ready(Ok(())),
             Some(e) => Poll::Ready(Err(e)),

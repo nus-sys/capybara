@@ -453,8 +453,20 @@ impl<const N: usize> TcpPeer<N> {
         let mut qtable: RefMut<IoQueueTable<InetQueue<N>>> = inner.qtable.borrow_mut();
         match qtable.get_mut(&qd) {
             Some(InetQueue::Tcp(ref mut queue)) => match queue.get_mut_socket() {
-                Socket::Established(ref mut socket) => socket.poll_recv(ctx, size),
-                Socket::Closing(ref mut socket) => socket.poll_recv(ctx, size),
+                Socket::Established(ref mut socket) => {
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("\n\npolling POP on {:?}", socket.endpoints()));
+                    }
+                    socket.poll_recv(ctx, size)
+                },
+                Socket::Closing(ref mut socket) => {
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("\n\npolling POP on {:?}", socket.endpoints()));
+                    }
+                    socket.poll_recv(ctx, size)
+                },
                 Socket::Connecting(_) => Poll::Ready(Err(Fail::new(libc::EINPROGRESS, "socket connecting"))),
                 Socket::Inactive(_) => Poll::Ready(Err(Fail::new(libc::EBADF, "socket inactive"))),
                 Socket::Listening(_) => Poll::Ready(Err(Fail::new(libc::ENOTCONN, "socket listening"))),
@@ -660,6 +672,10 @@ impl<const N: usize> Inner<N> {
         let mut rng: SmallRng = SmallRng::from_seed(rng_seed);
         let ephemeral_ports: EphemeralPorts = EphemeralPorts::new(&mut rng);
         let nonce: u32 = rng.gen();
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Creating new TcpPeer::Inner"));
+        }
         Self {
             isn_generator: IsnGenerator::new(nonce),
             ephemeral_ports,
@@ -691,6 +707,11 @@ impl<const N: usize> Inner<N> {
 
         if remote.ip().is_broadcast() || remote.ip().is_multicast() || remote.ip().is_unspecified() {
             return Err(Fail::new(libc::EINVAL, "invalid address type"));
+        }
+
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("\n\n[RX] {:?} => {:?}", remote, local));
         }
 
         #[cfg(feature = "tcp-migration")]

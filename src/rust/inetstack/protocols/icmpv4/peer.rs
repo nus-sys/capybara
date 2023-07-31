@@ -69,6 +69,9 @@ use ::std::{
     },
 };
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::tcp_log;
+
 //==============================================================================
 // ReqQueue
 //==============================================================================
@@ -161,6 +164,10 @@ impl<const N: usize> Icmpv4Peer<N> {
                 rx,
             )),
         );
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Scheduling ICMP background"));
+        }
         let handle: TaskHandle = match scheduler.insert(task) {
             Some(handle) => handle,
             None => {

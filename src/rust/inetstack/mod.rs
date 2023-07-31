@@ -72,6 +72,8 @@ use ::std::{
 
 #[cfg(feature = "profiler")]
 use crate::timer;
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::tcp_log;
 
 //==============================================================================
 // Exports
@@ -299,6 +301,10 @@ impl<const N: usize> InetStack<N> {
                 });
                 let task_id: String = format!("Inetstack::TCP::accept for qd={:?}", qd);
                 let task: OperationTask = OperationTask::new(task_id, coroutine);
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcp_log(format!("Scheduling Accept operation"));
+                }
                 let handle: TaskHandle = match self.scheduler.insert(task) {
                     Some(handle) => handle,
                     None => {
@@ -474,6 +480,10 @@ impl<const N: usize> InetStack<N> {
 
         // Issue operation.
         let task: OperationTask = self.do_push(qd, buf)?;
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Scheduling PUSH"));
+        }
         let handle: TaskHandle = match self.scheduler.insert(task) {
             Some(handle) => handle,
             None => return Err(Fail::new(libc::EAGAIN, "cannot schedule co-routine")),
@@ -563,6 +573,10 @@ impl<const N: usize> InetStack<N> {
             None => return Err(Fail::new(libc::EBADF, "bad queue descriptor")),
         };
 
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Scheduling POP"));
+        }
         let handle: TaskHandle = match self.scheduler.insert(OperationTask::new(task_id, coroutine)) {
             Some(handle) => handle,
             None => return Err(Fail::new(libc::EAGAIN, "cannot schedule co-routine")),

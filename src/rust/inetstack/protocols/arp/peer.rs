@@ -60,6 +60,9 @@ use ::std::{
     time::Duration,
 };
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::tcp_log;
+
 //==============================================================================
 // Structures
 //==============================================================================
@@ -108,6 +111,10 @@ impl<const N: usize> ArpPeer<N> {
             String::from("Inetstack::arp::background"),
             Box::pin(Self::background(clock.clone(), cache.clone())),
         );
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Scheduling ARP background"));
+        }
         let handle: TaskHandle = match scheduler.insert(task) {
             Some(handle) => handle,
             None => {
