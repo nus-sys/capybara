@@ -217,7 +217,7 @@ def run_server(mig_delay, mig_per_rx):
                LIBOS=catnip \
                MTU=1500 \
                MSS=1500 \
-               NUM_CORE=4 \
+               NUM_CORES=4 \
                RUST_BACKTRACE=full \
                CORE_ID={j+1} \
                MIG_DELAY={int(mig_delay/10) * 72} \

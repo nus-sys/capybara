@@ -82,6 +82,10 @@ fn get_request(libos: &mut LibOS, qd: QDesc) -> Option<QToken> {
 }
 
 fn send_response(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
+    // let response = match std::fs::read_to_string("/var/www/demo/index.html") {
+    //     Ok(contents) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents),
+    //     Err(err) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
+    // };
     let sga = mksga(libos, data.len(), 0).unwrap();
     for (byte, data) in unsafe { std::slice::from_raw_parts_mut(sga.sga_segs[0].sgaseg_buf as *mut u8, data.len()) }.iter_mut().zip(data) {
         *byte = *data;
@@ -133,7 +137,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
         if qts.is_empty() || !running.load(Ordering::SeqCst) {
             break;
         }
-
+        // When there is a single connection, its possible that the server waits for pop, 
+        // but the connection is prepared for migration and subsequent messages are forwarded to the target.
+        // We use trywait_any2 here to work around this case.
+        // Leter, if we test with many connections and high request rates, we can use
+        // wait_any2 instead, and maybe achieve higher performance by removing try overheads. 
         let result = match libos.wait_any(&qts, Some(Duration::from_micros(1))) {
             Ok(wait_result) => Some(wait_result),
             Err(e) if e.errno == libc::ETIMEDOUT => None,

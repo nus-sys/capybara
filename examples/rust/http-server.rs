@@ -143,7 +143,7 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
             return 1;
         }
     }
-    println!("**********************CHECK************************\n");
+    println!("**********************CHECK buffer data size : {} ************************\n", buffer.data_size());
     // Copy new data into buffer
     buffer.get_empty_buf()[..data.len()].copy_from_slice(data);
     buffer.push_data(data.len());
@@ -247,7 +247,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     connstate.get_mut(&completed_result.qr_qd.into()).unwrap().pushing -= 1;
                     #[cfg(feature = "capybara-log")]
                     {
-                        tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing));
+                        tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&completed_result.qr_qd.into()).unwrap().pushing));
                     }
                 },
                 demi_opcode_t::DEMI_OPC_POP => {
@@ -258,7 +258,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     let qd = completed_result.qr_qd.into();
                     let sga = unsafe { completed_result.qr_value.sga };
                     let recvbuf = unsafe { std::slice::from_raw_parts(sga.sga_segs[0].sgaseg_buf as *const u8, sga.sga_segs[0].sgaseg_len as usize) };
-                    let mut state = connstate.get_mut(&qd).unwrap();
+                    let mut state = connstate.get_mut(&completed_result.qr_qd.into()).unwrap();
                     let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
                     state.pushing += sent;
                     // queue next pop

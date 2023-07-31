@@ -22,8 +22,8 @@ all: all-examples
 #	cp -f $(BUILD_DIR)/examples/tcp-close $(BINDIR)/examples/rust/tcp-close.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/pipe-open $(BINDIR)/examples/rust/pipe-open.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/tcp-wait $(BINDIR)/examples/rust/tcp-wait.$(EXEC_SUFFIX)
-#	cp -f $(BUILD_DIR)/examples/tcpmig-client $(BINDIR)/examples/rust/tcpmig-client.$(EXEC_SUFFIX)
-#	cp -f $(BUILD_DIR)/examples/tcpmig-server-multi $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
+	cp -f $(BUILD_DIR)/examples/tcpmig-client $(BINDIR)/examples/rust/tcpmig-client.$(EXEC_SUFFIX)
+	cp -f $(BUILD_DIR)/examples/tcpmig-server-multi $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/tcpmig-server-single $(BINDIR)/examples/rust/tcpmig-server-single.$(EXEC_SUFFIX)
 	cp -f $(BUILD_DIR)/examples/dpdk-ctrl $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
 	cp -f $(BUILD_DIR)/examples/http-server $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)
@@ -32,16 +32,16 @@ all-examples:
 #	@echo "$(CARGO) build --examples $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --examples $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example tcpmig-server-multi $(CARGO_FEATURES) $(CARGO_FLAGS)"
-#	$(CARGO) build --example tcpmig-server-multi $(CARGO_FEATURES) $(CARGO_FLAGS) \
-	--features=tcp-migration --features=tcp-migration-profiler
+#	$(CARGO) build --example tcpmig-server-multi $(CARGO_FEATURES) $(CARGO_FLAGS) 
+#	--features=tcp-migration --features=tcp-migration-profiler
 #	@echo "$(CARGO) build --example tcpmig-server-single $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example tcpmig-server-single $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration
 #	@echo "$(CARGO) build --example tcpmig-client $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example tcpmig-client $(CARGO_FEATURES) $(CARGO_FLAGS)
-	@echo "$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
-	@echo "$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS)
+#	@echo "$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)"
+#	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
+#	@echo "$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS)"
+	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,tcp-migration-profiler,capybara-log
 
 clean:
 #	@rm -rf $(BINDIR)/examples/rust/udp-dump.$(EXEC_SUFFIX)
@@ -60,8 +60,8 @@ clean:
 #	@rm -rf $(BINDIR)/examples/rust/tcp-close.$(EXEC_SUFFIX)
 #	@rm -rf $(BINDIR)/examples/rust/pipe-open.$(EXEC_SUFFIX)
 #	@rm -rf $(BINDIR)/examples/rust/tcp-wait.$(EXEC_SUFFIX)
-#	@rm -rf $(BINDIR)/examples/rust/tcpmig-client.$(EXEC_SUFFIX)
-#	@rm -rf $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
+	@rm -rf $(BINDIR)/examples/rust/tcpmig-client.$(EXEC_SUFFIX)
+	@rm -rf $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
 #	@rm -rf $(BINDIR)/examples/rust/tcpmig-server-client.$(EXEC_SUFFIX)
 	@rm -rf $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
 	@rm -rf $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)

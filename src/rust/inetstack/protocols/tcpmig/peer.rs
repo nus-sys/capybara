@@ -100,6 +100,7 @@ struct Inner<const N: usize> {
 
     migrated_out_connections: HashSet<SocketAddrV4>,
     additional_mig_delay: u32,
+    migration_per_rxcnt: u32,
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
     #[allow(unused)]
@@ -444,20 +445,32 @@ impl<const N: usize> TcpMigPeer<N> {
     // TEMP (for migration test)
     pub fn should_migrate(&self) -> bool {
         // return false;
-        static mut FLAG: i32 = 0;
-        static mut NUM_MIG: i32 = 0;
+        static mut FLAG: u32 = 0;
+        static mut WARMUP: i32 = 0;
+        static mut num_mig: i32 = 0;
+        // unsafe{
+        //     if std::env::var("CORE_ID") == Ok("1".to_string()) {
+        //         WARMUP += 1;
+        //         if WARMUP < 350000 {
+        //             return false;
+        //         }
+        //     }
+        // }
         let inner = self.inner.borrow();
-        // println!("currently_migration: {} , num_conn: {}", inner.is_currently_migrating, inner.stats.num_of_connections());
+        // println!("num_mig: {} , num_conn: {}", unsafe{num_mig}, inner.stats.num_of_connections());
         
         unsafe {
-            if inner.is_currently_migrating || inner.stats.num_of_connections() <= 40 || NUM_MIG >= 200 { return false; }
-            if FLAG == 1000 {
+            if inner.is_currently_migrating || inner.stats.num_of_connections() <= 0 || inner.migration_per_rxcnt ==  0 { return false; }
+            
+            // if inner.is_currently_migrating || inner.stats.num_of_connections() <= 0 || num_mig >= 5000 { return false; }
+            // if inner.is_currently_migrating || num_mig >= 1 || inner.additional_mig_delay <10000 { return false; }
+            if FLAG == inner.migration_per_rxcnt {
                 FLAG = 0;
-                NUM_MIG += 1;
+                num_mig += 1;
             }
             FLAG += 1;
             // println!("FLAG: {}", FLAG);
-            FLAG == 1000
+            FLAG == inner.migration_per_rxcnt
         }
     }
 
@@ -531,7 +544,11 @@ impl<const N: usize> Inner<N> {
             self_udp_port: SELF_UDP_PORT, // TEMP
             migrated_out_connections: HashSet::new(),
             additional_mig_delay: env::var("MIG_DELAY")
-            .unwrap_or_else(|_| String::from("0")) // Default value if DELAY is not set
+            .unwrap_or_else(|_| String::from("0")) // Default value if MIG_DELAY is not set
+            .parse::<u32>()
+            .expect("Invalid DELAY value"),
+            migration_per_rxcnt: env::var("MIG_PER_RX")
+            .unwrap_or_else(|_| String::from("0")) // Default value if MIG_PER_RX is not set
             .parse::<u32>()
             .expect("Invalid DELAY value"),
             //background: handle,

@@ -365,6 +365,7 @@ impl<const N: usize> TcpPeer<N> {
         let remote: SocketAddrV4 = cb.get_remote();
 
         let established: EstablishedSocket<N> = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
+        println!("CONNECTION ESTABLISHED (REMOTE: {:?})", established.cb.get_remote());
         match inner.qtable.borrow_mut().get_mut(&new_qd) {
             Some(InetQueue::Tcp(queue)) => queue.set_socket(Socket::Established(established)),
             _ => panic!("Should have been pre-allocated!"),
@@ -389,7 +390,7 @@ impl<const N: usize> TcpPeer<N> {
                 return Poll::Ready(Err(e));
             };
         };
-
+        
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         Poll::Ready(Ok((new_qd, remote)))
     }

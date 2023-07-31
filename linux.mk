@@ -4,12 +4,11 @@
 #=======================================================================================================================
 # Default Paths
 #=======================================================================================================================
-
-export HOME ?= /homes/inho
-export PREFIX ?= $(HOME)
-export INSTALL_PREFIX ?= $(HOME)
-export PKG_CONFIG_PATH ?= $(shell find $(PREFIX)/lib/ -name '*pkgconfig*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
-export LD_LIBRARY_PATH ?= $(HOME)/lib:$(shell find $(PREFIX)/lib/ -name '*x86_64-linux-gnu*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
+# export HOME ?= /homes/inho
+export PREFIX := $(HOME)
+export INSTALL_PREFIX := $(HOME)
+export PKG_CONFIG_PATH := $(shell find $(PREFIX)/lib/ -name '*pkgconfig*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
+export LD_LIBRARY_PATH := $(HOME)/lib:$(shell find $(PREFIX)/lib/ -name '*x86_64-linux-gnu*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
 
 #=======================================================================================================================
 # Build Configuration
@@ -192,10 +191,10 @@ export TIMEOUT ?= 120
 #=======================================================================================================================
 # Capybara Environment Variables
 #=======================================================================================================================
-export LIBOS ?= catnip
+# export LIBOS ?= catnip
 export CONFIG_DIR ?= /homes/inho/Capybara/config
-export PKG_CONFIG_PATH ?= /homes/inho/lib/x86_64-linux-gnu/pkgconfig 
-export LD_LIBRARY_PATH ?= /homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu 
+# export PKG_CONFIG_PATH ?= /homes/inho/lib/x86_64-linux-gnu/pkgconfig 
+# export LD_LIBRARY_PATH ?= /homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu 
 export ELF_DIR ?= /homes/inho/Capybara/capybara/bin/examples/rust
 export PORT_ID ?= 1
 export NUM_CORES ?= 4
@@ -279,21 +278,21 @@ http-server-fe:
 	$(ELF_DIR)/http-server.elf 10.0.1.8:10000
 
 http-server-be0:
-	sudo -E CAPYBARA_LOG="tcp" \
-	MIG_THRESHOLD=0 \
+	sudo -E CAPYBARA_LOG="tcpmig" RUST_BACKTRACE=full \
+	CORE_ID=1 \
+	MIG_DELAY=0 \
 	RECV_QUEUE_LEN=0 \
 	CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	taskset --cpu-list 0 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
 
 http-server-be1:
 	sudo -E CAPYBARA_LOG="tcpmig" \
-	MIG_THRESHOLD=0 \
+	CORE_ID=2 \
+	MIG_DELAY=0 \
 	RECV_QUEUE_LEN=3000 \
 	CONFIG_PATH=$(CONFIG_DIR)/be1_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	taskset --cpu-list 1 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10001
 
 http-server-be2:
@@ -360,6 +359,7 @@ client-dpdk-ctrl:
 
 be-dpdk-ctrl:
 	sudo -E RUST_LOG="debug" \
+	CORE_ID=5 \
 	CONFIG_PATH=$(CONFIG_DIR)/be_dpdk_ctrl_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 4 \
