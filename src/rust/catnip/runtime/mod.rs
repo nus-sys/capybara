@@ -68,6 +68,7 @@ use crate::runtime::{
         rte_flow_action_type_RTE_FLOW_ACTION_TYPE_QUEUE,
         rte_flow_action_type_RTE_FLOW_ACTION_TYPE_DROP,
         RTE_ETHER_TYPE_IPV4,
+        //RTE_ETH_RSS_NONFRAG_IPV4_TCP,
         rte_ipv4_hdr,
     },
     network::{
@@ -333,7 +334,7 @@ impl DPDKRuntime {
             port_conf.rxmode.offloads |= unsafe { rte_eth_rx_offload_udp_cksum() as u64 };
         }
         port_conf.rxmode.mq_mode = RTE_ETH_MQ_RX_RSS;
-        port_conf.rx_adv_conf.rss_conf.rss_hf = unsafe { rte_eth_rss_ip() as u64 } | dev_info.flow_type_rss_offloads;
+        port_conf.rx_adv_conf.rss_conf.rss_hf = 1u64 << 4; // TEMP workaround using direct value for RTE_ETH_RSS_NONFRAG_IPV4_TCP as of DPDK 22.11
 
         port_conf.txmode.mq_mode = RTE_ETH_MQ_TX_NONE;
         if tcp_checksum_offload {
