@@ -94,6 +94,8 @@ use crate::{
     tcpmig_profiler::{tcpmig_log, tcp_log},
     tcpmig_profile
 };
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::{tcpmig_log, tcp_log};
 
 //==============================================================================
 // Enumerations

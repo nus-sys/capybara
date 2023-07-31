@@ -15,7 +15,7 @@ use ::demikernel::{
 };
 
 #[cfg(feature = "capybara-log")]
-use ::demikernel::tcpmig_profiler::{tcp_log};
+use ::demikernel::tcpmig_profiler::tcp_log;
 
 use std::{collections::HashMap, time::Duration};
 use ::std::{
@@ -204,71 +204,74 @@ fn server(local: SocketAddrV4) -> Result<()> {
             break;
         }
 
-        let result = match libos.wait_any(&qts, Some(Duration::from_micros(1))){
+        let result = match libos.wait_any_multiple(&qts, Some(Duration::from_micros(1))){
             Ok(wait_result) => Some(wait_result),
             Err(e) if e.errno == libc::ETIMEDOUT => None,
             Err(e) => panic!("result failed: {:?}", e.cause),
         };
 
-        if let Some((index_to_remove, completed_result)) = result {
+        if let Some(completed_results) = result {
             #[cfg(feature = "capybara-log")]
             {
-                tcp_log(format!("\n\n======= OS: I/O operation has been completed, take the result! ======="));
+                tcp_log(format!("\n\n======= OS: I/O operations have been completed, take the results! ======="));
             }
+            let indices_to_remove: Vec<usize> = completed_results.iter().map(|(index, _)| *index).collect();
             #[cfg(feature = "capybara-log")]
             {
-                tcp_log(format!("\n\n1, index_to_remove: {:?}", index_to_remove));
+                tcp_log(format!("\n\n1, indicies_to_remove: {:?}", indices_to_remove));
             }
-            qts.swap_remove(index_to_remove);
+            qts = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
             #[cfg(feature = "capybara-log")]
             {
                 tcp_log(format!("\n\n2"));
             }
-            match completed_result.qr_opcode {
-                demi_opcode_t::DEMI_OPC_ACCEPT => {
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("ACCEPT complete ==> request POP and ACCEPT"));
-                    }
-                    // Pop from new_qd
-                    let new_qd = unsafe { completed_result.qr_value.ares.qd.into() };
-                    let pop_qt = libos.pop(new_qd, None).expect("pop qt");
-                    qts.push(pop_qt);
-                    connstate.insert(new_qd, ConnectionState {
-                        pushing: 0,
-                        pop_qt,
-                        buffer: Buffer::new(),
-                    });
-
-                    // Re-arm accept
-                    qts.push(libos.accept(completed_result.qr_qd.into()).expect("accept qtoken"));
-                },
-                demi_opcode_t::DEMI_OPC_PUSH => {
-                    connstate.get_mut(&completed_result.qr_qd.into()).unwrap().pushing -= 1;
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&completed_result.qr_qd.into()).unwrap().pushing));
-                    }
-                },
-                demi_opcode_t::DEMI_OPC_POP => {
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("POP complete ==> request PUSH and POP"));
-                    }
-                    let qd = completed_result.qr_qd.into();
-                    let sga = unsafe { completed_result.qr_value.sga };
-                    let recvbuf = unsafe { std::slice::from_raw_parts(sga.sga_segs[0].sgaseg_buf as *const u8, sga.sga_segs[0].sgaseg_len as usize) };
-                    let mut state = connstate.get_mut(&completed_result.qr_qd.into()).unwrap();
-                    let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
-                    state.pushing += sent;
-                    // queue next pop
-                    let pop_qt = libos.pop(qd, None).expect("pop qt");
-                    qts.push(pop_qt);
-                    state.pop_qt = pop_qt;
-                },
-                _ => {
-                    panic!("Unexpected op: RESULT: {:?}", completed_result.qr_opcode);
-                },
+            for (_, completed_result) in completed_results {
+                match completed_result.qr_opcode {
+                    demi_opcode_t::DEMI_OPC_ACCEPT => {
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcp_log(format!("ACCEPT complete ==> request POP and ACCEPT"));
+                        }
+                        // Pop from new_qd
+                        let new_qd = unsafe { completed_result.qr_value.ares.qd.into() };
+                        let pop_qt = libos.pop(new_qd, None).expect("pop qt");
+                        qts.push(pop_qt);
+                        connstate.insert(new_qd, ConnectionState {
+                            pushing: 0,
+                            pop_qt,
+                            buffer: Buffer::new(),
+                        });
+    
+                        // Re-arm accept
+                        qts.push(libos.accept(completed_result.qr_qd.into()).expect("accept qtoken"));
+                    },
+                    demi_opcode_t::DEMI_OPC_PUSH => {
+                        connstate.get_mut(&completed_result.qr_qd.into()).unwrap().pushing -= 1;
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&completed_result.qr_qd.into()).unwrap().pushing));
+                        }
+                    },
+                    demi_opcode_t::DEMI_OPC_POP => {
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcp_log(format!("POP complete ==> request PUSH and POP"));
+                        }
+                        let qd = completed_result.qr_qd.into();
+                        let sga = unsafe { completed_result.qr_value.sga };
+                        let recvbuf = unsafe { std::slice::from_raw_parts(sga.sga_segs[0].sgaseg_buf as *const u8, sga.sga_segs[0].sgaseg_len as usize) };
+                        let state = connstate.get_mut(&qd).unwrap();
+                        let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
+                        state.pushing += sent;
+                        // queue next pop
+                        let pop_qt = libos.pop(qd, None).expect("pop qt");
+                        qts.push(pop_qt);
+                        state.pop_qt = pop_qt;
+                    },
+                    _ => {
+                        panic!("Unexpected op: RESULT: {:?}", completed_result.qr_opcode);
+                    },
+                }
             }
             #[cfg(feature = "capybara-log")]
             {

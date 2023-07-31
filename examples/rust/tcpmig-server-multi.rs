@@ -14,7 +14,6 @@ use ::demikernel::{
     QToken,
     runtime::logging,
 };
-use log::debug;
 use std::collections::HashMap;
 use ::std::{
     env,

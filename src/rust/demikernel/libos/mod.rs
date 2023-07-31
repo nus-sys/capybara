@@ -340,6 +340,48 @@ impl LibOS {
         }
     }
 
+    /// Waits for any of the given pending I/O operations to complete or a timeout to expire, and returns all those completed.
+    pub fn wait_any_multiple(&mut self, qts: &[QToken], timeout: Option<Duration>) -> Result<Vec<(usize, demi_qresult_t)>, Fail> {
+        trace!("wait_any_multiple(): qts={:?}, timeout={:?}", qts, timeout);
+
+        // Get the wait start time, but only if we have a timeout.  We don't care when we started if we wait forever.
+        let start: Option<Instant> = if timeout.is_none() { None } else { Some(Instant::now()) };
+
+        let mut completed = Vec::new();
+        loop {
+            // Poll first, so as to give pending operations a chance to complete.
+            self.poll();
+
+            // Search for any operation that has completed.
+            for (i, &qt) in qts.iter().enumerate() {
+                if let Some(..) = completed.iter().map(|(idx, _)| idx).find(|&&e| e == i) {
+                    continue;
+                }
+
+                // Retrieve associated schedule handle.
+                // TODO: move this out of the loop.
+                let handle: TaskHandle = self.schedule(qt)?;
+
+                // Found one, so extract the result and return.
+                if handle.has_completed() {
+                    completed.push((i, self.pack_result(handle, qt)?));
+                }
+            }
+
+            if !completed.is_empty() {
+                return Ok(completed);
+            }
+
+            // If we have a timeout, check for expiration.
+            if timeout.is_some()
+                && Instant::now().duration_since(start.expect("start should be set if timeout is"))
+                    > timeout.expect("timeout should still be set")
+            {
+                return Err(Fail::new(libc::ETIMEDOUT, "timer expired"));
+            }
+        }
+    }
+
     /// Allocates a scatter-gather array.
     pub fn sgaalloc(&mut self, size: usize) -> Result<demi_sgarray_t, Fail> {
         let result: Result<demi_sgarray_t, Fail> = match self {
