@@ -297,7 +297,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 }
                 match libos.notify_migration_safety(*qd) {
                     Ok(true) => {
-                        let index = qts.iter().position(|&qt| qt == state.pop_qt).expect("`pop_qt` should be in `qts`");
+                        let index = qts.iter().position(|&qt| qt.0 == state.pop_qt).expect("`pop_qt` should be in `qts`");
                         qts.swap_remove(index);
                         qd_to_remove = Some(*qd);
                         break;
