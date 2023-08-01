@@ -357,6 +357,12 @@ pub fn main() -> Result<()> {
 
 // Makes a scatter-gather array.
 fn mksga(libos: &mut LibOS, bytes: &[u8]) -> Result<demi_sgarray_t> {
+    #[cfg(feature = "capybara-log")]
+    {
+        if bytes.is_empty() {
+            tcp_log(format!("*** EMPTY BUFFER mksga() ***"));
+        }
+    }
     // Allocate scatter-gather array.
     let sga: demi_sgarray_t = match libos.sgaalloc(bytes.len()) {
         Ok(sga) => sga,
