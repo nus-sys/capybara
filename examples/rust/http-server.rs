@@ -143,7 +143,10 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
             return 1;
         }
     }
-    println!("**********************CHECK buffer data size : {} ************************\n", buffer.data_size());
+    #[cfg(feature = "capybara-log")]
+    {
+        tcp_log(format!("**********************CHECK buffer data size : {} ************************\n", buffer.data_size()));
+    }
     // Copy new data into buffer
     buffer.get_empty_buf()[..data.len()].copy_from_slice(data);
     buffer.push_data(data.len());

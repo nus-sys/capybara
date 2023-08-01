@@ -614,7 +614,17 @@ impl<const N: usize> ControlBlock<N> {
                 },
 
                 // Should never happen.
-                state => panic!("Bad TCP state {:?}", state),
+                // IH: receiving multiple RSTs from a connection can happen.
+                // For example, Caladan client generates RST if it receives
+                // some pkts with ACK flag from a closed connection, which is reasonable.
+                // Since the client is open-loop, it's possible that the client sends all
+                // requests as scheduled, then close the connection, while the server 
+                // was lagging behind on the stream due to some overwhelming workload from 
+                // other connections. Then, client will generate the first RST when it closes
+                // the connection, and then it will receive some late responses from the server,
+                // which results in more RST pkts from the client. 
+                // So, it should not panic here. 
+                state => { print!("Bad TCP state {:?}", state) },
             }
 
             // Note: We should never get here.
