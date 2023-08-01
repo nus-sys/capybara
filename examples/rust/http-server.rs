@@ -95,7 +95,7 @@ impl Buffer {
     }
 }
 
-fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
+fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> (QToken, Option<demi_sgarray_t>) {
     // let data_str = std::str::from_utf8(data).unwrap();
     // let data_str = String::from_utf8_lossy(data);
     let data_str = unsafe { std::str::from_utf8_unchecked(&data[..]) };
@@ -123,7 +123,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     }
 
     let sga = mksga(libos, response.as_bytes()).unwrap();
-    libos.push(qd, &sga).expect("push success")
+    (libos.push(qd, &sga).expect("push success"), Some(sga))
 }
 
 #[inline(always)]
@@ -133,7 +133,7 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[u8], qts: &mut Vec<QToken>) -> usize {
+fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[u8], qts: &mut Vec<(QToken, Option<demi_sgarray_t>)>) -> usize {
 
     // fast path: no previous data in the stream and this request contains exactly one HTTP request
     if buffer.data_size() == 0 {
@@ -194,17 +194,18 @@ fn server(local: SocketAddrV4) -> Result<()> {
     libos.bind(sockqd, local).expect("bind socket");
     libos.listen(sockqd, 300).expect("listen socket");
 
-    let mut qts: Vec<QToken> = Vec::new();
+    let mut qts = Vec::new();
     let mut connstate: HashMap<QDesc, ConnectionState> = HashMap::new();
 
-    qts.push(libos.accept(sockqd).expect("accept"));
+    qts.push((libos.accept(sockqd).expect("accept"), None));
 
     loop {
         if !running.load(Ordering::SeqCst) {
             break;
         }
 
-        let result = match libos.wait_any_multiple(&qts, Some(Duration::from_micros(1))){
+        let only_qts = qts.iter().map(|(t, _)| t.clone()).collect::<Vec<_>>();
+        let result = match libos.wait_any_multiple(&only_qts, Some(Duration::from_micros(1))){
             Ok(wait_result) => Some(wait_result),
             Err(e) if e.errno == libc::ETIMEDOUT => None,
             Err(e) => panic!("result failed: {:?}", e.cause),
@@ -220,12 +221,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
             {
                 tcp_log(format!("\n\n1, indicies_to_remove: {:?}", indices_to_remove));
             }
-            qts = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
             #[cfg(feature = "capybara-log")]
             {
                 tcp_log(format!("\n\n2"));
             }
-            for (_, completed_result) in completed_results {
+            for (i, completed_result) in completed_results {
                 match completed_result.qr_opcode {
                     demi_opcode_t::DEMI_OPC_ACCEPT => {
                         #[cfg(feature = "capybara-log")]
@@ -235,7 +235,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         // Pop from new_qd
                         let new_qd = unsafe { completed_result.qr_value.ares.qd.into() };
                         let pop_qt = libos.pop(new_qd, None).expect("pop qt");
-                        qts.push(pop_qt);
+                        qts.push((pop_qt, None));
                         connstate.insert(new_qd, ConnectionState {
                             pushing: 0,
                             pop_qt,
@@ -243,9 +243,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         });
     
                         // Re-arm accept
-                        qts.push(libos.accept(completed_result.qr_qd.into()).expect("accept qtoken"));
+                        qts.push((libos.accept(completed_result.qr_qd.into()).expect("accept qtoken"), None));
                     },
                     demi_opcode_t::DEMI_OPC_PUSH => {
+                        let sga = std::mem::replace(&mut qts[i].1, None);
+                        freesga(&mut libos, sga.unwrap());
                         connstate.get_mut(&completed_result.qr_qd.into()).unwrap().pushing -= 1;
                         #[cfg(feature = "capybara-log")]
                         {
@@ -263,9 +265,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         let state = connstate.get_mut(&qd).unwrap();
                         let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
                         state.pushing += sent;
+                        freesga(&mut libos, sga);
                         // queue next pop
                         let pop_qt = libos.pop(qd, None).expect("pop qt");
-                        qts.push(pop_qt);
+                        qts.push((pop_qt, None));
                         state.pop_qt = pop_qt;
                     },
                     _ => {
@@ -273,6 +276,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     },
                 }
             }
+            qts = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
             #[cfg(feature = "capybara-log")]
             {
                 tcp_log(format!("******* APP: Okay, handled the results! *******"));
