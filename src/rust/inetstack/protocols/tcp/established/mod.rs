@@ -39,6 +39,9 @@ use ::std::{
     time::Duration,
 };
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::tcp_log;
+
 #[derive(Clone)]
 pub struct EstablishedSocket<const N: usize> {
     pub cb: Rc<ControlBlock<N>>,
@@ -56,6 +59,10 @@ impl<const N: usize> EstablishedSocket<N> {
             String::from("Inetstack::TCP::established::background"),
             Box::pin(background::background(cb.clone(), qd, dead_socket_tx)),
         );
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Create new EstablishedSocket, scheduling background task"));
+        }
         let handle: TaskHandle = match cb.scheduler.insert(task) {
             Some(handle) => handle,
             None => panic!("failed to insert task in the scheduler"),

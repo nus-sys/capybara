@@ -48,6 +48,9 @@ use ::std::{
     },
 };
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::tcp_log;
+
 //======================================================================================================================
 // Constants
 //======================================================================================================================
@@ -86,6 +89,10 @@ impl Scheduler {
     pub fn remove(&self, handle: &TaskHandle) -> Option<Box<dyn Task>> {
         let waker_page_refs: Ref<Vec<WakerPageRef>> = self.waker_page_refs.borrow();
         let task_id: u64 = handle.get_task_id();
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Remove {} from Scheduler", task_id));
+        }
         // We should not have a scheduler handle that refers to an invalid id, so unwrap and expect are safe here.
         let pin_slab_index: usize = self
             .task_ids
@@ -147,6 +154,11 @@ impl Scheduler {
         waker_page_ref.initialize(waker_page_offset);
 
         let task_id = self.get_new_task_id(pin_slab_index);
+
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Insert {} to Scheduler", task_id));
+        }
 
         trace!("insert(): name={:?}, id={:?}, pin_slab_index={:?}", task_name, task_id, pin_slab_index);
         let waker_page_offset: usize = Scheduler::get_waker_page_offset(pin_slab_index);
@@ -223,6 +235,11 @@ impl Scheduler {
 
     fn poll_notified_tasks(&self, waker_page_index: usize, notified_offsets: u64) {
         for waker_page_offset in BitIter::from(notified_offsets) {
+            /* #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("Polling page_id: {}, {}", waker_page_index, waker_page_offset));
+            } */
+
             // Get the pinned ref.
             let pinned_ptr = {
                 let mut tasks: RefMut<PinSlab<Box<dyn Task>>> = self.tasks.borrow_mut();
@@ -241,8 +258,30 @@ impl Scheduler {
             };
             let mut waker_context: Context = Context::from_waker(&waker);
 
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("Before Polling page_id: {}, {}, // pinned_ref: {:?}", 
+                    waker_page_index, waker_page_offset, std::ptr::addr_of!(*pinned_ref)));
+
+                // let pinned_ptr = unsafe { Pin::into_inner_unchecked(pinned_ref) as *mut _ };
+                let value_ptr: *const Box<dyn Task<Output = ()>> = pinned_ptr as *const _;
+                let value_bytes: &[u8] = unsafe {
+                    std::slice::from_raw_parts(value_ptr as *const u8, std::mem::size_of::<Box<dyn Task<Output = ()>>>())
+                };
+                
+                let hex_string: String = value_bytes
+                    .iter()
+                    .map(|byte| format!("{:02X}", byte))
+                    .collect();
+                tcp_log(format!("Value: {}", hex_string));
+            }
+
             // Poll future.
             let poll_result: Poll<()> = Future::poll(pinned_ref, &mut waker_context);
+            #[cfg(feature = "capybara-log")]
+            {
+                tcp_log(format!("After Polling page_id: {}, {}", waker_page_index, waker_page_offset));
+            }
             if let Poll::Ready(()) = poll_result {
                 let waker_page_refs: Ref<Vec<WakerPageRef>> = self.waker_page_refs.borrow();
                 waker_page_refs[waker_page_index].mark_completed(waker_page_offset)

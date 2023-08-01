@@ -70,6 +70,9 @@ use ::std::{
 #[cfg(feature = "profiler")]
 use crate::timer;
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::tcp_log;
+
 //======================================================================================================================
 // Constants
 //======================================================================================================================
@@ -139,6 +142,11 @@ impl<const N: usize> UdpPeer<N> {
             arp.clone(),
             send_queue.clone(),
         );
+
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Scheduling UDP background"));
+        }
         let task: BackgroundTask = BackgroundTask::new(String::from("Inetstack::UDP::background"), Box::pin(future));
         let handle: TaskHandle = match scheduler.insert(task) {
             Some(handle) => handle,

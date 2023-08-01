@@ -19,6 +19,9 @@ use ::std::{
     task::Waker,
 };
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::tcp_log;
+
 //==============================================================================
 // Structures
 //==============================================================================
@@ -69,6 +72,10 @@ impl TaskHandle {
     /// Removes the task from the scheduler and keeps it from running again.
     #[deprecated]
     pub fn deschedule(&mut self) {
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("Drop {} from scheduler", self.task_id));
+        }
         self.waker_page_ref.mark_dropped(self.waker_page_offset);
     }
 }
