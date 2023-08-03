@@ -1,3 +1,16 @@
+# Rebased Branch Issue (also for demikernel dev)
+`failed to clone mbuf` seen every time at higher number of client connections. The reason is that the `mempool` runs out of free memory to clone `mbuf`s. This has been verified using `rte_mempool_avail_count()`.
+
+The pattern stays similar every time:
+- Allocation works fine (the count stays around the same) for a short while.
+- Then it starts decreasing. The decreases are always in big jumps and then they start rising slowly for a while (presumably due to `free()`s) before a big decrease again (another allocation), with a net negative differential.
+- This continues until the `mempool` is out of memory and the server crashes.
+
+Note: This issue does not happen for less number of connections. A possible reason could be the O(N) time complexity of `wait_any()` of Demikernel, where it only polls the NIC after each round of all connections.
+
+The reason of the memory leak is still unknown.
+
+
 # Demikernel
 
 [![Join us on Slack!](https://img.shields.io/badge/chat-on%20Slack-e01563.svg)](https://join.slack.com/t/demikernel/shared_invite/zt-11i6lgaw5-HFE_IAls7gUX3kp1XSab0g)
