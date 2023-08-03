@@ -40,6 +40,7 @@ use ::dpdk_rs::{
     rte_pktmbuf_clone,
     rte_pktmbuf_free,
     rte_pktmbuf_trim,
+    rte_mempool_avail_count,
 };
 use ::std::{
     alloc::{
@@ -808,6 +809,14 @@ impl Clone for DemiBuffer {
                 // never has any direct data, we could potentially save memory by allocating these from a special pool.
                 // Safety: it is safe to dereference "mbuf_ptr" as it is known to point to a valid MBuf.
                 let mempool_ptr: *mut rte_mempool = (*mbuf_ptr).pool;
+                
+                #[cfg(feature = "capybara-log")]
+                {
+                    let mpool = *mempool_ptr;
+                    //dbg!(mpool.size, mpool.header_size, mpool.elt_size, mpool.trailer_size, mpool.private_data_size, mpool.populated_size);
+                    dbg!(rte_mempool_avail_count(mempool_ptr));
+                }
+
                 // Safety: rte_pktmbuf_clone is a FFI, which is safe to call since we call it with valid arguments and
                 // properly check its return value for null (failure) before using.
                 let mbuf_ptr_clone: *mut rte_mbuf = rte_pktmbuf_clone(mbuf_ptr, mempool_ptr);
