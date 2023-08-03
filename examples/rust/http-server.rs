@@ -123,7 +123,9 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> (QToken, Opt
     }
 
     let sga = mksga(libos, response.as_bytes()).unwrap();
-    (libos.push(qd, &sga).expect("push success"), Some(sga))
+    let qt = libos.push(qd, &sga).expect("push success");
+    freesga(libos, sga);
+    (qt, None)
 }
 
 #[inline(always)]
@@ -249,8 +251,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         qts.push((libos.accept(completed_result.qr_qd.into()).expect("accept qtoken"), None));
                     },
                     demi_opcode_t::DEMI_OPC_PUSH => {
-                        let sga = std::mem::replace(&mut qts[i].1, None);
-                        freesga(&mut libos, sga.unwrap());
+                        /* let sga = std::mem::replace(&mut qts[i].1, None);
+                        freesga(&mut libos, sga.unwrap()); */
                         connstate.get_mut(&completed_result.qr_qd.into()).unwrap().pushing -= 1;
                         #[cfg(feature = "capybara-log")]
                         {
