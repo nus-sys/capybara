@@ -426,8 +426,17 @@ tcp-pushpop:
 
 DEMIKERNEL_REPO_DIR ?= $(HOME)/Capybara/capybara
 
-redis-server:
+all-libs-mig:
+	@echo "LD_LIBRARY_PATH: $(LD_LIBRARY_PATH)"
+	@echo "PKG_CONFIG_PATH: $(PKG_CONFIG_PATH)"
+	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration"
+	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration
+
+redis-server: all-libs
 	cd ../redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) make redis-server
+
+redis-server-mig: all-libs-mig
+	cd ../redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_TCPMIG=1 make redis-server
 
 run-redis-server:
 	sudo -E LIBOS=catnip CONFIG_PATH=../config/node9_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ../redis/src/redis-server ../redis/redis.conf

@@ -1,8 +1,9 @@
 # Running `redis-server`
 
 - Make sure that the Redis repo is in the same parent directory as this repo.
-- Run `make all-libs` to create `libdemikernel.so`.
-- Run `make redis-server` to compile `redis-server`.
+- Run `make redis-server` to compile `redis-server` without migration.
+    OR
+  Run `make redis-server-mig` to compile `redis-server` with migration.
 - Run `make run-redis-server` to run `redis-server`.
 
 # Demikernel

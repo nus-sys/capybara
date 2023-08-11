@@ -627,6 +627,31 @@ pub extern "C" fn demi_getsockopt(
 }
 
 //======================================================================================================================
+// notify_migration_safety
+//======================================================================================================================
+
+#[cfg(feature = "tcp-migration")]
+#[allow(unused)]
+#[no_mangle]
+pub extern "C" fn demi_notify_migration_safety(was_migration_done: *mut c_int, qd: c_int) -> c_int {
+    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.notify_migration_safety(qd.into()) {
+        Ok(result) => {
+            unsafe { *was_migration_done = result.into(); }
+            0
+        },
+        Err(e) => {
+            warn!("notify_migration_safety() failed: {:?}", e);
+            e.errno
+        },
+    });
+
+    match ret {
+        Ok(ret) => ret,
+        Err(e) => e.errno,
+    }
+}
+
+//======================================================================================================================
 // Standalone Functions
 //======================================================================================================================
 

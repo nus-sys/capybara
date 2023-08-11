@@ -122,6 +122,20 @@ extern "C"
      */
     extern int demi_pop(demi_qtoken_t *qt_out, int qd);
 
+#ifdef __DEMIKERNEL_TCPMIG__
+
+    /**
+     * @brief Signals that the TCP connection represented by `qd` can be migrated right now.
+     *
+     * @param was_migration_done Store location for whether migration was initiated (1 if yes, 0 if no).
+     * @param qd                 Target I/O queue descriptor.
+     *
+     * @return On successful completion, zero is returned. On failure, a positive error code is returned instead.
+     */
+    extern int demi_notify_migration_safety(int *was_migration_done, int qd);
+
+#endif /* __DEMIKERNEL_TCPMIG__ */
+
 #ifdef __cplusplus
 }
 #endif
