@@ -181,10 +181,10 @@ export TIMEOUT ?= 30
 # Capybara Environment Variables
 #=======================================================================================================================
 # export LIBOS ?= catnip
-export CONFIG_DIR ?= /homes/inho/Capybara/config
-# export PKG_CONFIG_PATH ?= /homes/inho/lib/x86_64-linux-gnu/pkgconfig 
-# export LD_LIBRARY_PATH ?= /homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu 
-export ELF_DIR ?= /homes/inho/Capybara/capybara/bin/examples/rust
+export CONFIG_DIR ?= $(HOME)/Capybara/config
+# export PKG_CONFIG_PATH ?= $(HOME)/lib/x86_64-linux-gnu/pkgconfig 
+# export LD_LIBRARY_PATH ?= $(HOME)/lib:$(HOME)/lib/x86_64-linux-gnu 
+export ELF_DIR ?= $(HOME)/Capybara/capybara/bin/examples/rust
 export PORT_ID ?= 1
 export NUM_CORES ?= 4
 export RX_TX_RATIO ?= 10
@@ -424,7 +424,7 @@ tcp-pushpop:
 
 #============= REDIS =============#
 
-DEMIKERNEL_REPO_DIR ?= ~/Capybara/capybara
+DEMIKERNEL_REPO_DIR ?= $(HOME)/Capybara/capybara
 
 redis-server:
 	cd ../redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) make redis-server
