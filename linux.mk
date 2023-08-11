@@ -420,3 +420,17 @@ tcp-pushpop:
 	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
 	timeout 10 /homes/inho/Capybara/capybara/bin/examples/rust/tcp-push-pop.elf \
 	--server 10.0.1.8:22222
+
+
+#============= REDIS =============#
+
+DEMIKERNEL_REPO_DIR ?= ~/Capybara/capybara
+
+redis-server:
+	cd ../redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) make redis-server
+
+run-redis-server:
+	sudo -E LIBOS=catnip CONFIG_PATH=../config/node9_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ../redis/src/redis-server ../redis/redis.conf
+
+clean-redis:
+	cd ../redis && make distclean

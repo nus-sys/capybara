@@ -1,3 +1,10 @@
+# Running `redis-server`
+
+- Make sure that the Redis repo is in the same parent directory as this repo.
+- Run `make all-libs` to create `libdemikernel.so`.
+- Run `make redis-server` to compile `redis-server`.
+- Run `make run-redis-server` to run `redis-server`.
+
 # Demikernel
 
 [![Join us on Slack!](https://img.shields.io/badge/chat-on%20Slack-e01563.svg)](https://join.slack.com/t/demikernel/shared_invite/zt-11i6lgaw5-HFE_IAls7gUX3kp1XSab0g)
