@@ -433,13 +433,13 @@ all-libs-mig:
 	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration
 
 redis-server: all-libs
-	cd ../redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) make redis-server
+	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) make redis-server
 
 redis-server-mig: all-libs-mig
-	cd ../redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_TCPMIG=1 make redis-server
+	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_TCPMIG=1 make redis-server
 
 run-redis-server:
-	sudo -E LIBOS=catnip CONFIG_PATH=../config/node9_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ../redis/src/redis-server ../redis/redis.conf
+	sudo -E LIBOS=catnip CONFIG_PATH=../config/node9_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ../capybara-redis/src/redis-server ../capybara-redis/redis.conf
 
 clean-redis:
-	cd ../redis && make distclean
+	cd ../capybara-redis && make distclean

@@ -1,6 +1,6 @@
 # Running `redis-server`
 
-- Make sure that the Redis repo is in the same parent directory as this repo.
+- Make sure that the [capybara-redis](https://github.com/nus-sys/capybara-redis) repo is in the same parent directory as this repo.
 - Run `make redis-server` to compile `redis-server` without migration.
     OR
   Run `make redis-server-mig` to compile `redis-server` with migration.
