@@ -1,3 +1,56 @@
+# Running on nsl cluster
+## Cluster Information
+- We use three nodes (node 7, 8, 9) and one switch (sw1)
+- Node 7 runs client (Caladan), node 8 runs tcpdump, and node 9 runs server (Capybara)
+- (Important) You need to setup some ssh configurations to run this test. Please let me know for this configuration. 
+
+## Setup
+#### 1. On node 7 (client)
+- On your $HOME directory
+- Run `https://github.com/ihchoi12/caladan.git && cd caladan`
+- Follow the setup instructions in Caladan README.md
+
+#### 2. On node 8 (tcpdump)
+- Run `cd /local/[username] && mkdir capybara-pcap`
+
+#### 3. On node 9 (server)
+- On your $HOME directory
+- Run `mkdir Capybara && cd Capybara`
+- Run `git clone https://github.com/nus-sys/capybara.git && cd capybara`
+- Run `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+- Run `./scripts/setup/dpdk.sh`
+- Run `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+- Run `make LibOS=catnip all-examples-rust`
+
+## Run test
+#### On node 7 
+- Run `cd $HOME && mkdir capybara-data`
+- Open a virtual screen (e.g., tmux).
+- Run `cd ~/caladan && sudo ./iokerneld` on a screen.
+- Edit `~/Capybara/capybara/eval/test_config.py` depending on the test you want to run
+- Run `python ~/Capybara/capybara/eval/run_eval.py`
+- It will run tests as in the python script. For each test, it will print out a summary of result, and store some log files into the `~/capybara-data/` directory.
+- log files: 
+  * [test_id].be[x]: console output from the backend server be[x] running on node9
+  * [test_id].client: console output from the client running on node 7
+  * [test_id].latency: latency CDF
+  * [test_id].latency_raw: latency of each request
+
+
+
+## pcap data
+- If you set `TCPDUMP = True` in the `~/Capybara/capybara/eval/test_config.py` file, the script will run only the first test, parse the pcap data files, and then terminate the script.
+- It will store some log files generated from pcap trace into the `node8:/local/[username]/capybara-pcap/` directory
+- log files: 
+  * [test_id].pcap: original pcap file
+  * [test_id].csv: pcap data parsed into a csv format
+  * [test_id].request_times: timestamps of captured request packets in order
+  * [test_id].response_times: timestamps of captured response packets in order
+  * [test_id].pcap_latency: latency of each request in order
+
+
+
+#
 # Running `redis-server`
 
 - Make sure that the [capybara-redis](https://github.com/nus-sys/capybara-redis) repo is in the same parent directory as this repo.

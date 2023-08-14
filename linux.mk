@@ -4,7 +4,6 @@
 #=======================================================================================================================
 # Default Paths
 #=======================================================================================================================
-# export HOME ?= /homes/inho
 export PREFIX := $(HOME)
 export INSTALL_PREFIX := $(HOME)
 export PKG_CONFIG_PATH := $(shell find $(PREFIX)/lib/ -name '*pkgconfig*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
@@ -180,14 +179,8 @@ export TIMEOUT ?= 30
 #=======================================================================================================================
 # Capybara Environment Variables
 #=======================================================================================================================
-# export LIBOS ?= catnip
-export CONFIG_DIR ?= $(HOME)/Capybara/config
-# export PKG_CONFIG_PATH ?= $(HOME)/lib/x86_64-linux-gnu/pkgconfig 
-# export LD_LIBRARY_PATH ?= $(HOME)/lib:$(HOME)/lib/x86_64-linux-gnu 
+export CONFIG_DIR = $(HOME)/Capybara/capybara/config
 export ELF_DIR ?= $(HOME)/Capybara/capybara/bin/examples/rust
-export PORT_ID ?= 1
-export NUM_CORES ?= 4
-export RX_TX_RATIO ?= 10
 
 # Runs system tests.
 test-system: test-system-rust
@@ -209,8 +202,6 @@ test-unit-rust:
 	$(CARGO) test tcp_migration --lib $(CARGO_FLAGS) $(CARGO_FEATURES) -- --nocapture $(UNIT_TEST)
 
 
-server-test:
-	CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml timeout 30 /homes/inho/Capybara/capybara/bin/examples/rust/tcp-push-pop.elf --server 20.0.0.2:22222
 
 tcp-echo:
 	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
@@ -330,6 +321,7 @@ client-dpdk-ctrl:
 
 be-dpdk-ctrl:
 	sudo -E RUST_LOG="debug" \
+	NUM_CORES=4 \
 	CORE_ID=5 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \

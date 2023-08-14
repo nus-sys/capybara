@@ -26,154 +26,15 @@ from cycler import cycler
 import datetime
 
 
-# PATH
-CAPYBARA_PATH = '/homes/inho/Capybara/capybara'
-DATA_PATH = '/homes/inho/capybara-data'
-local_eval_dir = '/home/ihchoi/Dropbox/Research/Capybara/capybara/eval'
+from test_config import *
 
-# NODE
-ALL_NODES = ['node7', 'node8', 'node9']
-BACKEND_NODE = 'node9'
-CLIENT_NODE = 'node7'
-
-config = toml.load('./config.toml')
-REPEAT_NUM = 10
-RATE_FROM = 110000
-RATE_TO = 251000 #2000000
-RATE_INTERVAL = 20000
-NUM_BACKENDS = 2
-BACKEND_APP = 'http-server-be'
-NUM_CONNECTIONS = [1, 10, 30, 50, 100, 150, 200]
-MIG_DELAYS = [0, 5, 10, 15, 20, 30, 40, 50, 100]
-MIG_PER_RXS = [0, 1, 2, 3, 5, 10, 15, 20, 30, 50, 100, 200, 300, 500]
 final_result = ''
 
-DEFAULT_WIDTH = 6.4
-C = [
-    'xkcd:grass green',
-    'xkcd:blue',
-    'xkcd:purple',
-    'xkcd:orange',
-    'xkcd:teal',
-    'xkcd:brick red',
-    'xkcd:black',
-    'xkcd:brown',
-    'xkcd:grey',
-]
-LS = [
-    'solid',
-    'dashed',
-    'dotted',
-    'dashdot'
-]
-
-M = [
-    'o',
-    's',
-    '^',
-    'v',
-    'D'
-]
-
-def millions(x, pos):
-    'The two args are the value and tick position'
-    return str(int(x/1000000)) + '.' + str(int((x%1000000)/100000)) + 'M'
-def thousands(x, pos):
-    'The two args are the value and tick position'
-    return str(int(x/1000)) + 'K'
-
-def plot_setup():
-    '''Called before every plot_ function'''
-
-    def lcm(a, b):
-        return abs(a*b) // math.gcd(a, b)
-
-    def a(c1, c2):
-        '''Add cyclers with lcm.'''
-        l = lcm(len(c1), len(c2))
-        c1 = c1 * (l//len(c1))
-        c2 = c2 * (l//len(c2))
-        return c1 + c2
-
-    def add(*cyclers):
-        s = None
-        for c in cyclers:
-            if s is None:
-                s = c
-            else:
-                s = a(s, c)
-        return s
-    plt.rc('axes', prop_cycle=(add(cycler(color=C),
-                                   cycler(linestyle=LS),
-                                   cycler(marker=M))))
-    plt.rc('lines', markersize=5)
-    plt.rc('legend', handlelength=3, handleheight=1.5, labelspacing=0.25)
-    plt.rcParams['font.family'] = 'sans'
-    plt.rcParams['font.size'] = 10
-    plt.rcParams['pdf.fonttype'] = 42
-    plt.rcParams['ps.fonttype'] = 42
-
-def parse_result():
-    print('PARSING RESULT')
-    plot_setup()
-    xs, tails_99th, avgs = dict(), dict(), []
-    for j in range(1, 2):
-        xs[j] = []
-        tails_99th[j] = []
-    print('#BE', '1', '2', '3', '4')
-    for i in rates:
-        print(i, end=' ', flush=True)
-        for j in range(1, 2):
-            xs[j].append(i*j)
-            latency_list = []
-            with open(f'{local_eval_dir}/data/r{i}_be{j}.log', 'r') as f:
-                for line in f:
-                    columns = line.strip().split('\t')
-                    latency_list.append(int(columns[1]))
-                    # latency_list = np.array(f.read().splitlines()).astype(int)
-            
-            # print(np.percentile(latency_list, 99))
-            tails_99th[j].append(np.percentile(latency_list, 99)/1000)
-            # avgs.append(np.average(latency_list))
-            print(int(tails_99th[j][len(tails_99th[j])-1]), end=' ', flush=True)
-        print()
-
-    fig, ax = plt.subplots(figsize=(6, 4))
-    # ax.set_title(f'{config['parameters']['connections']} connections')
-    ax.set_xlabel(f'Rate (pps)')  # Add an x-label to the axes.
-    ax.set_ylabel('99th-latency(µs)')
-    ax.set_xticks(np.arange(0, 3000000 + 1, 500000))
-    ax.xaxis.set_major_formatter(tick.FuncFormatter(millions))
-    
-    for j in range(1, n_backends+1):
-        ax.plot(xs[j], tails_99th[j])
-        
-    # print(max(max(x) for x in tails_99th.values()))
-    # ax.plot(xs, avgs)
-    plt.legend(range(1, n_backends+1))
-    # plt.ylim([0, sum(max(x) for x in tails_99th.values()) / len(tails_99th.keys())])
-    plt.ylim([0, 300])
-    plt.xlim([0, 3000000])
-    
-    ax.grid()
-    fig.savefig(f'{local_eval_dir}/dpdk.pdf', bbox_inches='tight')
-    plt.show()
-    
-
-
-def cleaning():
-    cmd = f'rm {local_eval_dir}/data/*.log & rm {local_eval_dir}/data/*.log.tput'
-    subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).wait()
-
-    cmd = ['rm {CAPYBARA_PATH}/eval/data/*.log & rm {CAPYBARA_PATH}/eval/data/*.log.tput']
-    host = pyrem.host.RemoteHost(list(config['clients'].keys())[0])
-    task = host.run(cmd, quiet=False)
-    pyrem.task.Parallel([task], aggregate=True).start(wait=True)
-
-    print('CLEANED OLD OUTPUTS')
 
 def kill_procs():
-    cmd = [f'sudo pkill -INT -f Capybara && sudo pkill -INT -f caladan']
+    cmd = ['sudo pkill -INT -f Capybara && sudo pkill -INT -f caladan']
+    if TCPDUMP:
+        cmd[0] += ' && sudo pkill -INT -f tcpdump'
     # cmd = [f'sudo pkill -INT -f Capybara && sleep 2 && sudo pkill -f Capybara && sudo pkill -f caladan']
     kill_tasks = []
     for node in ALL_NODES:
@@ -186,7 +47,7 @@ def kill_procs():
     print('KILLED CAPYBARA PROCESSES')
 
 
-def run_server(mig_delay, mig_per_rx):
+def run_server(mig_delay, mig_var):
     global experiment_id
     
     print('SETUP SWITCH')
@@ -211,21 +72,20 @@ def run_server(mig_delay, mig_per_rx):
 
     server_tasks = []
     for j in range(NUM_BACKENDS):
-        # cmd = [f'cd {CAPYBARA_PATH} && make {BACKEND_APP}{j} > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
         cmd = [f'cd {CAPYBARA_PATH} && \
                sudo -E \
                LIBOS=catnip \
                MTU=1500 \
                MSS=1500 \
-               NUM_CORE=4 \
+               NUM_CORES=4 \
                RUST_BACKTRACE=full \
                CORE_ID={j+1} \
                MIG_DELAY={int(mig_delay/10) * 72} \
-               MIG_PER_RX={int(mig_per_rx)} \
-               CONFIG_PATH=/homes/inho/Capybara/config/be0_config.yaml \
-               LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-               PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-               {CAPYBARA_PATH}/bin/examples/rust/http-server.elf 10.0.1.9:1000{j} \
+               MIG_VAR={int(mig_var)} \
+               CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
+               LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
+               PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
+               {CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP} 10.0.1.9:1000{j} \
                > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
         task = host.run(cmd, quiet=False)
         server_tasks.append(task)
@@ -233,37 +93,76 @@ def run_server(mig_delay, mig_per_rx):
     time.sleep(2)
     print(f'{NUM_BACKENDS} backends are running')
 
+def run_tcpdump(experiment_id):
+    print(f'RUNNING TCPDUMP to node8:{PCAP_PATH}/{experiment_id}.pcap')
+    
+    host = pyrem.host.RemoteHost(TCPDUMP_NODE)
+    cmd = [f'sudo tcpdump -i ens85f1 -w {PCAP_PATH}/{experiment_id}.pcap']
+    task = host.run(cmd, quiet=False)
+    pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+    
+def parse_tcpdump(experiment_id):
+    print(f'PARSING {TCPDUMP_NODE}:{PCAP_PATH}/{experiment_id}.pcap') 
+    
+    host = pyrem.host.RemoteHost(TCPDUMP_NODE)
+    
+    cmd = [f"""
+            {CAPYBARA_PATH}/eval/pcap-parser.sh {PCAP_PATH}/{experiment_id}.pcap &&
+            cat {PCAP_PATH}/{experiment_id}.csv | awk '{{if($16 == "GET"){{print $2}}}}' > {PCAP_PATH}/{experiment_id}.request_times &&
+            cat {PCAP_PATH}/{experiment_id}.csv | awk '{{if($16 == "OK"){{print $2}}}}' > {PCAP_PATH}/{experiment_id}.response_times &&
+            paste {PCAP_PATH}/{experiment_id}.request_times {PCAP_PATH}/{experiment_id}.response_times | awk '{{print $2-$1}}'  > {PCAP_PATH}/{experiment_id}.pcap_latency
+    """]
+    
+    task = host.run(cmd, quiet=False)
+    pyrem.task.Parallel([task], aggregate=True).start(wait=True)
+  
+
+
 def run_eval():
     global experiment_id
     global final_result
     for repeat in range(0, REPEAT_NUM):
         for mig_delay in MIG_DELAYS:
-            for mig_per_rx in MIG_PER_RXS: 
-                for i in range(RATE_FROM, RATE_TO, RATE_INTERVAL):
-                    for j in NUM_CONNECTIONS:
+            for mig_var in MIG_VARS: 
+                for pps in CLIENT_PPS:
+                    for conn in NUM_CONNECTIONS:
                         kill_procs()
                         experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
-                        print(f'******* REPEAT: {repeat}  RUN ID: {experiment_id}   RATE: {i}   NUM_CONNECTIONS: {j}    MIG_DELAY: {mig_delay} MIG_PER_RX: {mig_per_rx} *******')
-                        run_server(mig_delay, mig_per_rx)
+                        
+                        print(f'================ RUNNING TEST =================\n'
+                                f'REPEAT: {repeat}\n'
+                                f'RUN ID: {experiment_id}\n'
+                                f'RATE: {pps}\n'
+                                f'NUM_CONNECTIONS: {conn}\n'
+                                f'MIG_DELAY: {mig_delay}\n'
+                                f'MIG_VAR: {mig_var}\n')
+                        
+
+                        if TCPDUMP == True:
+                            run_tcpdump(experiment_id)
+                        
+                        run_server(mig_delay, mig_var)
+                        
                         host = pyrem.host.RemoteHost(CLIENT_NODE)
-                        cmd = [f'sudo /homes/inho/caladan/apps/synthetic/target/release/synthetic \
+                        cmd = [f'sudo {HOME}/caladan/apps/synthetic/target/release/synthetic \
                                 10.0.1.8:10000 \
-                                --config /homes/inho/caladan/client.config \
+                                --config {HOME}/caladan/client.config \
                                 --mode runtime-client \
                                 --protocol=http \
                                 --transport=tcp \
                                 --samples=1 \
-                                --pps={i} \
-                                --threads={j} \
-                                --runtime=10 \
+                                --pps={pps} \
+                                --threads={conn} \
+                                --runtime={RUNTIME} \
+                                --discard_pct=0 \
                                 --exptid={DATA_PATH}/{experiment_id} \
                                 > {DATA_PATH}/{experiment_id}.client']
-                        # cmd = [f'sudo /homes/inho/Capybara/tcp_generator/build/tcp-generator \
+                        # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \
                         #         -a 31:00.1 \
                         #         -n 4 \
                         #         -c 0xffff -- \
                         #         -d exponential \
-                        #         -c /homes/inho/Capybara/tcp_generator/addr.cfg \
+                        #         -c {HOME}/Capybara/tcp_generator/addr.cfg \
                         #         -s 256 \
                         #         -t 10 \
                         #         -r {i} \
@@ -274,19 +173,35 @@ def run_eval():
                         task = host.run(cmd, quiet=False)
                         pyrem.task.Parallel([task], aggregate=True).start(wait=True)
 
-                        print('******* FINISH *******')
+                        print('================ TEST COMPLETE =================\n')
                         
-                        cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]"'
-                        result = subprocess.run(
-                            cmd,
-                            shell=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT,
-                            check=True,
-                        ).stdout.decode()
-                        print(result + '\n\n')
-                        final_result = final_result + f'{experiment_id}, {j}, {mig_delay}, {mig_per_rx},{result[len("[RESULT]"):]}'
-                
+                        try:
+                            cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]"'
+                            result = subprocess.run(
+                                cmd,
+                                shell=True,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT,
+                                check=True,
+                            ).stdout.decode()
+                            print(result + '\n\n')
+                            final_result = final_result + f'{experiment_id}, {conn}, {mig_delay}, {mig_var},{result[len("[RESULT]"):]}'
+                        except subprocess.CalledProcessError as e:
+                            # Handle the exception for a failed command execution
+                            print("EXPERIMENT FAILED\n\n")
+
+                        except Exception as e:
+                            # Handle any other unexpected exceptions
+                            print("EXPERIMENT FAILED\n\n")
+                        
+                        if TCPDUMP == True:
+                            time.sleep(3)
+                            kill_procs()
+                            parse_tcpdump(experiment_id)
+                            
+                            print("Parsing pcap file is done, finishing test here.\n\n")
+
+                            exit()
             # task = host.run(cmd, return_output=True, quiet=False)
             # task.start()
             # result = task.return_values
@@ -301,10 +216,10 @@ def run_eval():
 def exiting():
     global final_result
     print('EXITING')
-    print("\n\n\n\n\nID, #CONN, MIG_DELAY, MIG_PER_RX, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc")
+    print("\n\n\n\n\nID, #CONN, MIG_DELAY, TOTAL_MIG, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc")
     print(final_result)
     with open(f'{DATA_PATH}/result.txt', "w") as file:
-        file.write("ID, #CONN, MIG_DELAY, MIG_PER_RX, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc\n")
+        file.write("ID, #CONN, MIG_DELAY, TOTAL_MIG, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc\n")
         file.write(final_result)
     kill_procs()
 
@@ -312,7 +227,6 @@ atexit.register(exiting)
 
 
 if __name__ == '__main__':
-    
     # parse_result()
     # exit()
     
