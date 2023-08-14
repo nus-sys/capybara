@@ -7,28 +7,31 @@
 ## Setup
 #### 1. On node 7 (client)
 - On your $HOME directory
-- Run `https://github.com/ihchoi12/caladan.git && cd caladan`
-- Follow the setup instructions in Caladan README.md
+- Run `git clone https://github.com/ihchoi12/caladan.git && cd caladan`
+- Run `make submodules && make -j`
+- Run `cd ksched; make ; cd ..`
+- Run `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain nightly`
+- Run `cd apps/synthetic; cargo build --release; cd ../../;`
 
 #### 2. On node 8 (tcpdump)
-- Run `cd /local/[username] && mkdir capybara-pcap`
+- Run `mkdir /local/$USER/capybara-pcap`
 
 #### 3. On node 9 (server)
 - On your $HOME directory
 - Run `mkdir Capybara && cd Capybara`
 - Run `git clone https://github.com/nus-sys/capybara.git && cd capybara`
-- Run `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 - Run `./scripts/setup/dpdk.sh`
 - Run `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 - Run `make LibOS=catnip all-examples-rust`
 
 ## Run test
 #### On node 7 
-- Run `cd $HOME && mkdir capybara-data`
+- Run `mkdir $HOME/capybara-data`
 - Open a virtual screen (e.g., tmux).
-- Run `cd ~/caladan && sudo ./iokerneld` on a screen.
+- Run `cd ~/caladan; sudo scripts/setup_machine.sh; sudo ./iokerneld` on a screen.
 - Edit `~/Capybara/capybara/eval/test_config.py` depending on the test you want to run
-- Run `python ~/Capybara/capybara/eval/run_eval.py`
+- Run (once) `pip3 install -r ~/Capybara/capybara/eval/requirements.txt`
+- Run `python3 ~/Capybara/capybara/eval/run_eval.py`
 - It will run tests as in the python script. For each test, it will print out a summary of result, and store some log files into the `~/capybara-data/` directory.
 - log files: 
   * [test_id].be[x]: console output from the backend server be[x] running on node9
