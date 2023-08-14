@@ -1,0 +1,14 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+catnip:
+  my_ipv4_addr: 10.0.1.9
+  my_link_addr: "08:c0:eb:b6:c5:ad"
+  my_interface_name: "ens85f1"
+  arp_table:
+    "08:c0:eb:b6:cd:5d": "10.0.1.7"
+    "08:c0:eb:b6:e8:05": "10.0.1.8"
+    "08:c0:eb:b6:c5:ad": "10.0.1.9"
+dpdk:
+  eal_init: ["", "-l", "", "-n", "4", "-a", "31:00.1","--proc-type=auto"]
+
+# vim: set tabstop=2 shiftwidth=2
