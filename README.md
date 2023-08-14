@@ -28,7 +28,7 @@
 #### On node 7 
 - Run `mkdir $HOME/capybara-data`
 - Open a virtual screen (e.g., tmux).
-- Run `cd ~/caladan; sudo scripts/setup_machine.sh; sudo ./iokerneld` on a screen.
+- Run `cd ~/caladan; sudo scripts/setup_machine.sh; sudo ./iokerneld ias nicpci 0000:31:00.1` on a screen.
 - Edit `~/Capybara/capybara/eval/test_config.py` depending on the test you want to run
 - Run (once) `pip3 install -r ~/Capybara/capybara/eval/requirements.txt`
 - Run `python3 ~/Capybara/capybara/eval/run_eval.py`
