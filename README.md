@@ -29,9 +29,10 @@
 - Run `mkdir $HOME/capybara-data`
 - Open a virtual screen (e.g., tmux).
 - Run `cd ~/caladan; sudo scripts/setup_machine.sh; sudo ./iokerneld ias nicpci 0000:31:00.1` on a screen.
-- Edit `~/Capybara/capybara/eval/test_config.py` depending on the test you want to run
+- Edit `~/Capybara/capybara/eval/test_config.py` according to the test you want to run
 - Run (once) `pip3 install -r ~/Capybara/capybara/eval/requirements.txt`
-- Run `python3 ~/Capybara/capybara/eval/run_eval.py`
+- Run `mv ~/Capybara/capybara/eval`
+- Run `python3 run_eval.py`
 - It will run tests as in the python script. For each test, it will print out a summary of result, and store some log files into the `~/capybara-data/` directory.
 - log files: 
   * [test_id].be[x]: console output from the backend server be[x] running on node9
@@ -43,7 +44,7 @@
 
 ## pcap data
 - If you set `TCPDUMP = True` in the `~/Capybara/capybara/eval/test_config.py` file, the script will run only the first test, parse the pcap data files, and then terminate the script.
-- It will store some log files generated from pcap trace into the `node8:/local/[username]/capybara-pcap/` directory
+- It will store some log files generated from pcap trace into the `node8:/local/$USER/capybara-pcap/` directory
 - log files: 
   * [test_id].pcap: original pcap file
   * [test_id].csv: pcap data parsed into a csv format

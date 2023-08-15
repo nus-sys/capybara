@@ -101,6 +101,7 @@ struct Inner {
 
     migrated_out_connections: HashSet<SocketAddrV4>,
     additional_mig_delay: u32,
+    migration_variable: u32,
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
     #[allow(unused)]
@@ -445,20 +446,32 @@ impl TcpMigPeer {
     // TEMP (for migration test)
     pub fn should_migrate(&self) -> bool {
         // return false;
-        static mut FLAG: i32 = 0;
-        static mut num_mig: i32 = 0;
+        static mut FLAG: u32 = 0;
+        static mut WARMUP: u32 = 0;
+        static mut NUM_MIG: u32 = 0;
+        unsafe{
+            if std::env::var("CORE_ID") == Ok("1".to_string()) {
+                WARMUP += 1;
+                if WARMUP < 20000 {
+                    return false;
+                }
+            }
+        }
         let inner = self.inner.borrow();
-        // println!("currently_migration: {} , num_conn: {}", inner.is_currently_migrating, inner.stats.num_of_connections());
+        // println!("NUM_MIG: {} , num_conn: {}", unsafe{NUM_MIG}, inner.stats.num_of_connections());
         
         unsafe {
-            if inner.is_currently_migrating || inner.stats.num_of_connections() <= 40 || num_mig >= 200 { return false; }
-            if FLAG == 1000 {
+            // if inner.is_currently_migrating || inner.stats.num_of_connections() <= 0 || inner.migration_variable ==  0 { return false; }
+            
+            if inner.is_currently_migrating || inner.stats.num_of_connections() <= 0 || NUM_MIG >= inner.migration_variable { return false; }
+            // if inner.is_currently_migrating || NUM_MIG >= 1 || inner.additional_mig_delay <10000 { return false; }
+            if FLAG == 100 {
                 FLAG = 0;
-                num_mig+=1;
+                NUM_MIG+=1;
             }
             FLAG += 1;
             // println!("FLAG: {}", FLAG);
-            FLAG == 1000
+            FLAG == 100
         }
     }
 
@@ -533,7 +546,11 @@ impl Inner {
             self_udp_port: SELF_UDP_PORT, // TEMP
             migrated_out_connections: HashSet::new(),
             additional_mig_delay: env::var("MIG_DELAY")
-            .unwrap_or_else(|_| String::from("0")) // Default value if DELAY is not set
+            .unwrap_or_else(|_| String::from("0")) // Default value is 0 if MIG_DELAY is not set
+            .parse::<u32>()
+            .expect("Invalid DELAY value"),
+            migration_variable: env::var("MIG_VAR")
+            .unwrap_or_else(|_| String::from("0")) // Default value is 0 if MIG_VAR is not set
             .parse::<u32>()
             .expect("Invalid DELAY value"),
             //background: handle,

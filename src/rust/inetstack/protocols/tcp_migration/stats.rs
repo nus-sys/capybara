@@ -134,20 +134,20 @@ impl TcpMigStats {
     }
 
     pub fn get_connection_to_migrate_out(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
-        /* self.recv_queue_lengths.iter()
-        .max_by_key(|(_, v)| v.get())
-        .and_then(|(k, _)| Some(*k)) */
-
-        let pivot = self.global_recv_queue_length - self.threshold;
-
         self.recv_queue_lengths.iter()
-            .filter(|(_, v)| v.get().0 > pivot)
-            .min_by_key(|(_, v)| v.get())
-            .or_else(||
-                self.recv_queue_lengths.iter()
-                    .max_by_key(|(_, v)| v.get())
-            )
-            .and_then(|(k, _)| Some(*k))
+        .max_by_key(|(_, v)| v.get())
+        .and_then(|(k, _)| Some(*k))
+
+        // let pivot = self.global_recv_queue_length - self.threshold;
+
+        // self.recv_queue_lengths.iter()
+        //     .filter(|(_, v)| v.get().0 > pivot)
+        //     .min_by_key(|(_, v)| v.get())
+        //     .or_else(||
+        //         self.recv_queue_lengths.iter()
+        //             .max_by_key(|(_, v)| v.get())
+        //     )
+        //     .and_then(|(k, _)| Some(*k))
     }
 
     pub fn stop_tracking_connection(&mut self, local: SocketAddrV4, remote: SocketAddrV4) {
