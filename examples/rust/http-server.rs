@@ -117,7 +117,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     
     let response = match std::fs::read_to_string(full_path.as_str()) {
         Ok(mut contents) => {
-            contents.push_str(unsafe { &START_TIME.elapsed() }.as_nanos().to_string());
+            contents.push_str(unsafe { START_TIME.as_ref().unwrap().elapsed() }.as_nanos().to_string().as_str());
             format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
         },
         Err(_) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n"),
