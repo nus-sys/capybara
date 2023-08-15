@@ -17,7 +17,7 @@ use ::demikernel::{
 #[cfg(feature = "capybara-log")]
 use ::demikernel::tcpmig_profiler::{tcp_log};
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -34,6 +34,8 @@ use ctrlc;
 use std::sync::Arc;
 
 const BUFSZ: usize = 4096;
+
+static mut START_TIME: Option<Instant> = None;
 
 // Borrowed from Loadgen
 struct Buffer {
@@ -114,7 +116,10 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     let full_path = format!("{}/{}", ROOT, file_name);
     
     let response = match std::fs::read_to_string(full_path.as_str()) {
-        Ok(contents) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents),
+        Ok(mut contents) => {
+            contents.push_str(unsafe { &START_TIME.elapsed() }.as_nanos().to_string());
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
+        },
         Err(_) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n"),
     };
     #[cfg(feature = "capybara-log")]
@@ -185,6 +190,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
     }).expect("Error setting Ctrl-C handler");
+
+    unsafe { START_TIME = Some(Instant::now()); }
 
     let libos_name: LibOSName = LibOSName::from_env().unwrap().into();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
