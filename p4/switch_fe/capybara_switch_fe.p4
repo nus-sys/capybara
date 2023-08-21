@@ -36,8 +36,8 @@ struct my_ingress_metadata_t { // client ip and port in meta
     bit<16> hash2;
     // bit<16> hash3;
     
-    bit<1> chown;
-    bit<1> start_migration;
+    bit<8> flag;
+    bit<1> initial_distribution;
     bit<1> result00;
     bit<1> result01;
     bit<1> result02;
@@ -82,7 +82,9 @@ parser IngressParser(
         meta.ingress_port = ig_intr_md.ingress_port;
         meta.egress_port = 0;
         meta.l4_payload_checksum  = 0;
-        meta.chown = 0;
+        meta.flag = 0;
+        meta.initial_distribution = 0;
+        
         meta.result00 = 0;
         meta.result01 = 0;
         meta.result02 = 0;
@@ -168,8 +170,7 @@ parser IngressParser(
         pkt.extract(hdr.tcpmig);
         meta.client_ip = hdr.tcpmig.client_ip;
         meta.client_port = hdr.tcpmig.client_port;
-        meta.chown = hdr.tcpmig.flag[0:0];
-        // meta.start_migration = hdr.tcpmig.flag[5:5]; // PREPARE_MIGRATION: 00100000
+        meta.flag = hdr.tcpmig.flag;
         transition accept;
     }
 
@@ -284,6 +285,8 @@ control Ingress(
     MinimumWorkload32b() min_workload_ip;
     MinimumWorkload16b() min_workload_port;
 
+    Blocker0() blocker0;
+
     action exec_reply_rewrite() {
         hdr.ethernet.src_mac = FE_MAC;
         hdr.ipv4.src_ip = FE_IP;
@@ -291,8 +294,8 @@ control Ingress(
     }
     table tbl_reply_rewrite {
         key = {
-            meta.start_migration    : ternary;
-            meta.chown              : ternary;
+            meta.initial_distribution    : ternary;
+            meta.flag               : ternary;
             meta.result02           : ternary;
             meta.result03           : ternary;
         }
@@ -319,7 +322,7 @@ control Ingress(
         //         ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
         //         drop();
         //     }else{
-        //         meta.start_migration = 1;
+        //         meta.initial_distribution = 1;
         //     }
 
         //     min_workload.apply(0, hdr, meta, holder_1b_00);
@@ -342,6 +345,8 @@ control Ingress(
                 hash.apply(hdr.ipv4.src_ip, hdr.tcp.src_port, hash1);
                 hash.apply(hdr.ipv4.dst_ip, hdr.tcp.dst_port, hash2);
                 if(hdr.tcp.flags == 0b00000010 && hdr.ipv4.dst_ip == FE_IP){ // SYN to FE
+                    // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+
                     meta.client_ip = hdr.ipv4.src_ip;
                     meta.client_port = hdr.tcp.src_port;
 
@@ -352,26 +357,27 @@ control Ingress(
                     exec_read_backend_port();
                     
                     hash2 = hash1;
-                    meta.start_migration = 1; // initial migration from FE (switch) to a BE
+                    meta.initial_distribution = 1; // initial migration from FE (switch) to a BE
 
                     hdr.ethernet.dst_mac = meta.owner_mac;
                     hdr.ipv4.dst_ip = meta.owner_ip;
                     hdr.tcp.dst_port = meta.owner_port;
                 }
             }
-            else if(meta.chown == 1){
-                
+            else if(hdr.tcpmig.isValid()){
                 hash.apply(meta.client_ip, meta.client_port, hash1);
                 hash2 = hash1;
-                meta.owner_mac = hdr.ethernet.src_mac;
-                meta.owner_ip = hdr.ipv4.src_ip;
-                meta.owner_port = hdr.udp.src_port;
-            }
 
-            if(hdr.tcpmig.isValid()){
+                // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
                 hdr.udp.checksum = 0;
                 hdr.ethernet.dst_mac = BE_MAC;
                 hdr.ipv4.dst_ip = BE_IP;
+            }
+
+            if(meta.flag[0:0] == 1){ // chown
+                meta.owner_mac = hdr.ethernet.src_mac;
+                meta.owner_ip = hdr.ipv4.src_ip;
+                meta.owner_port = hdr.udp.src_port;
             }
 
             // When the owner is changed? 1) SYN; 2) migration;
@@ -391,6 +397,8 @@ control Ingress(
             owner_port_0.apply(hash1, meta.owner_port, meta, hdr.tcp.dst_port); // Assumption: target uses the same port as origin to serve client
             
             tbl_reply_rewrite.apply();
+
+            blocker0.apply(hash1, meta, ig_dprsr_md.drop_ctl[0:0]);
         }
 
 
@@ -417,7 +425,7 @@ struct migration_digest_t {
     // bit<32>  meta_ip;
     // bit<16>  meta_port;
 
-    // bit<16>  hash_digest1;
+    bit<16>  hash_digest1;
     // bit<16>  hash_digest2;
     // bit<16>  hash_digest;
 }
@@ -446,7 +454,8 @@ control IngressDeparser(packet_out pkt,
                     hdr.udp.src_port,
                     hdr.ethernet.dst_mac,
                     hdr.ipv4.dst_ip,
-                    hdr.udp.dst_port
+                    hdr.udp.dst_port,
+                    meta.hash1
                 });
         }
 

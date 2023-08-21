@@ -862,8 +862,8 @@ control Blocker0(
         }
         size = 16;
         const entries = {
-            (0, 1, 1) : exec_block();
-            (3, 1, 1) : exec_block();
+            (0, 1, 1) : exec_block();   // add
+            (3, 1, 1) : exec_block();   // lock
             (1, 1, 1) : exec_unblock(); // delete
             (2, 1, 1) : exec_unblock(); // chown
             (5, 1, 1) : exec_check_block();
@@ -921,8 +921,8 @@ control Blocker1(
         }
         size = 16;
         const entries = {
-            (0, 1, 1) : exec_block();
-            (3, 1, 1) : exec_block();
+            (0, 1, 1) : exec_block();   // add
+            (3, 1, 1) : exec_block();   // lock
             (1, 1, 1) : exec_unblock(); // delete
             (2, 1, 1) : exec_unblock(); // chown
             (5, 1, 1) : exec_check_block();

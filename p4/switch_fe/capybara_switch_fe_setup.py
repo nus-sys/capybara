@@ -218,13 +218,13 @@ class capybara_switch_fe():
             dst_ip      = digest["dst_ip"]
             dst_port      = digest["dst_port"]
 
-            # hash_digest1         =   digest["hash_digest1"];
+            hash_digest1         =   digest["hash_digest1"];
             # hash_digest         =   digest["hash_digest"];
 
             # print("Hash: {}\n".format(hash_digest), end="", flush=True)
             # print("src: {}:{}, dst: {}:{}, meta: {},{}\nHash1: {} and Hash2: {}\n".format(
             #     ip(src_ip), src_port, ip(dst_ip), dst_port, ip(meta_ip), meta_port, hash_digest1, hash_digest2), end="", flush=True)
-
+            print("Hash: {}\n".format(hash_digest1), end="", flush=True)
             print("\n{}:{}:{} => {}:{}:{} \n".format(
                 mac(src_mac), ip(src_ip), src_port, mac(dst_mac), ip(dst_ip), dst_port), end="", flush=True)
 

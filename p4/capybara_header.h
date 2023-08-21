@@ -143,7 +143,7 @@ header heartbeat_h {
 // PRISM HEADERS
 
 header prism_req_base_h {
-    bit<8>  type;
+    bit<8>  type; // 0: add, 1: delete, 2: chown, 3: lock, 4: unlock
     bit<16>  status;
 
     bit<32>  peer_addr; // peer: client
