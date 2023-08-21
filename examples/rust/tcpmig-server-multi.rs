@@ -112,42 +112,43 @@ fn server(local: SocketAddrV4) -> Result<()> {
         // We use trywait_any2 here to work around this case.
         // Leter, if we test with many connections and high request rates, we can use
         // wait_any2 instead, and maybe achieve higher performance by removing try overheads. 
-        let result = match libos.trywait_any2(&qts) {
-            Ok(wait_result) => wait_result,
-            Err(e) => panic!("operation failed: {:?}", e.cause),
-        };
+        let result = libos.trywait_any2(&qts).expect("result");
 
-        if let Some((index, qd, result)) = result {
-            qts.swap_remove(index);
-            match result {
-                OperationResult::Accept(new_qd) => {
-                    if let Some(qt) = get_request(&mut libos, new_qd) {
-                        qts.push(qt);
-                    }
+        if let Some(completed_results) = result {
+            let indices_to_remove: Vec<usize> = completed_results.iter().map(|(index, _, _)| *index).collect();
+            let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect();
+            qts = new_qts;
+            for (index, qd, result) in completed_results {
+                match result {
+                    OperationResult::Accept(new_qd) => {
+                        if let Some(qt) = get_request(&mut libos, new_qd) {
+                            qts.push(qt);
+                        }
 
-                    qts.push(get_connection(&mut libos, qd));
-                },
-                OperationResult::Push => {
-                    if let Some(qt) = get_request(&mut libos, qd) {
-                        qts.push(qt);
+                        qts.push(get_connection(&mut libos, qd));
+                    },
+                    OperationResult::Push => {
+                        if let Some(qt) = get_request(&mut libos, qd) {
+                            qts.push(qt);
 
-                        // This QDesc can be migrated. (waiting for new request)
-                        migratable_qds.insert(qd, qt);
-                    }
-                },
-                OperationResult::Pop(_, recvbuf) => {
-                    // This QDesc can no longer be migrated. (currently processing a request)
-                    migratable_qds.remove(&qd);
+                            // This QDesc can be migrated. (waiting for new request)
+                            migratable_qds.insert(qd, qt);
+                        }
+                    },
+                    OperationResult::Pop(_, recvbuf) => {
+                        // This QDesc can no longer be migrated. (currently processing a request)
+                        migratable_qds.remove(&qd);
 
-                    // Request Processing Delay
-                    // thread::sleep(Duration::from_micros(1));
+                        // Request Processing Delay
+                        // thread::sleep(Duration::from_micros(1));
 
-                    qts.push(send_response(&mut libos, qd, &recvbuf));
-                },
-                _ => {
-                    println!("RESULT: {:?}", result);
-                    unreachable!();
-                },
+                        qts.push(send_response(&mut libos, qd, &recvbuf));
+                    },
+                    _ => {
+                        println!("RESULT: {:?}", result);
+                        unreachable!();
+                    },
+                }
             }
         }
 

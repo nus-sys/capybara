@@ -226,7 +226,7 @@ tcpmig-single-target:
 tcpmig-client:
 	sudo -E \
 	LIBOS=catnap \
-	CONFIG_PATH=$(CONFIG_DIR)/c1_config.yaml \
+	CONFIG_PATH=$(CONFIG_DIR)/node7_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 0 \
 	$(ELF_DIR)/tcpmig-client.elf 10.0.1.8:10000
@@ -284,18 +284,17 @@ tcpmig-multi-origin:
 tcpmig-multi-target0:
 	sudo -E CAPYBARA_LOG="tcpmig" \
 	MIG_THRESHOLD=10000 \
-	IS_FRONTEND=0 \
-	CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
+	CORE_ID=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	taskset --cpu-list 0 \
 	$(ELF_DIR)/tcpmig-server-multi.elf 10.0.1.9:10000
 
 tcpmig-multi-target1:
 	sudo -E CAPYBARA_LOG="tcpmig" \
 	MIG_THRESHOLD=10000 \
-	CONFIG_PATH=$(CONFIG_DIR)/be1_config.yaml \
+	CORE_ID=2 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	taskset --cpu-list 1 \
 	$(ELF_DIR)/tcpmig-server-multi.elf 10.0.1.9:10001
 
 tcpmig-multi-target2:

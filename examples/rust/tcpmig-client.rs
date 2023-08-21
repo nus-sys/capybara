@@ -75,7 +75,7 @@ fn client(remote: SocketAddrV4) -> Result<()> {
     let rounds = 128;
 
     // Issue n sends.
-    for j in 1..10000 {
+    for j in 1..2 {
         for i in 1..=rounds {
             //let begin = Instant::now();
             

@@ -185,13 +185,13 @@ struct ConnectionState {
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
-    let mut request_count = 0;  
+    // let mut request_count = 0;  
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
-        println!("Received Ctrl-C signal. Total requests processed: {}", request_count);
+        // println!("Received Ctrl-C signal. Total requests processed: {}", request_count);
     }).expect("Error setting Ctrl-C handler");
 
     // unsafe { START_TIME = Some(Instant::now()); }
@@ -210,7 +210,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     loop {
         if !running.load(Ordering::SeqCst) {
-            println!("Server stopping. Total requests processed: {}", request_count);
+            // println!("Server stopping. Total requests processed: {}", request_count);
             break;
         }
 
@@ -268,7 +268,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         let mut state = connstate.get_mut(&qd).unwrap();
                         let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
                         state.pushing += sent;
-                        request_count += sent;
+                        // request_count += sent;
                         // queue next pop
                         let pop_qt = libos.pop(qd).expect("pop qt");
                         qts.push(pop_qt);

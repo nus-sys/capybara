@@ -13,8 +13,8 @@ pub use peer::TcpMigPeer;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MigrationStage {
-    Rejected = 0,
-    None,
+    None = 0, // TcpMigHeader's flag cannot be 0, so p4 program checks this to filter out non-TCPMig packets
+    Rejected,
     PrepareMigration,
     PrepareMigrationAck,
     ConnectionState,
