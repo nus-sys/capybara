@@ -31,7 +31,7 @@
 - Run `cd ~/caladan; sudo scripts/setup_machine.sh; sudo ./iokerneld ias nicpci 0000:31:00.1` on a screen.
 - Edit `~/Capybara/capybara/eval/test_config.py` according to the test you want to run
 - Run (once) `pip3 install -r ~/Capybara/capybara/eval/requirements.txt`
-- Run `mv ~/Capybara/capybara/eval`
+- Run `cd ~/Capybara/capybara/eval`
 - Run `python3 run_eval.py`
 - It will run tests as in the python script. For each test, it will print out a summary of result, and store some log files into the `~/capybara-data/` directory.
 - log files: 
