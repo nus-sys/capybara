@@ -145,7 +145,7 @@ def run_eval():
                         
                         host = pyrem.host.RemoteHost(CLIENT_NODE)
                         cmd = [f'sudo {HOME}/caladan/apps/synthetic/target/release/synthetic \
-                                10.0.1.8:10000 \
+                                10.0.1.1:10000 \
                                 --config {HOME}/caladan/client.config \
                                 --mode runtime-client \
                                 --protocol=http \
@@ -155,6 +155,8 @@ def run_eval():
                                 --threads={conn} \
                                 --runtime={RUNTIME} \
                                 --discard_pct=0 \
+                                --output=buckets \
+                                --rampup=0 \
                                 --exptid={DATA_PATH}/{experiment_id} \
                                 > {DATA_PATH}/{experiment_id}.client']
                         # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \

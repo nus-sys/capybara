@@ -430,7 +430,7 @@ redis-server-mig: all-libs-mig
 	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_TCPMIG=1 make redis-server
 
 run-redis-server:
-	sudo -E LIBOS=catnip CONFIG_PATH=../config/node9_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ../capybara-redis/src/redis-server ../capybara-redis/redis.conf
+	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ../capybara-redis/src/redis-server ../capybara-redis/config/be0.conf
 
 clean-redis:
 	cd ../capybara-redis && make distclean
