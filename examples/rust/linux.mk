@@ -28,6 +28,8 @@ all: all-examples
 all-examples:
 #	@echo "$(CARGO) build --examples $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --examples $(CARGO_FEATURES) $(CARGO_FLAGS)
+#	@echo "$(CARGO) build --example tcp-echo $(CARGO_FEATURES) $(CARGO_FLAGS)"
+#	$(CARGO) build --example tcp-echo $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example tcp-migration-ping-pong $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example tcp-migration-ping-pong $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example tcpmig-server-multi $(CARGO_FEATURES) $(CARGO_FLAGS)"
@@ -40,15 +42,9 @@ all-examples:
 #	$(CARGO) build --example tcpmig-client $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)"
 	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
-#	@echo "$(CARGO) build --example tcp-echo $(CARGO_FEATURES) $(CARGO_FLAGS)"
-#	$(CARGO) build --example tcp-echo $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,tcp-migration-profiler 
-#	--features capybara-log 
-
-#,capybara-log 
-		
-
+	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,tcp-migration-profiler
+#,capybara-log
 
 clean:
 # 	@rm -rf $(BINDIR)/examples/rust/udp-dump.$(EXEC_SUFFIX)
@@ -58,15 +54,15 @@ clean:
 # 	@rm -rf $(BINDIR)/examples/rust/udp-push-pop.$(EXEC_SUFFIX)
 # 	@rm -rf $(BINDIR)/examples/rust/udp-ping-pong.$(EXEC_SUFFIX)
 # 	@rm -rf $(BINDIR)/examples/rust/tcp-dump.$(EXEC_SUFFIX)
-	@rm -rf $(BINDIR)/examples/rust/tcp-echo.$(EXEC_SUFFIX)
+#	@rm -rf $(BINDIR)/examples/rust/tcp-echo.$(EXEC_SUFFIX)
 # 	@rm -rf $(BINDIR)/examples/rust/tcp-pktgen.$(EXEC_SUFFIX)
 #	@rm -rf $(BINDIR)/examples/rust/tcp-push-pop.$(EXEC_SUFFIX)
 #	@rm -rf $(BINDIR)/examples/rust/tcp-ping-pong.$(EXEC_SUFFIX)
 #	@rm -rf $(BINDIR)/examples/rust/tcp-migration.$(EXEC_SUFFIX)
 #	@rm -rf $(BINDIR)/examples/rust/tcp-migration-ping-pong.$(EXEC_SUFFIX)
-	@rm -rf $(BINDIR)/examples/rust/tcpmig-client.$(EXEC_SUFFIX)
-	@rm -rf $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
-	@rm -rf $(BINDIR)/examples/rust/tcpmig-server-client.$(EXEC_SUFFIX)
+#	@rm -rf $(BINDIR)/examples/rust/tcpmig-client.$(EXEC_SUFFIX)
+#	@rm -rf $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
+#	@rm -rf $(BINDIR)/examples/rust/tcpmig-server-client.$(EXEC_SUFFIX)
 	@rm -rf $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
 	@rm -rf $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)
 	
