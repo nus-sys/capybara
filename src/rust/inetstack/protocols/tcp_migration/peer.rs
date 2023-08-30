@@ -92,7 +92,7 @@ struct Inner {
 
     stats: TcpMigStats,
 
-    is_currently_migrating: bool,
+    //is_currently_migrating: bool,
 
     //rx_tx_threshold_ratio: f64,
     recv_queue_length_threshold: f64,
@@ -219,7 +219,7 @@ impl TcpMigPeer {
                     tcpmig_log(format!("It returned back to itself, maybe it's the current-min-workload server"));
                 }
                 inner.active_migrations.remove(&key); 
-                inner.is_currently_migrating = false;
+                //inner.is_currently_migrating = false;
                 return Ok(())
             }
 
@@ -279,7 +279,7 @@ impl TcpMigPeer {
                 {
                     tcpmig_log(format!("4"));
                 }
-                inner.is_currently_migrating = false;
+                //inner.is_currently_migrating = false;
                 #[cfg(feature = "capybara-log")]
                 {
                     tcpmig_log(format!("CONN_STATE_ACK ({}, {})\n=======  MIGRATION COMPLETE! =======\n\n", local, client));
@@ -291,9 +291,14 @@ impl TcpMigPeer {
         Ok(())
     }
 
-    pub fn initiate_migration(&mut self) {
+    pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
         // thread::sleep(Duration::from_nanos(1));
         let mut inner = self.inner.borrow_mut();
+
+        // Don't need since `should_migrate()` checks this already.
+        /* if inner.is_currently_migrating(&conn) {
+            return;
+        } */
         
         {
             #[cfg(feature = "tcp-migration-profiler")]
@@ -303,17 +308,8 @@ impl TcpMigPeer {
             }
         }
 
-        let (origin, client) = match inner.stats.get_connection_to_migrate_out() {
-            Some(conn) => conn,
-            None => return,
-        };
-        let key = (origin, client);
-        // if inner.active_migrations.contains_key(&key) {
-        //     return;
-        // }
-        // this one maybe no need, because we are checking if the migration is
-        // ongoing with is_currently_migrating
-
+        let (origin, client) = conn;
+        
         // eprintln!("initiate migration for connection {} <-> {}", origin, client);
 
         //let origin = SocketAddrV4::new(inner.local_ipv4_addr, origin_port);
@@ -332,20 +328,18 @@ impl TcpMigPeer {
             client,
         ); // Inho: Q. Why link_addr (MAC addr) is needed when the libOS has arp_table already? Is it possible to use the arp_table instead?
         
-        if let Some(..) = inner.active_migrations.insert(key, active) {
-            todo!("duplicate active migration");
-            // inho: how it can happen when we check is_currently_migrating?
-            // isn't that there is one one active migration always?
-            // A. looks like it cannot happen (leave it just for debugging purpose)
+        if let Some(..) = inner.active_migrations.insert(conn, active) {
+            // Control should never enter here.
+            panic!("duplicate active migration");
         };
 
-        let active = match inner.active_migrations.get_mut(&key) {
+        let active = match inner.active_migrations.get_mut(&conn) {
             Some(active) => active,
             None => unreachable!(),
         };
 
         active.initiate_migration();
-        inner.is_currently_migrating = true;
+        //inner.is_currently_migrating = true;
     }
 
     pub fn is_migrated_out(&self, client: SocketAddrV4) -> bool {
@@ -449,7 +443,8 @@ impl TcpMigPeer {
     // }
 
     // TEMP (for migration test)
-    pub fn should_migrate(&self) -> bool {
+    /// Returns Some(connection to migrate) if it should migrate, else None.
+    pub fn should_migrate(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
         // return false;
         static mut FLAG: u32 = 0;
         static mut WARMUP: u32 = 0;
@@ -459,7 +454,7 @@ impl TcpMigPeer {
             if std::env::var("CORE_ID") == Ok("1".to_string()) {
                 WARMUP += 1;
                 if WARMUP < 20000 {
-                    return false;
+                    return None;
                 }
             }
         }
@@ -468,17 +463,23 @@ impl TcpMigPeer {
         
         unsafe {
             // if inner.is_currently_migrating || inner.stats.num_of_connections() <= 0 || inner.migration_variable ==  0 { return false; }
+
+            let conn = inner.stats.get_connection_to_migrate_out()?;
             
-            if inner.is_currently_migrating || inner.stats.num_of_connections() <= 0 || NUM_MIG >= inner.migration_variable { return false; }
+            if inner.is_currently_migrating(&conn) || inner.stats.num_of_connections() <= 0 || NUM_MIG >= inner.migration_variable {
+                return None;
+            }
             // if inner.is_currently_migrating || NUM_MIG >= 1 || inner.additional_mig_delay <10000 { return false; }
+
+            FLAG += 1;
             let must_migrate = FLAG == inner.migration_per_n;
             if must_migrate {
                 FLAG = 0;
                 NUM_MIG += 1;
+                Some(conn)
+            } else {
+                None
             }
-            FLAG += 1;
-            // println!("FLAG: {}", FLAG);
-            must_migrate
         }
     }
 
@@ -548,10 +549,12 @@ impl Inner {
             origins: HashMap::new(),
             incoming_connections: HashSet::new(),
             stats: TcpMigStats::new(recv_queue_length_threshold),
-            is_currently_migrating: false,
+            //is_currently_migrating: false,
             recv_queue_length_threshold,
             self_udp_port: SELF_UDP_PORT, // TEMP
             migrated_out_connections: HashSet::new(),
+
+            // for testing
             additional_mig_delay: env::var("MIG_DELAY")
             .unwrap_or_else(|_| String::from("0")) // Default value is 0 if MIG_DELAY is not set
             .parse::<u32>()
@@ -566,6 +569,13 @@ impl Inner {
             .expect("MIG_PER_N must be a u32"),
             //background: handle,
         }
+    }
+
+    fn is_currently_migrating(&self, key: &(SocketAddrV4, SocketAddrV4)) -> bool {
+        #[cfg(feature = "concurrent-tcp-migrations")]
+        return self.active_migrations.contains_key(&key);
+        #[cfg(not(feature = "concurrent-tcp-migrations"))]
+        return self.active_migrations.len() > 0;
     }
 }
 

@@ -681,12 +681,12 @@ impl Inner {
                     // self.tcpmig.queue_length_heartbeat();
 
                     // Possible decision-making point.
-                    if self.tcpmig.should_migrate() {
+                    if let Some(conn) = self.tcpmig.should_migrate() {
                         #[cfg(feature = "tcp-migration-profiler")]
                         tcpmig_profile!("prepare");
                         // eprintln!("*** Should Migrate ***");
                         // self.tcpmig.print_stats();
-                        self.tcpmig.initiate_migration();
+                        self.tcpmig.initiate_migration(conn);
                     }
                 }
             }
