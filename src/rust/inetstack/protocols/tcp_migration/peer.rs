@@ -100,8 +100,13 @@ struct Inner {
     self_udp_port: u16,
 
     migrated_out_connections: HashSet<SocketAddrV4>,
+    /// for testing
     additional_mig_delay: u32,
+    /// for testing, the number of migrations to perform
     migration_variable: u32,
+    /// for testing, frequency of migration
+    migration_per_n: u32,
+
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
     #[allow(unused)]
@@ -449,6 +454,7 @@ impl TcpMigPeer {
         static mut FLAG: u32 = 0;
         static mut WARMUP: u32 = 0;
         static mut NUM_MIG: u32 = 0;
+
         unsafe{
             if std::env::var("CORE_ID") == Ok("1".to_string()) {
                 WARMUP += 1;
@@ -465,13 +471,14 @@ impl TcpMigPeer {
             
             if inner.is_currently_migrating || inner.stats.num_of_connections() <= 0 || NUM_MIG >= inner.migration_variable { return false; }
             // if inner.is_currently_migrating || NUM_MIG >= 1 || inner.additional_mig_delay <10000 { return false; }
-            if FLAG == 100 {
+            let must_migrate = FLAG == inner.migration_per_n;
+            if must_migrate {
                 FLAG = 0;
-                NUM_MIG+=1;
+                NUM_MIG += 1;
             }
             FLAG += 1;
             // println!("FLAG: {}", FLAG);
-            FLAG == 100
+            must_migrate
         }
     }
 
@@ -553,6 +560,10 @@ impl Inner {
             .unwrap_or_else(|_| String::from("0")) // Default value is 0 if MIG_VAR is not set
             .parse::<u32>()
             .expect("Invalid DELAY value"),
+            migration_per_n: env::var("MIG_PER_N")
+            .unwrap_or(String::from("100")) // Default value is 100 if MIG_PER_N is not set
+            .parse()
+            .expect("MIG_PER_N must be a u32"),
             //background: handle,
         }
     }
