@@ -6,6 +6,7 @@
 //==============================================================================
 use super::constants::*;
 use super::{segment::TcpMigHeader, active::ActiveMigration, stats::TcpMigStats};
+use crate::QDesc;
 use crate::inetstack::protocols::ethernet2::{EtherType2, Ethernet2Header};
 use crate::inetstack::protocols::ip::IpProtocol;
 use crate::inetstack::protocols::udp::{UdpDatagram, UdpHeader};
@@ -105,7 +106,9 @@ struct Inner {
     /// for testing, the number of migrations to perform
     migration_variable: u32,
     /// for testing, frequency of migration
-    migration_per_n: u32,
+    migration_per_n: i32,
+    /// for testing, number of requests remaining before next migration
+    requests_remaining: HashMap<(SocketAddrV4, SocketAddrV4), i32>,
 
     /* /// The background co-routine retransmits TCPMig packets.
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
@@ -208,6 +211,7 @@ impl TcpMigPeer {
                 hdr.origin.port(), 
                 hdr.origin,
                 hdr.client,
+                None,
             );
             if let Some(..) = inner.active_migrations.insert(key, active) {
                 // todo!("duplicate active migration");
@@ -241,7 +245,20 @@ impl TcpMigPeer {
             tcpmig_log(format!("Active migration {:?}", key));
         }
         match active.process_packet(ipv4_hdr, hdr, buf)? {
-            MigrationRequestStatus::Rejected => todo!("handle migration rejection"),
+            MigrationRequestStatus::Rejected => unimplemented!("migration rejection"),
+            MigrationRequestStatus::MigrationInitiationAcked => {
+                #[cfg(feature = "tcp-migration-profiler")]
+                tcpmig_profile!("migrate");
+
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcpmig_log(format!("\n\nMigrate Out ({}, {})", local, remote));
+                }
+                let state = tcp_peer.migrate_out_tcp_connection(active.qd().unwrap())?;
+                let remote = state.remote;
+                active.send_connection_state(state);
+                assert!(inner.migrated_out_connections.insert(remote), "Duplicate migrated_out_connections set insertion");
+            },
             MigrationRequestStatus::StateReceived(state) => {
                 #[cfg(feature = "tcp-migration-profiler")]
                 tcpmig_profile_merge_previous!("migrate_ack");
@@ -291,7 +308,7 @@ impl TcpMigPeer {
         Ok(())
     }
 
-    pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
+    pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4), qd: QDesc) {
         // thread::sleep(Duration::from_nanos(1));
         let mut inner = self.inner.borrow_mut();
 
@@ -326,6 +343,7 @@ impl TcpMigPeer {
             if inner.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
             origin,
             client,
+            Some(qd),
         ); // Inho: Q. Why link_addr (MAC addr) is needed when the libOS has arp_table already? Is it possible to use the arp_table instead?
         
         if let Some(..) = inner.active_migrations.insert(conn, active) {
@@ -443,43 +461,33 @@ impl TcpMigPeer {
     // }
 
     // TEMP (for migration test)
-    /// Returns Some(connection to migrate) if it should migrate, else None.
-    pub fn should_migrate(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
-        // return false;
-        static mut FLAG: u32 = 0;
+    pub fn should_migrate(&self, conn: (SocketAddrV4, SocketAddrV4)) -> bool {
         static mut WARMUP: u32 = 0;
-        static mut NUM_MIG: u32 = 0;
 
-        unsafe{
-            if std::env::var("CORE_ID") == Ok("1".to_string()) {
-                WARMUP += 1;
-                if WARMUP < 20000 {
-                    return None;
-                }
+        if std::env::var("CORE_ID") == Ok("1".to_string()) {
+            unsafe { WARMUP += 1; }
+            if unsafe { WARMUP } < 20000 {
+                return false;
             }
         }
-        let inner = self.inner.borrow();
+
+        let mut inner = self.inner.borrow_mut();
         // println!("NUM_MIG: {} , num_conn: {}", unsafe{NUM_MIG}, inner.stats.num_of_connections());
+
+        if inner.is_currently_migrating(&conn)
+            || inner.stats.num_of_connections() <= 0 {
+            return false;
+        }
+
+        let migration_per_n = inner.migration_per_n;
+        let remaining = inner.requests_remaining.entry(conn).or_insert(migration_per_n);
+        *remaining -= 1;
         
-        unsafe {
-            // if inner.is_currently_migrating || inner.stats.num_of_connections() <= 0 || inner.migration_variable ==  0 { return false; }
-
-            let conn = inner.stats.get_connection_to_migrate_out()?;
-            
-            if inner.is_currently_migrating(&conn) || inner.stats.num_of_connections() <= 0 || NUM_MIG >= inner.migration_variable {
-                return None;
-            }
-            // if inner.is_currently_migrating || NUM_MIG >= 1 || inner.additional_mig_delay <10000 { return false; }
-
-            FLAG += 1;
-            let must_migrate = FLAG == inner.migration_per_n;
-            if must_migrate {
-                FLAG = 0;
-                NUM_MIG += 1;
-                Some(conn)
-            } else {
-                None
-            }
+        if *remaining <= 0 {
+            inner.requests_remaining.remove(&conn).unwrap();
+            true
+        } else {
+            false
         }
     }
 
@@ -566,7 +574,8 @@ impl Inner {
             migration_per_n: env::var("MIG_PER_N")
             .unwrap_or(String::from("100")) // Default value is 100 if MIG_PER_N is not set
             .parse()
-            .expect("MIG_PER_N must be a u32"),
+            .expect("MIG_PER_N must be a i32"),
+            requests_remaining: HashMap::new(),
             //background: handle,
         }
     }

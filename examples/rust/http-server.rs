@@ -15,9 +15,9 @@ use ::demikernel::{
 };
 
 #[cfg(feature = "capybara-log")]
-use ::demikernel::tcpmig_profiler::{tcp_log};
+use ::demikernel::tcpmig_profiler::tcp_log;
 
-use std::{collections::HashMap, time::Instant};
+use std::{collections::{HashMap, HashSet}, time::Instant};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -215,6 +215,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
         }
 
         let result = libos.trywait_any2(&qts).expect("result");
+        let mut qds_that_responded = HashSet::new();
 
         if let Some(completed_results) = result {
             #[cfg(feature = "capybara-log")]
@@ -259,6 +260,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         {
                             tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing));
                         }
+
+                        // Add qd since it finished sending a response.
+                        qds_that_responded.insert(qd);
                     },
                     OperationResult::Pop(_, recvbuf) => {
                         #[cfg(feature = "capybara-log")]
@@ -287,26 +291,25 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
         #[cfg(feature = "tcp-migration")]
         {
-            let mut qd_to_remove = None;
+            let mut qds_to_remove = Vec::new();
 
             for (qd, state) in connstate.iter() {
                 // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
-                if state.pushing > 0 || state.buffer.data_size() > 0 {
+                if state.pushing > 0 || state.buffer.data_size() > 0 || !qds_that_responded.contains(qd) {
                     continue;
                 }
                 match libos.notify_migration_safety(*qd) {
                     Ok(true) => {
                         let index = qts.iter().position(|&qt| qt == state.pop_qt).expect("`pop_qt` should be in `qts`");
                         qts.swap_remove(index);
-                        qd_to_remove = Some(*qd);
-                        break;
+                        qds_to_remove.push(*qd);
                     },
                     Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
                     _ => (),
                 };
             }
 
-            if let Some(qd) = qd_to_remove {
+            for qd in qds_to_remove {
                 connstate.remove(&qd);
             }
         }
