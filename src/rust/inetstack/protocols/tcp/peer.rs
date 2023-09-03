@@ -83,7 +83,6 @@ use ::rand::{
     Rng,
     SeedableRng,
 };
-use std::{collections::VecDeque};
 use ::std::{
     cell::{
         RefCell,
@@ -92,6 +91,7 @@ use ::std::{
     collections::{
         HashMap,
         hash_map::Entry,
+        VecDeque,
     },
     net::{
         Ipv4Addr,
@@ -514,7 +514,7 @@ impl TcpPeer {
     }
 
     fn send(&self, fd: QDesc, buf: Buffer) -> Result<(), Fail> {
-        let mut inner = self.inner.borrow_mut();
+        let inner = self.inner.borrow_mut();
         let key = match inner.sockets.get(&fd) {
             Some(Socket::Established { local, remote }) => (*local, *remote),
             Some(..) => {
@@ -679,15 +679,6 @@ impl Inner {
                     // println!("receive");
                     self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
                     // self.tcpmig.queue_length_heartbeat();
-
-                    // Possible decision-making point.
-                    if let Some(conn) = self.tcpmig.should_migrate() {
-                        #[cfg(feature = "tcp-migration-profiler")]
-                        tcpmig_profile!("prepare");
-                        // eprintln!("*** Should Migrate ***");
-                        // self.tcpmig.print_stats();
-                        self.tcpmig.initiate_migration(conn);
-                    }
                 }
             }
 
@@ -787,7 +778,7 @@ impl Inner {
 impl TcpPeer {
     pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
         let mut inner = self.inner.borrow_mut();
-        let (local, remote) = match inner.sockets.get(&qd) {
+        let conn = match inner.sockets.get(&qd) {
             None => {
                 debug!("No entry in `sockets` for fd: {:?}", qd);
                 return Err(Fail::new(EBADF, "socket does not exist"));
@@ -799,26 +790,24 @@ impl TcpPeer {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
         };
-        
-        if let Some(handle) = inner.tcpmig.can_migrate_out(local, remote) {
+
+        if inner.tcpmig.should_migrate(conn) {
             #[cfg(feature = "tcp-migration-profiler")]
-            tcpmig_profile!("migrate");
+            tcpmig_profile!("prepare");
 
-            // eprintln!("*** Can migrate out ***");
-            #[cfg(feature = "capybara-log")]
-            {
-                tcpmig_log(format!("\n\nMigrate Out ({}, {})", local, remote));
-            }
-            let state = inner.migrate_out_tcp_connection(qd)?;
-            inner.tcpmig.migrate_out(handle, state);
-            return Ok(true)
+            inner.tcpmig.initiate_migration(conn, qd);
+            Ok(true)
+        } else {
+            Ok(false)
         }
-
-        Ok(false)
     }
 
     pub fn notify_passive(&mut self, state: TcpState) -> Result<(), Fail> {
         self.inner.borrow_mut().notify_passive(state)
+    }
+
+    pub fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> Result<TcpState, Fail> {
+        self.inner.borrow_mut().migrate_out_tcp_connection(qd)
     }
 }
 
@@ -882,7 +871,7 @@ impl Inner {
     /// 1) Change status of our socket to MigratedOut.
     /// 2) Change status of ControlBlock state to Migrated out.
     /// 3) Remove socket from Established hashmap.
-    pub fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> Result<TcpState, Fail> {
+    fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> Result<TcpState, Fail> {
         let state = self.take_tcp_state(qd)?;
         
         let socket = self.sockets.get_mut(&qd);

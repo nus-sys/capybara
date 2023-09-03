@@ -9,6 +9,7 @@ use super::{segment::{
     TcpMigHeader,
     TcpMigSegment, TcpMigDefragmenter,
 }, MigrationStage};
+use crate::QDesc;
 use crate::{
     inetstack::protocols::{
             ethernet2::{
@@ -51,6 +52,7 @@ use ::std::{
 pub enum MigrationRequestStatus {
     Ok,
     Rejected,
+    MigrationInitiationAcked,
     StateReceived(TcpState),
     MigrationCompleted,
 }
@@ -70,6 +72,9 @@ pub struct ActiveMigration {
 
     last_sent_stage: MigrationStage,
     is_prepared: bool,
+
+    /// QDesc representing the connection, only on the origin side.
+    qd: Option<QDesc>,
 
     pub recv_queue: VecDeque<(Ipv4Header, TcpHeader, Buffer)>,
 
@@ -91,6 +96,7 @@ impl ActiveMigration {
         dest_udp_port: u16,
         origin: SocketAddrV4,
         client: SocketAddrV4,
+        qd: Option<QDesc>,
     ) -> Self {
         Self {
             rt,
@@ -104,6 +110,7 @@ impl ActiveMigration {
             client,
             last_sent_stage: MigrationStage::None,
             is_prepared: false,
+            qd,
             recv_queue: VecDeque::new(),
             defragmenter: TcpMigDefragmenter::new(),
         }
@@ -111,6 +118,10 @@ impl ActiveMigration {
 
     pub fn is_prepared(&self) -> bool {
         self.is_prepared
+    }
+
+    pub fn qd(&self) -> Option<QDesc> {
+        self.qd
     }
 
     pub fn process_packet(&mut self, ipv4_hdr: &Ipv4Header, hdr: TcpMigHeader, buf: Buffer) -> Result<MigrationRequestStatus, Fail> {
@@ -127,8 +138,6 @@ impl ActiveMigration {
         }
 
         match self.last_sent_stage {
-            // Target
-
             // Expect PREPARE_MIGRATION and send ACK.
             MigrationStage::None => {
                 match hdr.stage {
@@ -170,6 +179,7 @@ impl ActiveMigration {
                         {
                             tcpmig_log(format!("PREPARE_MIG_ACK => ({}, {}) is PREPARED", hdr.origin, hdr.client));
                         }
+                        return Ok(MigrationRequestStatus::MigrationInitiationAcked);
                     },
                     MigrationStage::Rejected => {
                         #[cfg(feature = "capybara-log")]
@@ -282,7 +292,7 @@ impl ActiveMigration {
             // print the length of recv_queue here
             tcpmig_log(format!("Length of recv_queue: {}", state.recv_queue.len()));
         }
-        let mut buf = match state.serialize() {
+        let buf = match state.serialize() {
             Ok(buf) => buf,
             Err(e) => panic!("TCPState serialisation failed: {}", e),
         };
