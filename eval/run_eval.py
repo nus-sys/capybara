@@ -130,6 +130,8 @@ def run_eval():
                         experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
                         
                         print(f'================ RUNNING TEST =================\n'
+                                f'RUNTIME: {RUNTIME} / NUM_BACKENDS: {NUM_BACKENDS} / TCPDUMP: {TCPDUMP}\n'
+                                f'SERVER_APP: {SERVER_APP}\n'
                                 f'REPEAT: {repeat}\n'
                                 f'RUN ID: {experiment_id}\n'
                                 f'RATE: {pps}\n'
