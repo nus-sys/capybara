@@ -52,7 +52,7 @@ use ::std::{
 pub enum MigrationRequestStatus {
     Ok,
     Rejected,
-    MigrationInitiationAcked,
+    PrepareMigrationAcked,
     StateReceived(TcpState),
     MigrationCompleted,
 }
@@ -179,7 +179,7 @@ impl ActiveMigration {
                         {
                             tcpmig_log(format!("PREPARE_MIG_ACK => ({}, {}) is PREPARED", hdr.origin, hdr.client));
                         }
-                        return Ok(MigrationRequestStatus::MigrationInitiationAcked);
+                        return Ok(MigrationRequestStatus::PrepareMigrationAcked);
                     },
                     MigrationStage::Rejected => {
                         #[cfg(feature = "capybara-log")]
@@ -296,24 +296,12 @@ impl ActiveMigration {
             Ok(buf) => buf,
             Err(e) => panic!("TCPState serialisation failed: {}", e),
         };
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("1"));
-        }
         let tcpmig_hdr = TcpMigHeader::new(self.origin, self.client, 
                                                         0, 
                                                         MigrationStage::ConnectionState, 
                                                         self.self_udp_port, 
                                                         self.dest_udp_port); // PORT should be the sender of PREPARE_MIGRATION_ACK
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("2"));
-        }
         self.last_sent_stage = MigrationStage::ConnectionState;
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("3"));
-        }
         let data_buffer = DataBuffer::from_slice(&buf); 
         self.send(tcpmig_hdr, Buffer::Heap(data_buffer));
     }
@@ -336,16 +324,8 @@ impl ActiveMigration {
 
         const MTU: usize = 1500; // TEMP
         let max_fragment_size =  MTU - ip_hdr.compute_size() - tcpmig_hdr.size();
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("4"));
-        }
         if buf.len() / max_fragment_size > u16::MAX as usize {
             todo!("Graceful rejection of migration");
-        }
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("5"));
         }
         let segment = TcpMigSegment::new(
             Ethernet2Header::new(self.remote_link_addr, self.local_link_addr, EtherType2::Ipv4),
@@ -353,10 +333,6 @@ impl ActiveMigration {
             tcpmig_hdr,
             buf,
         );
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("6"));
-        }
         for fragment in segment.fragments(max_fragment_size) {
             self.rt.transmit(Box::new(fragment));
         }

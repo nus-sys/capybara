@@ -88,10 +88,10 @@ impl<F: Future<Output = ()> + Unpin> Inner<F> {
             self.pages.push(WakerPageRef::default());
         }
         let (page, subpage_ix): (&WakerPageRef, usize) = self.get_page(key as u64);
-        #[cfg(feature = "capybara-log")]
+        /* #[cfg(feature = "capybara-log")]
         {
             tcp_log(format!("page_id: {}, {} ", key >> WAKER_BIT_LENGTH_SHIFT, subpage_ix));
-        }
+        } */
         page.initialize(subpage_ix);
         Some(key as u64)
     }
@@ -127,10 +127,10 @@ impl Scheduler {
         let mut inner: RefMut<Inner<Box<dyn SchedulerFuture>>> = self.inner.borrow_mut();
         let key: u64 = inner.insert(Box::new(future))?;
 
-        #[cfg(feature = "capybara-log")]
+        /* #[cfg(feature = "capybara-log")]
         {
             tcp_log(format!("Insert {} to Scheduler", key));
-        }
+        } */
 
         let (page, _): (&WakerPageRef, usize) = inner.get_page(key);
         Some(SchedulerHandle::new(key, page.clone()))
@@ -174,6 +174,7 @@ impl Scheduler {
                     // Poll future.
                     drop(inner);
                     let pinned_ref = unsafe { Pin::new_unchecked(&mut *pinned_ptr) };
+                    /* 
                     #[cfg(feature = "capybara-log")]
                     {
                         tcp_log(format!("Before Polling page_id: {}, {}, // pinned_ref: {:?}", 
@@ -191,11 +192,14 @@ impl Scheduler {
                             .collect();
                         tcp_log(format!("Value: {}", hex_string));
                     }
+                    */
                     let poll_result: Poll<()> = Future::poll(pinned_ref, &mut sub_ctx);
+                    /* 
                     #[cfg(feature = "capybara-log")]
                     {
                         tcp_log(format!("After Polling page_id: {}, {}", page_ix, subpage_ix));
                     }
+                    */
                     inner = self.inner.borrow_mut();
 
                     match poll_result {

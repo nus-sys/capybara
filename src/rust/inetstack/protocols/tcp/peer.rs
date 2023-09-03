@@ -103,6 +103,7 @@ use ::std::{
         Poll,
     },
     time::Duration,
+    collections::HashSet,
 };
 
 #[cfg(feature = "tcp-migration")]
@@ -620,10 +621,10 @@ impl Inner {
         let ephemeral_ports: EphemeralPorts = EphemeralPorts::new(&mut rng);
         let nonce: u32 = rng.gen();
 
-        #[cfg(feature = "capybara-log")]
+        /* #[cfg(feature = "capybara-log")]
         {
             tcp_log(format!("Creating new TcpPeer::Inner"));
-        }
+        } */
         Self {
             isn_generator: IsnGenerator::new(nonce),
             ephemeral_ports,
@@ -800,6 +801,32 @@ impl TcpPeer {
         } else {
             Ok(false)
         }
+    }
+
+    pub fn initiate_migration(&mut self, qd: QDesc) -> Result<bool, Fail> {
+        #[cfg(feature = "tcp-migration-profiler")]
+        tcpmig_profile!("prepare");
+        
+        let mut inner = self.inner.borrow_mut();
+        let conn = match inner.sockets.get(&qd) {
+            None => {
+                debug!("No entry in `sockets` for fd: {:?}", qd);
+                return Err(Fail::new(EBADF, "socket does not exist"));
+            },
+            Some(Socket::Established { local, remote }) => {
+                (*local, *remote)
+            },
+            Some(..) => {
+                return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
+            },
+        };
+        
+        inner.tcpmig.initiate_migration(conn, qd);
+        Ok(true)
+    }
+
+    pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
+        self.inner.borrow_mut().tcpmig.get_migration_prepared_qds()
     }
 
     pub fn notify_passive(&mut self, state: TcpState) -> Result<(), Fail> {

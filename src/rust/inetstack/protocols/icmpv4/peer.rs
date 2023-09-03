@@ -153,10 +153,10 @@ impl Icmpv4Peer {
         let requests = ReqQueue::new();
         let rng: Rc<RefCell<SmallRng>> = Rc::new(RefCell::new(SmallRng::from_seed(rng_seed)));
         let future = Self::background(rt.clone(), local_link_addr, local_ipv4_addr, arp.clone(), rx);
-        #[cfg(feature = "capybara-log")]
+       /*  #[cfg(feature = "capybara-log")]
         {
             tcp_log(format!("Scheduling ICMP background"));
-        }
+        } */
         let handle: SchedulerHandle = match scheduler.insert(FutureOperation::Background(future.boxed_local())) {
             Some(handle) => handle,
             None => {

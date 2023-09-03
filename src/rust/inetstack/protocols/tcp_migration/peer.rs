@@ -81,6 +81,12 @@ struct Inner {
     /// key = (origin, client).
     active_migrations: HashMap<(SocketAddrV4, SocketAddrV4), ActiveMigration>,
 
+    /// QDescs of connections prepared to be migrated.
+    /// 
+    /// key = QDesc.
+    prepared_migrations: HashSet<QDesc>,
+
+
     /// Origins. Only used on the target side to get the origin of redirected packets.
     /// 
     /// key = (target, client).
@@ -239,6 +245,7 @@ impl TcpMigPeer {
             Some(active) => active,
             None => return Err(Fail::new(libc::EINVAL, "no such active migration")),
         };
+        
 
         #[cfg(feature = "capybara-log")]
         {
@@ -246,18 +253,20 @@ impl TcpMigPeer {
         }
         match active.process_packet(ipv4_hdr, hdr, buf)? {
             MigrationRequestStatus::Rejected => unimplemented!("migration rejection"),
-            MigrationRequestStatus::MigrationInitiationAcked => {
+            MigrationRequestStatus::PrepareMigrationAcked => {
                 #[cfg(feature = "tcp-migration-profiler")]
                 tcpmig_profile!("migrate");
 
                 #[cfg(feature = "capybara-log")]
                 {
-                    tcpmig_log(format!("\n\nMigrate Out ({}, {})", local, remote));
+                    tcpmig_log(format!("\n\nMigrate Out ({}, {})", hdr.origin, hdr.client));
                 }
+                let mut qd = active.qd().unwrap();
                 let state = tcp_peer.migrate_out_tcp_connection(active.qd().unwrap())?;
                 let remote = state.remote;
                 active.send_connection_state(state);
                 assert!(inner.migrated_out_connections.insert(remote), "Duplicate migrated_out_connections set insertion");
+                inner.prepared_migrations.insert(qd);
             },
             MigrationRequestStatus::StateReceived(state) => {
                 #[cfg(feature = "tcp-migration-profiler")]
@@ -464,12 +473,12 @@ impl TcpMigPeer {
     pub fn should_migrate(&self, conn: (SocketAddrV4, SocketAddrV4)) -> bool {
         static mut WARMUP: u32 = 0;
 
-        if std::env::var("CORE_ID") == Ok("1".to_string()) {
-            unsafe { WARMUP += 1; }
-            if unsafe { WARMUP } < 20000 {
-                return false;
-            }
-        }
+        // if std::env::var("CORE_ID") == Ok("1".to_string()) {
+        //     unsafe { WARMUP += 1; }
+        //     if unsafe { WARMUP } < 20000 {
+        //         return false;
+        //     }
+        // }
 
         let mut inner = self.inner.borrow_mut();
         // println!("NUM_MIG: {} , num_conn: {}", unsafe{NUM_MIG}, inner.stats.num_of_connections());
@@ -529,6 +538,11 @@ impl TcpMigPeer {
         // println!("ratio: {}", self.inner.borrow().stats.get_rx_tx_ratio());
         // println!("TCPMig stats: {:?}", inner.stats);
     }
+
+    pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
+        let prepared_qds = self.inner.borrow().prepared_migrations.clone();
+        return Ok(prepared_qds)
+    }
 }
 
 impl Inner {
@@ -554,6 +568,7 @@ impl Inner {
                 _ => Some(HeartbeatData::new())
             },
             active_migrations: HashMap::new(),
+            prepared_migrations: HashSet::new(),
             origins: HashMap::new(),
             incoming_connections: HashSet::new(),
             stats: TcpMigStats::new(recv_queue_length_threshold),

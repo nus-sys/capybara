@@ -67,6 +67,7 @@ use ::std::{
         Instant,
         SystemTime,
     },
+    collections::HashSet,
 };
 
 #[cfg(feature = "profiler")]
@@ -291,10 +292,10 @@ impl InetStack {
                 Ok(QType::TcpSocket) => {
                     let new_qd: QDesc = self.file_table.alloc(QType::TcpSocket.into());
                     let future: FutureOperation = FutureOperation::from(self.ipv4.tcp.do_accept(qd, new_qd));
-                    #[cfg(feature = "capybara-log")]
+                    /* #[cfg(feature = "capybara-log")]
                     {
                         tcp_log(format!("Scheduling Accept operation"));
-                    }
+                    } */
                     let handle: SchedulerHandle = match self.scheduler.insert(future) {
                         Some(handle) => handle,
                         None => {
@@ -711,5 +712,11 @@ impl InetStack {
 impl InetStack {
     pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
         self.ipv4.tcp.notify_migration_safety(qd)
+    }
+    pub fn initiate_migration(&mut self, qd: QDesc) -> Result<bool, Fail> {
+        self.ipv4.tcp.initiate_migration(qd)
+    }
+    pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
+        self.ipv4.tcp.get_migration_prepared_qds()
     }
 }

@@ -32,6 +32,7 @@ use ::std::{
     env,
     net::SocketAddrV4,
     time::SystemTime,
+    collections::HashSet,
 };
 
 #[cfg(feature = "catcollar-libos")]
@@ -243,6 +244,16 @@ impl LibOS {
     pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.notify_migration_safety(qd),
+        }
+    }
+    pub fn initiate_migration(&mut self, qd: QDesc) -> Result<bool, Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.initiate_migration(qd),
+        }
+    }
+    pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.get_migration_prepared_qds(),
         }
     }
 }

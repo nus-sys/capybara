@@ -186,7 +186,10 @@ struct ConnectionState {
 
 fn server(local: SocketAddrV4) -> Result<()> {
     // let mut request_count = 0;  
-
+    let migration_per_n: i32 = env::var("MIG_PER_N")
+            .unwrap_or(String::from("0")) // Default value is 0 if MIG_PER_N is not set
+            .parse()
+            .expect("MIG_PER_N must be a i32");
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
@@ -208,6 +211,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     qts.push(libos.accept(sockqd).expect("accept"));
 
+    let mut requests_remaining: HashMap<QDesc, i32> = HashMap::new();
     loop {
         if !running.load(Ordering::SeqCst) {
             // println!("Server stopping. Total requests processed: {}", request_count);
@@ -215,7 +219,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
         }
 
         let result = libos.trywait_any2(&qts).expect("result");
-        let mut qds_that_responded = HashSet::new();
+        let mut qds_to_migrate = HashSet::new();
 
         if let Some(completed_results) = result {
             #[cfg(feature = "capybara-log")]
@@ -223,15 +227,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 tcp_log(format!("\n\n======= OS: I/O operations have been completed, take the results! ======="));
             }
             let indices_to_remove: Vec<usize> = completed_results.iter().map(|(index, _, _)| *index).collect();
-            #[cfg(feature = "capybara-log")]
+            /* #[cfg(feature = "capybara-log")]
             {
                 tcp_log(format!("\n\n1, indicies_to_remove: {:?}", indices_to_remove));
-            }
+            } */
             let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("\n\n2"));
-            }
             qts = new_qts;
             for (index, qd, result) in completed_results {
                 // qts.swap_remove(index);
@@ -260,23 +260,32 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         {
                             tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing));
                         }
-
-                        // Add qd since it finished sending a response.
-                        qds_that_responded.insert(qd);
+                        if migration_per_n > 0  && !requests_remaining.contains_key(&qd) {
+                            // Server has been processed N requests from this qd 
+                            qds_to_migrate.insert(qd);
+                        }
                     },
                     OperationResult::Pop(_, recvbuf) => {
                         #[cfg(feature = "capybara-log")]
                         {
                             tcp_log(format!("POP complete ==> request PUSH and POP"));
                         }
+
+                        let remaining = requests_remaining.entry(qd).or_insert(migration_per_n);
+                        *remaining -= 1;
+
                         let mut state = connstate.get_mut(&qd).unwrap();
                         let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
                         state.pushing += sent;
                         // request_count += sent;
-                        // queue next pop
-                        let pop_qt = libos.pop(qd).expect("pop qt");
-                        qts.push(pop_qt);
-                        state.pop_qt = pop_qt;
+                        if *remaining > 0 {
+                            // queue next pop
+                            let pop_qt = libos.pop(qd).expect("pop qt");
+                            qts.push(pop_qt);
+                            state.pop_qt = pop_qt;
+                        } else{
+                            requests_remaining.remove(&qd).unwrap();
+                        }
                     },
                     _ => {
                         panic!("Unexpected op: RESULT: {:?}", result);
@@ -291,26 +300,40 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
         #[cfg(feature = "tcp-migration")]
         {
-            let mut qds_to_remove = Vec::new();
-
-            for (qd, state) in connstate.iter() {
-                // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
-                if state.pushing > 0 || state.buffer.data_size() > 0 || !qds_that_responded.contains(qd) {
-                    continue;
+            if migration_per_n > 0 {
+                for qd in qds_to_migrate.iter() {
+                    // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
+                    if connstate.get_mut(&qd).unwrap().pushing == 0 && connstate.get_mut(&qd).unwrap().buffer.data_size() == 0 {
+                        libos.initiate_migration(*qd);
+                        connstate.remove(&qd);
+                    }
                 }
-                match libos.notify_migration_safety(*qd) {
-                    Ok(true) => {
-                        let index = qts.iter().position(|&qt| qt == state.pop_qt).expect("`pop_qt` should be in `qts`");
-                        qts.swap_remove(index);
-                        qds_to_remove.push(*qd);
-                    },
-                    Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
-                    _ => (),
-                };
-            }
-
-            for qd in qds_to_remove {
-                connstate.remove(&qd);
+            }else {
+                let mut qds_to_remove = Vec::new();
+                // for (qd, state) in connstate.iter() {
+                for qd in libos.get_migration_prepared_qds().unwrap().iter() {
+                    let state = connstate.get_mut(&qd).unwrap();
+                    // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
+                    if state.pushing > 0 || state.buffer.data_size() > 0 {
+                        continue;
+                    }
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("qd: {:?}", qd));
+                    }
+                    match libos.notify_migration_safety(*qd) {
+                        Ok(true) => {
+                            let index = qts.iter().position(|&qt| qt == state.pop_qt).expect("`pop_qt` should be in `qts`");
+                            qts.swap_remove(index);
+                            qds_to_remove.push(*qd);
+                        },
+                        Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
+                        _ => (),
+                    };
+                }
+                for qd in qds_to_remove {
+                    connstate.remove(&qd);
+                }
             }
         }
     }

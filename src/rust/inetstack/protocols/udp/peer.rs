@@ -138,10 +138,10 @@ impl UdpPeer {
             send_queue.clone(),
         );
 
-        #[cfg(feature = "capybara-log")]
+        /* #[cfg(feature = "capybara-log")]
         {
             tcp_log(format!("Scheduling UDP background"));
-        }
+        } */
         let handle: SchedulerHandle = match scheduler.insert(FutureOperation::Background(future.boxed_local())) {
             Some(handle) => handle,
             None => {
