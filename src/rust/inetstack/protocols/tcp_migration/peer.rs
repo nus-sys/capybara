@@ -84,7 +84,7 @@ struct Inner {
     /// QDescs of connections prepared to be migrated.
     /// 
     /// key = QDesc.
-    prepared_migrations: HashSet<QDesc>,
+    migrations_prepared_qds: HashSet<QDesc>,
 
 
     /// Origins. Only used on the target side to get the origin of redirected packets.
@@ -251,22 +251,28 @@ impl TcpMigPeer {
         {
             tcpmig_log(format!("Active migration {:?}", key));
         }
+
+        
         match active.process_packet(ipv4_hdr, hdr, buf)? {
             MigrationRequestStatus::Rejected => unimplemented!("migration rejection"),
             MigrationRequestStatus::PrepareMigrationAcked => {
-                #[cfg(feature = "tcp-migration-profiler")]
-                tcpmig_profile!("migrate");
+                #[cfg(feature = "mig-per-n-req")]{
+                    #[cfg(feature = "tcp-migration-profiler")]
+                    tcpmig_profile!("migrate");
 
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcpmig_log(format!("\n\nMigrate Out ({}, {})", hdr.origin, hdr.client));
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcpmig_log(format!("\n\nMigrate Out ({}, {})", hdr.origin, hdr.client));
+                    }
+                    let state = tcp_peer.migrate_out_tcp_connection(active.qd().unwrap())?;
+                    let remote = state.remote;
+                    active.send_connection_state(state);
+                    assert!(inner.migrated_out_connections.insert(remote), "Duplicate migrated_out_connections set insertion");
                 }
-                let mut qd = active.qd().unwrap();
-                let state = tcp_peer.migrate_out_tcp_connection(active.qd().unwrap())?;
-                let remote = state.remote;
-                active.send_connection_state(state);
-                assert!(inner.migrated_out_connections.insert(remote), "Duplicate migrated_out_connections set insertion");
-                inner.prepared_migrations.insert(qd);
+                #[cfg(not(feature = "mig-per-n-req"))] {
+                    let qd = active.qd().unwrap();
+                    inner.migrations_prepared_qds.insert(qd);
+                }
             },
             MigrationRequestStatus::StateReceived(state) => {
                 #[cfg(feature = "tcp-migration-profiler")]
@@ -295,16 +301,8 @@ impl TcpMigPeer {
                     tcpmig_log(format!("2, active_migrations: {:?}, removing {:?}", 
                         inner.active_migrations.keys().collect::<Vec<_>>(), (local, client)));
                 }
-                inner.active_migrations.remove(&(local, client)).expect("active migration should exist"); //HERE!
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcpmig_log(format!("3"));
-                }
-                inner.stats.stop_tracking_connection(local, client);
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcpmig_log(format!("4"));
-                }
+                inner.active_migrations.remove(&(local, client)).expect("active migration should exist"); 
+                
                 //inner.is_currently_migrating = false;
                 #[cfg(feature = "capybara-log")]
                 {
@@ -318,13 +316,7 @@ impl TcpMigPeer {
     }
 
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4), qd: QDesc) {
-        // thread::sleep(Duration::from_nanos(1));
         let mut inner = self.inner.borrow_mut();
-
-        // Don't need since `should_migrate()` checks this already.
-        /* if inner.is_currently_migrating(&conn) {
-            return;
-        } */
         
         {
             #[cfg(feature = "tcp-migration-profiler")]
@@ -389,6 +381,12 @@ impl TcpMigPeer {
         let mut inner = self.inner.borrow_mut();
         if let Some(active) = inner.active_migrations.get_mut(&key) {
             active.send_connection_state(state);
+            #[cfg(not(feature = "mig-per-n-req"))] {
+                let qd = active.qd().unwrap();
+                if !inner.migrations_prepared_qds.remove(&qd){
+                    panic!("this qd is not migration-prepared");
+                }
+            }
         }
         if !inner.migrated_out_connections.insert(handle.client) {
             panic!("Duplicate migrated_out_connections set insertion");
@@ -470,8 +468,10 @@ impl TcpMigPeer {
     // }
 
     // TEMP (for migration test)
-    pub fn should_migrate(&self, conn: (SocketAddrV4, SocketAddrV4)) -> bool {
+    pub fn should_migrate(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
+        static mut FLAG: u32 = 0;
         static mut WARMUP: u32 = 0;
+        static mut NUM_MIG: u32 = 0;
 
         // if std::env::var("CORE_ID") == Ok("1".to_string()) {
         //     unsafe { WARMUP += 1; }
@@ -482,21 +482,24 @@ impl TcpMigPeer {
 
         let mut inner = self.inner.borrow_mut();
         // println!("NUM_MIG: {} , num_conn: {}", unsafe{NUM_MIG}, inner.stats.num_of_connections());
-
-        if inner.is_currently_migrating(&conn)
-            || inner.stats.num_of_connections() <= 0 {
-            return false;
-        }
-
-        let migration_per_n = inner.migration_per_n;
-        let remaining = inner.requests_remaining.entry(conn).or_insert(migration_per_n);
-        *remaining -= 1;
-        
-        if *remaining <= 0 {
-            inner.requests_remaining.remove(&conn).unwrap();
-            true
-        } else {
-            false
+        unsafe{
+            if inner.stats.num_of_connections() <= 0 
+                || NUM_MIG >= inner.migration_variable {
+                return None;
+            }
+            
+            FLAG += 1;
+            // eprintln!("FLAG: {}", FLAG);
+            if FLAG == 3 {
+                FLAG = 0;
+                NUM_MIG+=1;
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcpmig_log(format!("START MIG"));
+                }
+                return inner.stats.get_connection_to_migrate_out();
+            }
+            return None;
         }
     }
 
@@ -540,8 +543,12 @@ impl TcpMigPeer {
     }
 
     pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
-        let prepared_qds = self.inner.borrow().prepared_migrations.clone();
+        let prepared_qds = self.inner.borrow().migrations_prepared_qds.clone();
         return Ok(prepared_qds)
+    }
+    
+    pub fn start_tracking_connection_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4) {
+        self.inner.borrow_mut().stats.start_tracking_connection(local, client)
     }
 }
 
@@ -568,7 +575,7 @@ impl Inner {
                 _ => Some(HeartbeatData::new())
             },
             active_migrations: HashMap::new(),
-            prepared_migrations: HashSet::new(),
+            migrations_prepared_qds: HashSet::new(),
             origins: HashMap::new(),
             incoming_connections: HashSet::new(),
             stats: TcpMigStats::new(recv_queue_length_threshold),
@@ -595,12 +602,12 @@ impl Inner {
         }
     }
 
-    fn is_currently_migrating(&self, key: &(SocketAddrV4, SocketAddrV4)) -> bool {
-        #[cfg(feature = "concurrent-tcp-migrations")]
-        return self.active_migrations.contains_key(&key);
-        #[cfg(not(feature = "concurrent-tcp-migrations"))]
-        return self.active_migrations.len() > 0;
-    }
+    // fn is_currently_migrating(&self) -> bool {
+    //     #[cfg(feature = "concurrent-tcp-migrations")]
+    //     return false;
+    //     #[cfg(not(feature = "concurrent-tcp-migrations"))]
+    //     return true;
+    // }
 }
 
 impl HeartbeatData {

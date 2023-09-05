@@ -211,7 +211,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     qts.push(libos.accept(sockqd).expect("accept"));
 
+    #[cfg(feature = "mig-per-n-req")]
     let mut requests_remaining: HashMap<QDesc, i32> = HashMap::new();
+    
     loop {
         if !running.load(Ordering::SeqCst) {
             // println!("Server stopping. Total requests processed: {}", request_count);
@@ -219,6 +221,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
         }
 
         let result = libos.trywait_any2(&qts).expect("result");
+        
+        #[cfg(feature = "mig-per-n-req")]
         let mut qds_to_migrate = HashSet::new();
 
         if let Some(completed_results) = result {
@@ -256,10 +260,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     },
                     OperationResult::Push => {
                         connstate.get_mut(&qd).unwrap().pushing -= 1;
+                        
                         #[cfg(feature = "capybara-log")]
-                        {
-                            tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing));
-                        }
+                        tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing));
+                        
+                        #[cfg(feature = "mig-per-n-req")]
                         if migration_per_n > 0  && !requests_remaining.contains_key(&qd) {
                             // Server has been processed N requests from this qd 
                             qds_to_migrate.insert(qd);
@@ -271,20 +276,28 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             tcp_log(format!("POP complete ==> request PUSH and POP"));
                         }
 
-                        let remaining = requests_remaining.entry(qd).or_insert(migration_per_n);
-                        *remaining -= 1;
-
                         let mut state = connstate.get_mut(&qd).unwrap();
                         let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
                         state.pushing += sent;
-                        // request_count += sent;
-                        if *remaining > 0 {
+                        
+                        
+                        #[cfg(feature = "mig-per-n-req")] {
+                            let remaining = requests_remaining.entry(qd).or_insert(migration_per_n);
+                            *remaining -= 1;
+                            if *remaining > 0 {
+                                // queue next pop
+                                let pop_qt = libos.pop(qd).expect("pop qt");
+                                qts.push(pop_qt);
+                                state.pop_qt = pop_qt;
+                            } else{
+                                requests_remaining.remove(&qd).unwrap();
+                            }
+                        }
+                        #[cfg(not(feature = "mig-per-n-req"))]{
                             // queue next pop
                             let pop_qt = libos.pop(qd).expect("pop qt");
                             qts.push(pop_qt);
                             state.pop_qt = pop_qt;
-                        } else{
-                            requests_remaining.remove(&qd).unwrap();
                         }
                     },
                     _ => {
@@ -300,26 +313,28 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
         #[cfg(feature = "tcp-migration")]
         {
-            if migration_per_n > 0 {
-                for qd in qds_to_migrate.iter() {
-                    // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
-                    if connstate.get_mut(&qd).unwrap().pushing == 0 && connstate.get_mut(&qd).unwrap().buffer.data_size() == 0 {
-                        libos.initiate_migration(*qd);
-                        connstate.remove(&qd);
+            #[cfg(feature = "mig-per-n-req")] {
+                if migration_per_n > 0 {
+                    for qd in qds_to_migrate.iter() {
+                        // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
+                        if connstate.get_mut(&qd).unwrap().pushing == 0 && connstate.get_mut(&qd).unwrap().buffer.data_size() == 0 {
+                            libos.initiate_migration(*qd);
+                            connstate.remove(&qd);
+                        }
                     }
                 }
-            }else {
+            }
+            #[cfg(not(feature = "mig-per-n-req"))] {
                 let mut qds_to_remove = Vec::new();
-                // for (qd, state) in connstate.iter() {
                 for qd in libos.get_migration_prepared_qds().unwrap().iter() {
+                    #[cfg(feature = "capybara-log")]
+                    {
+                        tcp_log(format!("qd: {:?}", qd));
+                    }
                     let state = connstate.get_mut(&qd).unwrap();
                     // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
                     if state.pushing > 0 || state.buffer.data_size() > 0 {
                         continue;
-                    }
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("qd: {:?}", qd));
                     }
                     match libos.notify_migration_safety(*qd) {
                         Ok(true) => {

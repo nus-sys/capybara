@@ -11,6 +11,9 @@ use std::{
     fmt,
 };
 
+#[cfg(feature = "capybara-log")]
+use crate::tcpmig_profiler::tcp_log;
+
 //======================================================================================================================
 // Constants
 //======================================================================================================================
@@ -61,7 +64,7 @@ pub struct TcpMigStats {
 
     /// Incoming traffic rate per connection.
     /// 
-    /// (local, remote) -> requests per milli-second.
+    /// (local, client) -> requests per milli-second.
     recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
     global_recv_queue_length: f64,
     threshold: f64,
@@ -108,11 +111,14 @@ impl TcpMigStats {
         self.recv_queue_lengths.len()
     }
 
-    pub fn update_incoming(&mut self, local: SocketAddrV4, remote: SocketAddrV4, recv_queue_len: usize) {
+    pub fn update_incoming(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {
         let instant = Instant::now();
         self.global_incoming_traffic.update(instant);
         
-        let len_entry = self.recv_queue_lengths.entry((local, remote)).or_insert(RollingAverage::new());
+        let len_entry = self.recv_queue_lengths
+            .get_mut(&(local, client))
+            .expect("Entry does not exist for connection");
+        
         let old_len = len_entry.get().0;
         len_entry.update(recv_queue_len);
         let new_len = len_entry.get().0;
@@ -149,11 +155,24 @@ impl TcpMigStats {
         //     )
         //     .and_then(|(k, _)| Some(*k))
     }
+    
+    pub fn start_tracking_connection(&mut self, local: SocketAddrV4, client: SocketAddrV4) {
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("start"));
+        }
+        assert!(!self.recv_queue_lengths.contains_key(&(local, client)));
+        self.recv_queue_lengths.insert((local, client), RollingAverage::new());
+    }
 
-    pub fn stop_tracking_connection(&mut self, local: SocketAddrV4, remote: SocketAddrV4) {
-        match self.recv_queue_lengths.remove(&(local, remote)) {
+    pub fn stop_tracking_connection(&mut self, local: SocketAddrV4, client: SocketAddrV4) {
+        #[cfg(feature = "capybara-log")]
+        {
+            tcp_log(format!("stop"));
+        }
+        match self.recv_queue_lengths.remove(&(local, client)) {
             Some(len) => self.global_recv_queue_length -= len.get().0,
-            None => warn!("`TcpMigStats` was not tracking connection ({}, {})", local, remote),
+            None => warn!("`TcpMigStats` was not tracking connection ({}, {})", local, client),
         }
     }
 }

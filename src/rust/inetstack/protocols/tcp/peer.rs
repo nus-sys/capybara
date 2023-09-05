@@ -142,6 +142,8 @@ pub struct Inner {
 
     // FD -> local port
     pub sockets: HashMap<QDesc, Socket>,
+    // local port -> FD
+    pub qds: HashMap<(SocketAddrV4, SocketAddrV4), QDesc>,
 
     passive: HashMap<SocketAddrV4, PassiveSocket>,
     connecting: HashMap<(SocketAddrV4, SocketAddrV4), ActiveOpenSocket>,
@@ -382,15 +384,17 @@ impl TcpPeer {
             Poll::Ready(Ok(e)) => e,
             Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
         };
-
+        let remote = cb.get_remote();
         #[cfg(feature = "tcp-migration")]
-        if inner.tcpmig.take_connection(cb.get_local(), cb.get_remote()) {
+        if inner.tcpmig.take_connection(local, remote) {
             #[cfg(feature = "tcp-migration-profiler")]
             tcpmig_profile!("migrated_accept");
             
             match inner.migrate_in_tcp_connection(new_qd, cb) {
                 Ok(()) => {
                     // eprintln!("*** Accepted migrated connection ***");
+                    inner.tcpmig.start_tracking_connection_stats(local, remote);
+                    eprintln!("MIG-CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
                     return Poll::Ready(Ok(new_qd));
                 },
                 Err(e) => {
@@ -401,23 +405,21 @@ impl TcpPeer {
         };
 
         let established: EstablishedSocket = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
-        let key: (SocketAddrV4, SocketAddrV4) = (established.cb.get_local(), established.cb.get_remote());
+        let key: (SocketAddrV4, SocketAddrV4) = (local, remote);
 
-        let socket: Socket = Socket::Established {
-            local: established.cb.get_local(),
-            remote: established.cb.get_remote(),
-        };
-        println!("CONNECTION ESTABLISHED (REMOTE: {:?})", established.cb.get_remote());
+        let socket: Socket = Socket::Established { local, remote };
+        eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         if inner.sockets.insert(new_qd, socket).is_some() {
             panic!("duplicate queue descriptor in sockets table");
         }
-
+        inner.qds.insert((local, remote), new_qd);
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         if inner.established.insert(key, established).is_some() {
             panic!("duplicate queue descriptor in established sockets table");
         }
-
+        #[cfg(feature = "tcp-migration")]
+        inner.tcpmig.start_tracking_connection_stats(local, remote);
         Poll::Ready(Ok(new_qd))
     }
 
@@ -629,6 +631,7 @@ impl Inner {
             isn_generator: IsnGenerator::new(nonce),
             ephemeral_ports,
             sockets: HashMap::new(),
+            qds: HashMap::new(),
             passive: HashMap::new(),
             connecting: HashMap::new(),
             established: HashMap::new(),
@@ -667,6 +670,7 @@ impl Inner {
         if let Some(s) = self.established.get(&key) {
             debug!("Routing to established connection: {:?}", key);
             #[cfg(feature = "tcp-migration")]
+            #[cfg(not(feature = "mig-per-n-req"))]
             {
                 // Remove
                 if tcp_hdr.fin || tcp_hdr.rst {
@@ -680,6 +684,25 @@ impl Inner {
                     // println!("receive");
                     self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
                     // self.tcpmig.queue_length_heartbeat();
+                    
+                    // Possible decision-making point.
+                    if let Some(conn) = self.tcpmig.should_migrate() {
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcpmig_log(format!("should migrate"));
+                        }
+                        #[cfg(feature = "tcp-migration-profiler")]
+                        tcpmig_profile!("prepare");
+                        // eprintln!("*** Should Migrate ***");
+                        // self.tcpmig.print_stats();
+                        let qd = self.qds.get(&conn).ok_or_else(|| Fail::new(EBADF, "socket not exist"))?;
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcpmig_log(format!("qd: {:?}", qd));
+                        }
+                        self.tcpmig.stop_tracking_connection_stats(local, remote);
+                        self.tcpmig.initiate_migration(conn, *qd);
+                    }
                 }
             }
 
@@ -791,16 +814,33 @@ impl TcpPeer {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
         };
+        let (local, remote) = match inner.sockets.get(&qd) {
+            None => {
+                debug!("No entry in `sockets` for fd: {:?}", qd);
+                return Err(Fail::new(EBADF, "socket does not exist"));
+            },
+            Some(Socket::Established { local, remote }) => {
+                (*local, *remote)
+            },
+            Some(..) => {
+                return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
+            },
+        };
 
-        if inner.tcpmig.should_migrate(conn) {
+        if let Some(handle) = inner.tcpmig.can_migrate_out(local, remote) {
             #[cfg(feature = "tcp-migration-profiler")]
-            tcpmig_profile!("prepare");
+            tcpmig_profile!("migrate");
 
-            inner.tcpmig.initiate_migration(conn, qd);
-            Ok(true)
-        } else {
-            Ok(false)
+            #[cfg(feature = "capybara-log")]
+            {
+                tcpmig_log(format!("\n\nMigrate Out ({}, {})", local, remote));
+            }
+            let state = inner.migrate_out_tcp_connection(qd)?;
+            inner.tcpmig.migrate_out(handle, state);
+            return Ok(true)
         }
+
+        Ok(false)
     }
 
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<bool, Fail> {
@@ -820,7 +860,8 @@ impl TcpPeer {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
         };
-        
+        inner.tcpmig.stop_tracking_connection_stats(conn.0, conn.1);
+        eprintln!("stop tracking {} {}", conn.0, conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
         Ok(true)
     }
@@ -895,8 +936,8 @@ impl Inner {
         }
     }
 
-    /// 1) Change status of our socket to MigratedOut.
-    /// 2) Change status of ControlBlock state to Migrated out.
+    /// 1) remove this socket.
+    /// 2) check if this connection is established one.
     /// 3) Remove socket from Established hashmap.
     fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> Result<TcpState, Fail> {
         let state = self.take_tcp_state(qd)?;
@@ -915,10 +956,13 @@ impl Inner {
             },
         };
 
-        // 1) Change status of our socket to MigratedOut
-        *socket.unwrap() = Socket::MigratedOut { local, remote };
+        // 1) remove this socket
+        match self.sockets.remove(&qd) {
+            Some(s) => {},
+            None => return Err(Fail::new(EBADF, "sockeet not exist")),
+        };
 
-        // 2) Change status of ControlBlock state to Migrated out.
+        // 2) check if this connection is established one
         let key = (local, remote);
         let mut entry = match self.established.entry(key) {
             Entry::Occupied(entry) => entry,
@@ -1009,19 +1053,22 @@ impl Inner {
         // it back in).
         match self.sockets.entry(qd) {
             Entry::Occupied(mut e) => {
-                match e.get_mut() {
-                    e@Socket::MigratedOut { .. } => {
-                        *e = Socket::Established { local, remote };
-                    },
-                    _ => {
-                        debug!("Key already exists in sockets hashmap.");
-                        return Err(Fail::new(EBADF, "bad file descriptor"));
-                    }
-                }
+                // match e.get_mut() {
+                //     e@Socket::MigratedOut { .. } => {
+                //         *e = Socket::Established { local, remote };
+                //     },
+                //     _ => {
+                panic!("Key already exists in sockets hashmap.");
+                            // return Err(Fail::new(EBADF, "bad file descriptor"));
+                //     }
+                // }
+                // inho: fn do_accept always allocate a new qd, so the qd of a connection migrated in 
+                // cannot exist in sockets 
             },
             Entry::Vacant(v) => {
                 let socket = Socket::Established { local, remote };
                 v.insert(socket);
+                self.qds.insert((local, remote), qd);
             }
         }
 
