@@ -47,7 +47,7 @@ def kill_procs():
     print('KILLED CAPYBARA PROCESSES')
 
 
-def run_server(mig_delay, mig_var):
+def run_server(mig_delay, mig_var, mig_per_n):
     global experiment_id
     
     print('SETUP SWITCH')
@@ -82,6 +82,7 @@ def run_server(mig_delay, mig_var):
                CORE_ID={j+1} \
                MIG_DELAY={int(mig_delay/10) * 72} \
                MIG_VAR={int(mig_var)} \
+               MIG_PER_N={int(mig_per_n)} \
                CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
                LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
                PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
@@ -124,88 +125,90 @@ def run_eval():
     for repeat in range(0, REPEAT_NUM):
         for mig_delay in MIG_DELAYS:
             for mig_var in MIG_VARS: 
-                for pps in CLIENT_PPS:
-                    for conn in NUM_CONNECTIONS:
-                        kill_procs()
-                        experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
-                        
-                        print(f'================ RUNNING TEST =================\n'
-                                f'RUNTIME: {RUNTIME} / NUM_BACKENDS: {NUM_BACKENDS} / TCPDUMP: {TCPDUMP}\n'
-                                f'SERVER_APP: {SERVER_APP}\n'
-                                f'REPEAT: {repeat}\n'
-                                f'RUN ID: {experiment_id}\n'
-                                f'RATE: {pps}\n'
-                                f'NUM_CONNECTIONS: {conn}\n'
-                                f'MIG_DELAY: {mig_delay}\n'
-                                f'MIG_VAR: {mig_var}\n')
-                        
-
-                        if TCPDUMP == True:
-                            run_tcpdump(experiment_id)
-                        
-                        run_server(mig_delay, mig_var)
-                        
-                        host = pyrem.host.RemoteHost(CLIENT_NODE)
-                        cmd = [f'sudo {HOME}/caladan/apps/synthetic/target/release/synthetic \
-                                10.0.1.1:10000 \
-                                --config {HOME}/caladan/client.config \
-                                --mode runtime-client \
-                                --protocol=http \
-                                --transport=tcp \
-                                --samples=1 \
-                                --pps={pps} \
-                                --threads={conn} \
-                                --runtime={RUNTIME} \
-                                --discard_pct=0 \
-                                --output=buckets \
-                                --rampup=0 \
-                                --exptid={DATA_PATH}/{experiment_id} \
-                                > {DATA_PATH}/{experiment_id}.client']
-                        # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \
-                        #         -a 31:00.1 \
-                        #         -n 4 \
-                        #         -c 0xffff -- \
-                        #         -d exponential \
-                        #         -c {HOME}/Capybara/tcp_generator/addr.cfg \
-                        #         -s 256 \
-                        #         -t 10 \
-                        #         -r {i} \
-                        #         -f {j} \
-                        #         -q {4 if j >= 4 else j} \
-                        #         -o {DATA_PATH}/{experiment_id}.latency \
-                        #         > {DATA_PATH}/{experiment_id}.stats 2>&1']
-                        task = host.run(cmd, quiet=False)
-                        pyrem.task.Parallel([task], aggregate=True).start(wait=True)
-
-                        print('================ TEST COMPLETE =================\n')
-                        
-                        try:
-                            cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]"'
-                            result = subprocess.run(
-                                cmd,
-                                shell=True,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT,
-                                check=True,
-                            ).stdout.decode()
-                            print(result + '\n\n')
-                            final_result = final_result + f'{experiment_id}, {conn}, {mig_delay}, {mig_var},{result[len("[RESULT]"):]}'
-                        except subprocess.CalledProcessError as e:
-                            # Handle the exception for a failed command execution
-                            print("EXPERIMENT FAILED\n\n")
-
-                        except Exception as e:
-                            # Handle any other unexpected exceptions
-                            print("EXPERIMENT FAILED\n\n")
-                        
-                        if TCPDUMP == True:
-                            time.sleep(3)
+                for mig_per_n in MIG_PER_N:
+                    for pps in CLIENT_PPS:
+                        for conn in NUM_CONNECTIONS:
                             kill_procs()
-                            parse_tcpdump(experiment_id)
+                            experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
                             
-                            print("Parsing pcap file is done, finishing test here.\n\n")
+                            print(f'================ RUNNING TEST =================\n'
+                                    f'RUNTIME: {RUNTIME} / NUM_BACKENDS: {NUM_BACKENDS} / TCPDUMP: {TCPDUMP}\n'
+                                    f'SERVER_APP: {SERVER_APP}\n'
+                                    f'REPEAT: {repeat}\n'
+                                    f'RUN ID: {experiment_id}\n'
+                                    f'RATE: {pps}\n'
+                                    f'NUM_CONNECTIONS: {conn}\n'
+                                    f'MIG_DELAY: {mig_delay}\n'
+                                    f'MIG_VAR: {mig_var}\n'
+                                    f'MIG_PER_N: {mig_per_n}\n')
+                            
 
-                            exit()
+                            if TCPDUMP == True:
+                                run_tcpdump(experiment_id)
+                            
+                            run_server(mig_delay, mig_var, mig_per_n)
+                            
+                            host = pyrem.host.RemoteHost(CLIENT_NODE)
+                            cmd = [f'sudo {HOME}/caladan/apps/synthetic/target/release/synthetic \
+                                    10.0.1.1:10000 \
+                                    --config {HOME}/caladan/client.config \
+                                    --mode runtime-client \
+                                    --protocol=http \
+                                    --transport=tcp \
+                                    --samples=1 \
+                                    --pps={pps} \
+                                    --threads={conn} \
+                                    --runtime={RUNTIME} \
+                                    --discard_pct=10 \
+                                    --output=buckets \
+                                    --rampup=0 \
+                                    --exptid={DATA_PATH}/{experiment_id} \
+                                    > {DATA_PATH}/{experiment_id}.client']
+                            # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \
+                            #         -a 31:00.1 \
+                            #         -n 4 \
+                            #         -c 0xffff -- \
+                            #         -d exponential \
+                            #         -c {HOME}/Capybara/tcp_generator/addr.cfg \
+                            #         -s 256 \
+                            #         -t 10 \
+                            #         -r {i} \
+                            #         -f {j} \
+                            #         -q {4 if j >= 4 else j} \
+                            #         -o {DATA_PATH}/{experiment_id}.latency \
+                            #         > {DATA_PATH}/{experiment_id}.stats 2>&1']
+                            task = host.run(cmd, quiet=False)
+                            pyrem.task.Parallel([task], aggregate=True).start(wait=True)
+
+                            print('================ TEST COMPLETE =================\n')
+                            
+                            try:
+                                cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]"'
+                                result = subprocess.run(
+                                    cmd,
+                                    shell=True,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT,
+                                    check=True,
+                                ).stdout.decode()
+                                print('[RESULT]' + f'{experiment_id}, {conn}, {mig_delay}, {mig_var}, {mig_per_n},{result[len("[RESULT]"):]}' + '\n\n')
+                                final_result = final_result + f'{experiment_id}, {conn}, {mig_delay}, {mig_var}, {mig_per_n},{result[len("[RESULT]"):]}'
+                            except subprocess.CalledProcessError as e:
+                                # Handle the exception for a failed command execution
+                                print("EXPERIMENT FAILED\n\n")
+
+                            except Exception as e:
+                                # Handle any other unexpected exceptions
+                                print("EXPERIMENT FAILED\n\n")
+                            
+                            if TCPDUMP == True:
+                                time.sleep(3)
+                                kill_procs()
+                                parse_tcpdump(experiment_id)
+                                
+                                print("Parsing pcap file is done, finishing test here.\n\n")
+
+                                exit()
             # task = host.run(cmd, return_output=True, quiet=False)
             # task.start()
             # result = task.return_values
@@ -220,10 +223,10 @@ def run_eval():
 def exiting():
     global final_result
     print('EXITING')
-    print("\n\n\n\n\nID, #CONN, MIG_DELAY, TOTAL_MIG, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc")
+    print("\n\n\n\n\nID, #CONN, MIG_DELAY, TOTAL_#_MIG, MIG_PER_N, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc")
     print(final_result)
     with open(f'{DATA_PATH}/result.txt', "w") as file:
-        file.write("ID, #CONN, MIG_DELAY, TOTAL_MIG, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc\n")
+        file.write("ID, #CONN, MIG_DELAY, TOTAL_#_MIG, MIG_PER_N, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc\n")
         file.write(final_result)
     kill_procs()
 

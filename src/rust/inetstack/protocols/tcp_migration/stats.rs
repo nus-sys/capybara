@@ -46,7 +46,7 @@ impl fmt::Debug for PacketRate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-struct RollingAverageResult(f64);
+struct RollingAverageResult(u64);
 
 struct RollingAverage {
     values: VecDeque<usize>,
@@ -66,8 +66,8 @@ pub struct TcpMigStats {
     /// 
     /// (local, client) -> requests per milli-second.
     recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
-    global_recv_queue_length: f64,
-    threshold: f64,
+    global_recv_queue_length: u64,
+    threshold: u64,
 }
 
 impl fmt::Debug for TcpMigStats {
@@ -97,12 +97,12 @@ impl std::cmp::Ord for RollingAverageResult {
 //======================================================================================================================
 
 impl TcpMigStats {
-    pub fn new(threshold: f64) -> Self {
+    pub fn new(threshold: u64) -> Self {
         Self {
             global_incoming_traffic: PacketRate::new(),
             global_outgoing_traffic: PacketRate::new(),
             recv_queue_lengths: HashMap::new(),
-            global_recv_queue_length: 0.0,
+            global_recv_queue_length: 0,
             threshold,
         }
     }
@@ -115,15 +115,20 @@ impl TcpMigStats {
         let instant = Instant::now();
         self.global_incoming_traffic.update(instant);
         
-        let len_entry = self.recv_queue_lengths
-            .get_mut(&(local, client))
-            .expect("Entry does not exist for connection");
-        
-        let old_len = len_entry.get().0;
-        len_entry.update(recv_queue_len);
-        let new_len = len_entry.get().0;
-        // println!("old: {}, new: {}", old_len, new_len);
-        self.global_recv_queue_length += new_len - old_len;
+        match self.recv_queue_lengths.get_mut(&(local, client)) {
+            Some(len_entry) => {
+                let old_len = len_entry.get().0;
+                len_entry.update(recv_queue_len);
+                let new_len = len_entry.get().0;
+                // println!("old: {}, new: {}", old_len, new_len);
+                self.global_recv_queue_length = self.global_recv_queue_length + new_len - old_len;
+                
+            },
+            None => {
+                // Handle the case when the entry does not exist
+                return; // or any other action to finish the function
+            },
+        }
     }
 
     pub fn update_outgoing(&mut self) {
@@ -131,7 +136,7 @@ impl TcpMigStats {
         self.global_outgoing_traffic.update(instant);
     }
 
-    pub fn global_recv_queue_length(&self) -> f64 {
+    pub fn global_recv_queue_length(&self) -> u64 {
         self.global_recv_queue_length
     }
 
@@ -222,10 +227,10 @@ impl RollingAverage {
 
     fn get(&self) -> RollingAverageResult {
         if self.values.len() < WINDOW {
-            RollingAverageResult(0.0)
+            RollingAverageResult(0)
         }
         else {
-            RollingAverageResult((self.sum as f64) / (WINDOW as f64))
+            RollingAverageResult((self.sum as u64) / (WINDOW as u64))
         }
     }
 }

@@ -161,8 +161,8 @@ mlx4 = [ "dpdk-rs/mlx4" ]
 mlx5 = [ "dpdk-rs/mlx5" ]
 profiler = [  ]
 tcp-migration = [  ]
-tcp-migration-profiler = [ "tcp-migration" ]
-capybara-log = [  ]
+tcp-migration-profiler = [ ]
+capybara-log = [ "tcp-migration-profiler" ]
 mig-per-n-req = [ "tcp-migration" ]
 
 #=======================================================================================================================

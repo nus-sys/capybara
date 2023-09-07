@@ -394,7 +394,9 @@ impl TcpPeer {
                 Ok(()) => {
                     // eprintln!("*** Accepted migrated connection ***");
                     inner.tcpmig.start_tracking_connection_stats(local, remote);
-                    eprintln!("MIG-CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
+                    #[cfg(feature = "capybara-log")]
+                    tcpmig_log(format!("MIG-CONNECTION ESTABLISHED (REMOTE: {:?})", remote));
+                    
                     return Poll::Ready(Ok(new_qd));
                 },
                 Err(e) => {
@@ -408,6 +410,9 @@ impl TcpPeer {
         let key: (SocketAddrV4, SocketAddrV4) = (local, remote);
 
         let socket: Socket = Socket::Established { local, remote };
+        #[cfg(feature = "capybara-log")]
+        tcp_log(format!("CONNECTION ESTABLISHED (REMOTE: {:?})", remote));
+
         eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         if inner.sockets.insert(new_qd, socket).is_some() {
@@ -669,9 +674,8 @@ impl Inner {
         }
         if let Some(s) = self.established.get(&key) {
             debug!("Routing to established connection: {:?}", key);
-            #[cfg(feature = "tcp-migration")]
-            #[cfg(not(feature = "mig-per-n-req"))]
-            {
+            #[cfg(feature = "tcp-migration")]{
+            #[cfg(not(feature = "mig-per-n-req"))]{
                 // Remove
                 if tcp_hdr.fin || tcp_hdr.rst {
                     #[cfg(feature = "capybara-log")]
@@ -704,7 +708,7 @@ impl Inner {
                         self.tcpmig.initiate_migration(conn, *qd);
                     }
                 }
-            }
+            }}
 
             s.receive(&mut tcp_hdr, data);
             return Ok(());
@@ -861,7 +865,6 @@ impl TcpPeer {
             },
         };
         inner.tcpmig.stop_tracking_connection_stats(conn.0, conn.1);
-        eprintln!("stop tracking {} {}", conn.0, conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
         Ok(true)
     }
@@ -876,6 +879,10 @@ impl TcpPeer {
 
     pub fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> Result<TcpState, Fail> {
         self.inner.borrow_mut().migrate_out_tcp_connection(qd)
+    }
+
+    pub fn global_recv_queue_length(&mut self) -> u64 {
+        self.inner.borrow_mut().tcpmig.global_recv_queue_length()
     }
 }
 

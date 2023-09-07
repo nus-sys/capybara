@@ -43,8 +43,9 @@ all-examples:
 #	@echo "$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)"
 	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) \
-	--features=tcp-migration,tcp-migration-profiler,capybara-log,mig-per-n-req
+	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,tcp-migration-profiler
+#	--features=tcp-migration
+#tcp-migration,tcp-migration-profiler,mig-per-n-req,capybara-log,capybara-log
 
 clean:
 # 	@rm -rf $(BINDIR)/examples/rust/udp-dump.$(EXEC_SUFFIX)

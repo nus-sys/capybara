@@ -147,7 +147,7 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
             return 1;
         }
     }
-    println!("**********************CHECK************************\n");
+    // println!("* CHECK *\n");
     // Copy new data into buffer
     buffer.get_empty_buf()[..data.len()].copy_from_slice(data);
     buffer.push_data(data.len());
@@ -185,7 +185,8 @@ struct ConnectionState {
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
-    // let mut request_count = 0;  
+    let mut request_count = 0;
+    let mut queue_length_vec: Vec<(usize, u64)> = Vec::new();
     let migration_per_n: i32 = env::var("MIG_PER_N")
             .unwrap_or(String::from("0")) // Default value is 0 if MIG_PER_N is not set
             .parse()
@@ -216,7 +217,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
     
     loop {
         if !running.load(Ordering::SeqCst) {
-            // println!("Server stopping. Total requests processed: {}", request_count);
+            #[cfg(feature = "tcp-migration")]
+            for (idx, qlen) in queue_length_vec {
+                println!("{},{}", idx, qlen);
+            }
             break;
         }
 
@@ -280,6 +284,15 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
                         state.pushing += sent;
                         
+
+                        #[cfg(feature = "tcp-migration")]{
+                            request_count += sent;
+                            if request_count % 100 == 0 {
+                                // eprintln!("request_counnt: {} {}", request_count, libos.global_recv_queue_length());
+                                queue_length_vec.push((request_count, libos.global_recv_queue_length()));
+                            }
+                        }
+
                         
                         #[cfg(feature = "mig-per-n-req")] {
                             let remaining = requests_remaining.entry(qd).or_insert(migration_per_n);

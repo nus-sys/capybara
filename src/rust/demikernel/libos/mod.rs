@@ -256,4 +256,9 @@ impl LibOS {
             LibOS::NetworkLibOS(libos) => libos.get_migration_prepared_qds(),
         }
     }
+    pub fn global_recv_queue_length(&mut self) -> u64 {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.global_recv_queue_length(),
+        }
+    }
 }

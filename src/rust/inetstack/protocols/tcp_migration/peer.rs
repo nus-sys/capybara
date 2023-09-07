@@ -102,7 +102,7 @@ struct Inner {
     //is_currently_migrating: bool,
 
     //rx_tx_threshold_ratio: f64,
-    recv_queue_length_threshold: f64,
+    recv_queue_length_threshold: u64,
 
     self_udp_port: u16,
 
@@ -251,8 +251,6 @@ impl TcpMigPeer {
         {
             tcpmig_log(format!("Active migration {:?}", key));
         }
-
-        
         match active.process_packet(ipv4_hdr, hdr, buf)? {
             MigrationRequestStatus::Rejected => unimplemented!("migration rejection"),
             MigrationRequestStatus::PrepareMigrationAcked => {
@@ -506,8 +504,8 @@ impl TcpMigPeer {
     pub fn queue_length_heartbeat(&mut self) {
 
         let mut inner = self.inner.borrow_mut();
-        let queue_len = inner.stats.global_recv_queue_length() as u32;
-        if queue_len as f64 > inner.recv_queue_length_threshold{
+        let queue_len = inner.stats.global_recv_queue_length() as u64;
+        if queue_len as u64 > inner.recv_queue_length_threshold{
             return;
         }
         if let Some(heartbeat) = inner.heartbeat.as_mut() { 
@@ -550,6 +548,10 @@ impl TcpMigPeer {
     pub fn start_tracking_connection_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4) {
         self.inner.borrow_mut().stats.start_tracking_connection(local, client)
     }
+    
+    pub fn global_recv_queue_length(&mut self) -> u64 {
+        self.inner.borrow_mut().stats.global_recv_queue_length()
+    }
 }
 
 impl Inner {
@@ -560,7 +562,7 @@ impl Inner {
         local_ipv4_addr: Ipv4Addr,
         //arp: ArpPeer,
     ) -> Self {
-        let recv_queue_length_threshold = match std::env::var("RECV_QUEUE_LEN") {
+        let recv_queue_length_threshold: u64 = match std::env::var("RECV_QUEUE_LEN") {
             Ok(val) => val.parse().expect("RECV_QUEUE_LEN should be a number"),
             Err(..) => BASE_RECV_QUEUE_LENGTH_THRESHOLD,
         };

@@ -719,4 +719,7 @@ impl InetStack {
     pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
         self.ipv4.tcp.get_migration_prepared_qds()
     }
+    pub fn global_recv_queue_length(&mut self) -> u64 {
+        self.ipv4.tcp.global_recv_queue_length()
+    }
 }
