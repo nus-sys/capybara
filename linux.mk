@@ -416,6 +416,7 @@ tcp-pushpop:
 #============= REDIS =============#
 
 DEMIKERNEL_REPO_DIR ?= $(HOME)/Capybara/capybara
+DEMIKERNEL_LOG_IO ?= 0
 
 all-libs-mig:
 	@echo "LD_LIBRARY_PATH: $(LD_LIBRARY_PATH)"
@@ -424,13 +425,13 @@ all-libs-mig:
 	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration
 
 redis-server: all-libs
-	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) make redis-server
+	cd ../capybara-redis && rm -f src/demikernel.o && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) make redis-server
 
 redis-server-mig: all-libs-mig
-	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_TCPMIG=1 make redis-server
+	cd ../capybara-redis && rm -f src/demikernel.o && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 make redis-server
 
 run-redis-server:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ../capybara-redis/src/redis-server ../capybara-redis/config/be0.conf
+	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ../capybara-redis/src/redis-server ../capybara-redis/redis.conf
 
 clean-redis:
 	cd ../capybara-redis && make distclean
