@@ -45,6 +45,19 @@ extern "C"
      */
     extern int demi_wait_any(demi_qresult_t *qr_out, int *ready_offset, const demi_qtoken_t qts[], int num_qts);
 
+    /**
+     * @brief Returns all completed asynchronous I/O operation in a list.
+     *
+     * @param qrs_out           Array to store results of the completed I/O operations.
+     * @param ready_offsets     Array to store offsets in the list of I/O queue tokens of the completed I/O operations.
+     * @param num_out           Pointer to integer that contains the maximum number of results that can be stored. This is overwritten with the actual number of results.
+     * @param qts               List of I/O queue tokens to wait for completion.
+     * @param num_qts           Length of the list of I/O queue tokens to wait for completion.
+     *
+     * @return On successful completion, zero is returned. On failure, a positive error code is returned instead.
+     */
+    extern int demi_try_wait_any(demi_qresult_t qrs_out[], int ready_offsets[], int *num_out, const demi_qtoken_t qts[], int num_qts);
+
 #ifdef __cplusplus
 }
 #endif

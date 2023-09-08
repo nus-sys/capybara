@@ -316,6 +316,19 @@ impl NetworkLibOS {
         }
     }
 
+    pub fn try_wait_any(&mut self, qts: &[QToken]) -> Result<Option<Vec<(usize, demi_qresult_t)>>, Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(libos) => unimplemented!("catpowder try_wait_any()"),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(libos) => unimplemented!("catnap try_wait_any()"),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(libos) => unimplemented!("catcollar try_wait_any()"),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.try_wait_any(qts),
+        }
+    }
+
     /// Allocates a scatter-gather array.
     pub fn sgaalloc(&self, size: usize) -> Result<demi_sgarray_t, Fail> {
         match self {
