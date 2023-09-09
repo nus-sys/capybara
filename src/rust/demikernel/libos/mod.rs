@@ -114,6 +114,12 @@ impl LibOS {
         }
     }
 
+    pub fn trywait_any_one2(&mut self, qts: &[QToken]) -> Result<Option<(usize, QDesc, OperationResult)>, Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.trywait_any_one2(qts),
+        }
+    }
+
     pub fn trywait_any2(&mut self, qts: &[QToken]) -> Result<Option<Vec<(usize, QDesc, OperationResult)>>, Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.trywait_any2(qts),

@@ -224,12 +224,57 @@ fn server(local: SocketAddrV4) -> Result<()> {
             break;
         }
 
-        let result = libos.trywait_any2(&qts).expect("result");
-        
+        /* let result = libos.trywait_any_one2(&qts).expect("result");
         #[cfg(feature = "mig-per-n-req")]
         let mut qds_to_migrate = HashSet::new();
+        if let Some((index, qd, result)) = result {
+            qts.swap_remove(index);
+            match result {
+                OperationResult::Accept(new_qd) => {
+                    // Pop from new_qd
+                    let pop_qt = libos.pop(new_qd).expect("pop qt");
+                    qts.push(pop_qt);
+                    connstate.insert(new_qd, ConnectionState {
+                        pushing: 0,
+                        pop_qt: pop_qt,
+                        buffer: Buffer::new(),
+                    });
 
+                    // Re-arm accept
+                    qts.push(libos.accept(qd).expect("accept qtoken"));
+                },
+                OperationResult::Push => {
+                    let mut state = connstate.get_mut(&qd).unwrap();
+                    state.pushing -= 1;
+                    // queue next pop
+                    let pop_qt = libos.pop(qd).expect("pop qt");
+                    qts.push(pop_qt);
+                    state.pop_qt = pop_qt;
+                },
+                OperationResult::Pop(_, recvbuf) => {
+                    let mut state = connstate.get_mut(&qd).unwrap();
+                    let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
+                    state.pushing += sent;
+
+                    #[cfg(feature = "tcp-migration")]{
+                        request_count += sent;
+                        if request_count % 100 == 0 {
+                            // eprintln!("request_counnt: {} {}", request_count, libos.global_recv_queue_length());
+                            queue_length_vec.push((request_count, libos.global_recv_queue_length()));
+                        }
+                    }
+                },
+                _ => {
+                    panic!("Unexpected op: RESULT: {:?}", result);
+                },
+            }
+        } */
+        let result = libos.trywait_any2(&qts).expect("result");
+        
         if let Some(completed_results) = result {
+            let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
+                matches!(result, OperationResult::Pop(_, _))
+            }).count();
             #[cfg(feature = "capybara-log")]
             {
                 tcp_log(format!("\n\n======= OS: I/O operations have been completed, take the results! ======="));
@@ -275,6 +320,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         }
                     },
                     OperationResult::Pop(_, recvbuf) => {
+                        pop_count -= 1;
                         #[cfg(feature = "capybara-log")]
                         {
                             tcp_log(format!("POP complete ==> request PUSH and POP"));
@@ -289,7 +335,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             request_count += sent;
                             if request_count % 100 == 0 {
                                 // eprintln!("request_counnt: {} {}", request_count, libos.global_recv_queue_length());
-                                queue_length_vec.push((request_count, libos.global_recv_queue_length()));
+                                queue_length_vec.push((request_count, libos.global_recv_queue_length() + pop_count as u64));
                             }
                         }
 
