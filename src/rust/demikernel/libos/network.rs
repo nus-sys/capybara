@@ -409,4 +409,17 @@ impl NetworkLibOS {
             NetworkLibOS::Catnip(libos) => libos.global_recv_queue_length(),
         }
     }
+
+    pub fn print_queue_length(&mut self) {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.print_queue_length(),
+        }
+    }
 }

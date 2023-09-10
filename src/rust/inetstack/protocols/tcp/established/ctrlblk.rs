@@ -71,6 +71,9 @@ use ::std::{
 #[cfg(feature = "capybara-log")]
 use crate::{tcpmig_profiler::tcp_log};
 
+#[cfg(feature = "tcp-migration")]
+use crate::inetstack::protocols::tcp_migration::TcpMigPeer;
+
 // ToDo: Review this value (and its purpose).  It (2048 segments) of 8 KB jumbo packets would limit the unread data to
 // just 16 MB.  If we don't want to lie, that is also about the max window size we should ever advertise.  Whereas TCP
 // with the window scale option allows for window sizes of up to 1 GB.  This value appears to exist more because of the
@@ -400,7 +403,13 @@ impl ControlBlock {
 
     // This is the main TCP receive routine.
     //
-    pub fn receive(&self, mut header: &mut TcpHeader, mut data: Buffer) {
+    pub fn receive(
+        &self, 
+        mut header: &mut TcpHeader, 
+        mut data: Buffer,
+        #[cfg(feature = "tcp-migration")]
+        mut tcpmig: TcpMigPeer,
+    ) {
         #[cfg(feature = "capybara-log")]
         {
             tcp_log(format!("CTRLBLK RECEIVE seq_num: {}", header.seq_num));
@@ -778,7 +787,12 @@ impl ControlBlock {
             match self.state.get() {
                 State::Established | State::FinWait1 | State::FinWait2 => {
                     // We can only legitimately receive data in ESTABLISHED, FIN-WAIT-1, and FIN-WAIT-2.
-                    header.fin |= self.receive_data(seg_start, data);
+                    header.fin |= self.receive_data(
+                        seg_start, 
+                        data,
+                        #[cfg(feature = "tcp-migration")]
+                        tcpmig,
+                    );
                     should_schedule_ack = true;
                 },
                 state => warn!("Ignoring data received after FIN (in state {:?}).", state),
@@ -1008,7 +1022,12 @@ impl ControlBlock {
         hdr_window_size
     }
 
-    pub fn poll_recv(&self, ctx: &mut Context) -> Poll<Result<Buffer, Fail>> {
+    pub fn poll_recv(
+        &self, 
+        ctx: &mut Context,
+        #[cfg(feature = "tcp-migration")]
+        mut tcpmig: TcpMigPeer,
+    ) -> Poll<Result<Buffer, Fail>> {
         // ToDo: Need to add a way to indicate that the other side closed (i.e. that we've received a FIN).
         // Should we do this via a zero-sized buffer?  Same as with the unsent and unacked queues on the send side?
         //
@@ -1029,7 +1048,10 @@ impl ControlBlock {
             .receiver
             .pop()
             .expect("poll_recv failed to pop data from receive queue");
-        
+       
+        #[cfg(feature = "tcp-migration")]
+        tcpmig.pop_recv_queue();
+
         #[cfg(feature = "capybara-log")]
         {
             let queue_length = self.receiver.recv_queue.borrow().len();
@@ -1150,7 +1172,13 @@ impl ControlBlock {
     //
     // Returns true if a previously out-of-order segment containing a FIN has now been received.
     //
-    pub fn receive_data(&self, seg_start: SeqNumber, buf: Buffer) -> bool {
+    pub fn receive_data(
+        &self, 
+        seg_start: SeqNumber, 
+        buf: Buffer,
+        #[cfg(feature = "tcp-migration")]
+        mut tcpmig: TcpMigPeer,
+    ) -> bool {
         let recv_next: SeqNumber = self.receiver.receive_next.get();
 
         // This routine should only be called with in-order segment data.
@@ -1159,7 +1187,8 @@ impl ControlBlock {
         // Push the new segment data onto the end of the receive queue.
         let mut recv_next: SeqNumber = recv_next + SeqNumber::from(buf.len() as u32);
         self.receiver.push(buf);
-
+        #[cfg(feature = "tcp-migration")]
+        tcpmig.push_recv_queue();
         // Okay, we've successfully received some new data.  Check if any of the formerly out-of-order data waiting in
         // the out-of-order queue is now in-order.  If so, we can move it to the receive queue.
         let mut added_out_of_order: bool = false;
@@ -1173,6 +1202,8 @@ impl ControlBlock {
                     if let Some(temp) = out_of_order.pop_front() {
                         recv_next = recv_next + SeqNumber::from(temp.1.len() as u32);
                         self.receiver.push(temp.1);
+                        #[cfg(feature = "tcp-migration")]
+                        tcpmig.push_recv_queue();
                         added_out_of_order = true;
                     }
                 } else {

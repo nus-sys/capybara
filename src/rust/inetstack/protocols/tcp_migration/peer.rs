@@ -452,6 +452,14 @@ impl TcpMigPeer {
         // }
     }
 
+    pub fn push_recv_queue(&mut self) {
+        self.inner.borrow_mut().stats.push_recv_queue();
+    }
+
+    pub fn pop_recv_queue(&mut self) {
+        self.inner.borrow_mut().stats.pop_recv_queue();
+    }
+
     pub fn update_outgoing_stats(&mut self) {
         self.inner.borrow_mut().stats.update_outgoing();
     }
@@ -550,7 +558,11 @@ impl TcpMigPeer {
     }
     
     pub fn global_recv_queue_length(&mut self) -> u64 {
-        self.inner.borrow_mut().stats.global_recv_queue_length()
+        self.inner.borrow_mut().stats.global_recv_queue_counter()
+    }
+
+    pub fn print_queue_length(&mut self) {
+        self.inner.borrow_mut().stats.print_queue_length();
     }
 }
 

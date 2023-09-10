@@ -746,4 +746,7 @@ impl InetStack {
     pub fn global_recv_queue_length(&mut self) -> u64 {
         self.ipv4.tcp.global_recv_queue_length()
     }
+    pub fn print_queue_length(&mut self) {
+        self.ipv4.tcp.print_queue_length()
+    }
 }

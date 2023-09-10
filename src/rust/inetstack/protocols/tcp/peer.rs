@@ -485,7 +485,7 @@ impl TcpPeer {
         })
     }
 
-    pub fn poll_recv(&self, fd: QDesc, ctx: &mut Context) -> Poll<Result<Buffer, Fail>> {
+    pub fn poll_recv(&self, fd: QDesc, ctx: &mut Context) -> Poll<Result<Buffer, Fail>> {//HERE
         let inner = self.inner.borrow_mut();
         let key = match inner.sockets.get(&fd) {
             Some(Socket::Established { local, remote }) => (*local, *remote),
@@ -501,7 +501,12 @@ impl TcpPeer {
             tcp_log(format!("\n\npolling POP on {:?}", key));
         }
         match inner.established.get(&key) {
-            Some(ref s) => s.poll_recv(ctx),
+            Some(ref s) 
+            => s.poll_recv(
+                ctx,
+                #[cfg(feature = "tcp-migration")]
+                inner.tcpmig.clone(),
+            ),
             None => Poll::Ready(Err(Fail::new(ENOTCONN, "connection not established"))),
         }
     }
@@ -655,7 +660,7 @@ impl Inner {
         }
     }
 
-    fn receive(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
+    fn receive(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {//HERE
         let cloned_buf = buf.clone();
 
         let (mut tcp_hdr, data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
@@ -710,7 +715,12 @@ impl Inner {
                 }
             }}
 
-            s.receive(&mut tcp_hdr, data);
+            s.receive(&
+                mut tcp_hdr, 
+                data,
+                #[cfg(feature = "tcp-migration")]
+                self.tcpmig.clone(),
+            );
             return Ok(());
         }
         if let Some(s) = self.connecting.get_mut(&key) {
@@ -883,6 +893,9 @@ impl TcpPeer {
 
     pub fn global_recv_queue_length(&mut self) -> u64 {
         self.inner.borrow_mut().tcpmig.global_recv_queue_length()
+    }
+    pub fn print_queue_length(&mut self) {
+        self.inner.borrow_mut().tcpmig.print_queue_length()
     }
 }
 

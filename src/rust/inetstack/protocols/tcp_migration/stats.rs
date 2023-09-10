@@ -18,7 +18,7 @@ use crate::tcpmig_profiler::tcp_log;
 // Constants
 //======================================================================================================================
 
-const WINDOW: usize = 50;
+const WINDOW: usize = 1;
 
 //======================================================================================================================
 // Structures
@@ -67,7 +67,9 @@ pub struct TcpMigStats {
     /// (local, client) -> requests per milli-second.
     recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
     global_recv_queue_length: u64,
+    global_recv_queue_counter: u64,
     threshold: u64,
+    queue_length_vec: Vec<(usize, u64)>,
 }
 
 impl fmt::Debug for TcpMigStats {
@@ -103,7 +105,9 @@ impl TcpMigStats {
             global_outgoing_traffic: PacketRate::new(),
             recv_queue_lengths: HashMap::new(),
             global_recv_queue_length: 0,
+            global_recv_queue_counter: 0,
             threshold,
+            queue_length_vec: Vec::new(),
         }
     }
 
@@ -131,6 +135,23 @@ impl TcpMigStats {
         }
     }
 
+    pub fn push_recv_queue(&mut self) {
+        static mut REQUEST_COUNT: usize = 0;
+        self.global_recv_queue_counter += 1;
+        
+        unsafe{
+            REQUEST_COUNT += 1;
+            if REQUEST_COUNT % 100 == 0 {
+                self.queue_length_vec.push((REQUEST_COUNT, self.global_recv_queue_counter))
+            }
+        }
+
+    }
+
+    pub fn pop_recv_queue(&mut self) {
+        self.global_recv_queue_counter -= 1;
+    }
+
     pub fn update_outgoing(&mut self) {
         let instant = Instant::now();
         self.global_outgoing_traffic.update(instant);
@@ -138,6 +159,16 @@ impl TcpMigStats {
 
     pub fn global_recv_queue_length(&self) -> u64 {
         self.global_recv_queue_length
+    }
+
+    pub fn global_recv_queue_counter(&self) -> u64 {
+        self.global_recv_queue_counter
+    }
+
+    pub fn print_queue_length(&self) {
+        for (idx, qlen) in &self.queue_length_vec {
+            println!("{},{}", idx, qlen);
+        }
     }
 
     pub fn get_rx_tx_ratio(&self) -> f64 {

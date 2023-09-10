@@ -49,6 +49,9 @@ use ::std::{
 #[cfg(feature = "capybara-log")]
 use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
 
+#[cfg(feature = "tcp-migration")]
+use crate::inetstack::protocols::tcp_migration::TcpMigPeer;
+
 pub struct EstablishedSocket {
     pub cb: Rc<ControlBlock>,
     /// The background co-routines handles various tasks, such as retransmission and acknowledging.
@@ -75,16 +78,35 @@ impl EstablishedSocket {
         }
     }
 
-    pub fn receive(&self, header: &mut TcpHeader, data: Buffer) {
-        self.cb.receive(header, data)
+    pub fn receive(
+        &self, header: &mut TcpHeader, 
+        data: Buffer,
+        #[cfg(feature = "tcp-migration")]
+        tcpmig: TcpMigPeer,
+    ) {
+        self.cb.receive(
+            header, 
+            data,
+            #[cfg(feature = "tcp-migration")]
+            tcpmig,
+        )
     }
 
     pub fn send(&self, buf: Buffer) -> Result<(), Fail> {
         self.cb.send(buf)
     }
 
-    pub fn poll_recv(&self, ctx: &mut Context) -> Poll<Result<Buffer, Fail>> {
-        self.cb.poll_recv(ctx)
+    pub fn poll_recv(
+        &self, 
+        ctx: &mut Context,
+        #[cfg(feature = "tcp-migration")]
+        tcpmig: TcpMigPeer,
+    ) -> Poll<Result<Buffer, Fail>> {
+        self.cb.poll_recv(
+            ctx,
+            #[cfg(feature = "tcp-migration")]
+            tcpmig,
+        )
     }
 
     pub fn close(&self) -> Result<(), Fail> {

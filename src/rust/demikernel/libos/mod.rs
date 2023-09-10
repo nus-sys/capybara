@@ -267,4 +267,9 @@ impl LibOS {
             LibOS::NetworkLibOS(libos) => libos.global_recv_queue_length(),
         }
     }
+    pub fn print_queue_length(&mut self) {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.print_queue_length(),
+        }
+    }
 }
