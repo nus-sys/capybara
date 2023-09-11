@@ -186,7 +186,7 @@ struct ConnectionState {
 
 fn server(local: SocketAddrV4) -> Result<()> {
     let mut request_count = 0;
-    let mut queue_length_vec: Vec<(usize, u64)> = Vec::new();
+    let mut queue_length_vec: Vec<(usize, usize)> = Vec::new();
     let migration_per_n: i32 = env::var("MIG_PER_N")
             .unwrap_or(String::from("0")) // Default value is 0 if MIG_PER_N is not set
             .parse()
@@ -310,6 +310,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     OperationResult::Push => {
                         connstate.get_mut(&qd).unwrap().pushing -= 1;
                         
+                        // #[cfg(feature = "tcp-migration")]
+                        // libos.pushed_response();
+
                         #[cfg(feature = "capybara-log")]
                         tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing));
                         
@@ -320,7 +323,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         }
                     },
                     OperationResult::Pop(_, recvbuf) => {
-                        pop_count -= 1;
+                        // pop_count -= 1;
                         #[cfg(feature = "capybara-log")]
                         {
                             tcp_log(format!("POP complete ==> request PUSH and POP"));
@@ -335,7 +338,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             request_count += sent;
                             if request_count % 100 == 0 {
                                 // eprintln!("request_counnt: {} {}", request_count, libos.global_recv_queue_length());
-                                queue_length_vec.push((request_count, libos.global_recv_queue_length() + pop_count as u64));
+                                queue_length_vec.push((request_count, libos.global_recv_queue_length() + pop_count));
                             }
                         }
 

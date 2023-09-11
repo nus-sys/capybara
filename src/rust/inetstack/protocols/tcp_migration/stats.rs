@@ -18,7 +18,7 @@ use crate::tcpmig_profiler::tcp_log;
 // Constants
 //======================================================================================================================
 
-const WINDOW: usize = 1;
+const WINDOW: usize = 100;
 
 //======================================================================================================================
 // Structures
@@ -46,7 +46,7 @@ impl fmt::Debug for PacketRate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-struct RollingAverageResult(u64);
+struct RollingAverageResult(usize);
 
 struct RollingAverage {
     values: VecDeque<usize>,
@@ -66,10 +66,11 @@ pub struct TcpMigStats {
     /// 
     /// (local, client) -> requests per milli-second.
     recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
-    global_recv_queue_length: u64,
-    global_recv_queue_counter: u64,
-    threshold: u64,
-    queue_length_vec: Vec<(usize, u64)>,
+    global_recv_queue_length: usize,
+    global_recv_queue_counter: usize,
+    avg_global_recv_queue_counter: RollingAverage,
+    threshold: usize,
+    queue_length_vec: Vec<(usize, usize)>,
 }
 
 impl fmt::Debug for TcpMigStats {
@@ -99,13 +100,14 @@ impl std::cmp::Ord for RollingAverageResult {
 //======================================================================================================================
 
 impl TcpMigStats {
-    pub fn new(threshold: u64) -> Self {
+    pub fn new(threshold: usize) -> Self {
         Self {
             global_incoming_traffic: PacketRate::new(),
             global_outgoing_traffic: PacketRate::new(),
             recv_queue_lengths: HashMap::new(),
             global_recv_queue_length: 0,
             global_recv_queue_counter: 0,
+            avg_global_recv_queue_counter: RollingAverage::new(),
             threshold,
             queue_length_vec: Vec::new(),
         }
@@ -136,20 +138,14 @@ impl TcpMigStats {
     }
 
     pub fn push_recv_queue(&mut self) {
-        static mut REQUEST_COUNT: usize = 0;
         self.global_recv_queue_counter += 1;
         
-        unsafe{
-            REQUEST_COUNT += 1;
-            if REQUEST_COUNT % 100 == 0 {
-                self.queue_length_vec.push((REQUEST_COUNT, self.global_recv_queue_counter))
-            }
-        }
-
+        self.avg_global_recv_queue_counter.update(self.global_recv_queue_counter);
     }
 
     pub fn pop_recv_queue(&mut self) {
         self.global_recv_queue_counter -= 1;
+        self.avg_global_recv_queue_counter.update(self.global_recv_queue_counter);
     }
 
     pub fn update_outgoing(&mut self) {
@@ -157,12 +153,12 @@ impl TcpMigStats {
         self.global_outgoing_traffic.update(instant);
     }
 
-    pub fn global_recv_queue_length(&self) -> u64 {
+    pub fn global_recv_queue_length(&self) -> usize {
         self.global_recv_queue_length
     }
 
-    pub fn global_recv_queue_counter(&self) -> u64 {
-        self.global_recv_queue_counter
+    pub fn global_recv_queue_counter(&self) -> usize {
+        self.avg_global_recv_queue_counter.get().0
     }
 
     pub fn print_queue_length(&self) {
@@ -261,7 +257,7 @@ impl RollingAverage {
             RollingAverageResult(0)
         }
         else {
-            RollingAverageResult((self.sum as u64) / (WINDOW as u64))
+            RollingAverageResult((self.sum as usize) / (WINDOW as usize))
         }
     }
 }

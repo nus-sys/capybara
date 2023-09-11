@@ -691,7 +691,7 @@ impl Inner {
                 }
                 else {
                     // println!("receive");
-                    self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
+                    // self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
                     // self.tcpmig.queue_length_heartbeat();
                     
                     // Possible decision-making point.
@@ -891,11 +891,14 @@ impl TcpPeer {
         self.inner.borrow_mut().migrate_out_tcp_connection(qd)
     }
 
-    pub fn global_recv_queue_length(&mut self) -> u64 {
+    pub fn global_recv_queue_length(&mut self) -> usize {
         self.inner.borrow_mut().tcpmig.global_recv_queue_length()
     }
     pub fn print_queue_length(&mut self) {
         self.inner.borrow_mut().tcpmig.print_queue_length()
+    }
+    pub fn pushed_response(&mut self) {
+        self.inner.borrow_mut().tcpmig.pushed_response()
     }
 }
 

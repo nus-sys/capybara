@@ -102,7 +102,7 @@ struct Inner {
     //is_currently_migrating: bool,
 
     //rx_tx_threshold_ratio: f64,
-    recv_queue_length_threshold: u64,
+    recv_queue_length_threshold: usize,
 
     self_udp_port: u16,
 
@@ -512,8 +512,8 @@ impl TcpMigPeer {
     pub fn queue_length_heartbeat(&mut self) {
 
         let mut inner = self.inner.borrow_mut();
-        let queue_len = inner.stats.global_recv_queue_length() as u64;
-        if queue_len as u64 > inner.recv_queue_length_threshold{
+        let queue_len: usize = inner.stats.global_recv_queue_length() as usize;
+        if queue_len > inner.recv_queue_length_threshold{
             return;
         }
         if let Some(heartbeat) = inner.heartbeat.as_mut() { 
@@ -557,12 +557,16 @@ impl TcpMigPeer {
         self.inner.borrow_mut().stats.start_tracking_connection(local, client)
     }
     
-    pub fn global_recv_queue_length(&mut self) -> u64 {
+    pub fn global_recv_queue_length(&mut self) -> usize {
         self.inner.borrow_mut().stats.global_recv_queue_counter()
     }
 
     pub fn print_queue_length(&mut self) {
         self.inner.borrow_mut().stats.print_queue_length();
+    }
+
+    pub fn pushed_response(&mut self) {
+        // self.inner.borrow_mut().stats.pushed_response();
     }
 }
 
@@ -574,7 +578,7 @@ impl Inner {
         local_ipv4_addr: Ipv4Addr,
         //arp: ArpPeer,
     ) -> Self {
-        let recv_queue_length_threshold: u64 = match std::env::var("RECV_QUEUE_LEN") {
+        let recv_queue_length_threshold: usize = match std::env::var("RECV_QUEUE_LEN") {
             Ok(val) => val.parse().expect("RECV_QUEUE_LEN should be a number"),
             Err(..) => BASE_RECV_QUEUE_LENGTH_THRESHOLD,
         };

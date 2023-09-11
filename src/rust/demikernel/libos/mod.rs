@@ -262,7 +262,7 @@ impl LibOS {
             LibOS::NetworkLibOS(libos) => libos.get_migration_prepared_qds(),
         }
     }
-    pub fn global_recv_queue_length(&mut self) -> u64 {
+    pub fn global_recv_queue_length(&mut self) -> usize {
         match self {
             LibOS::NetworkLibOS(libos) => libos.global_recv_queue_length(),
         }
@@ -270,6 +270,17 @@ impl LibOS {
     pub fn print_queue_length(&mut self) {
         match self {
             LibOS::NetworkLibOS(libos) => libos.print_queue_length(),
+        }
+    }
+    pub fn pushed_response(&mut self) {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.pushed_response(),
+        }
+    }
+
+    pub fn rt_receive(&mut self) {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.rt_receive(),
         }
     }
 }
