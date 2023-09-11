@@ -217,10 +217,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
     
     loop {
         if !running.load(Ordering::SeqCst) {
-            #[cfg(feature = "tcp-migration")]
-            for (idx, qlen) in queue_length_vec {
-                println!("{},{}", idx, qlen);
-            }
+            // #[cfg(feature = "tcp-migration")]
+            // for (idx, qlen) in queue_length_vec {
+            //     println!("{},{}", idx, qlen);
+            // }
             break;
         }
 
@@ -334,13 +334,13 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         state.pushing += sent;
                         
 
-                        #[cfg(feature = "tcp-migration")]{
-                            request_count += sent;
-                            if request_count % 100 == 0 {
-                                // eprintln!("request_counnt: {} {}", request_count, libos.global_recv_queue_length());
-                                queue_length_vec.push((request_count, libos.global_recv_queue_length() + pop_count));
-                            }
-                        }
+                        // #[cfg(feature = "tcp-migration")]{
+                        //     request_count += sent;
+                        //     if request_count % 100 == 0 {
+                        //         // eprintln!("request_counnt: {} {}", request_count, libos.global_recv_queue_length());
+                        //         queue_length_vec.push((request_count, libos.global_recv_queue_length() + pop_count));
+                        //     }
+                        // }
 
                         
                         #[cfg(feature = "mig-per-n-req")] {
