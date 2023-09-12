@@ -10,4 +10,4 @@ catnip:
     "08:c0:eb:b6:e8:05": "10.0.1.8"
     "08:c0:eb:b6:c5:ad": "10.0.1.9"
 dpdk:
-  eal_init: ["", "-l", "0", "-n", "4", "-a", "31:00.1","--proc-type=auto"]
+  eal_init: ["", "-l", "", "-n", "4", "-a", "31:00.1","--proc-type=auto"]
