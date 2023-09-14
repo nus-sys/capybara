@@ -259,7 +259,7 @@ impl LibOS {
         }
     }
     #[cfg(feature = "mig-per-n-req")]
-    pub fn initiate_migration(&mut self, qd: QDesc) -> Result<bool, Fail> {
+    pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.initiate_migration(qd),
         }

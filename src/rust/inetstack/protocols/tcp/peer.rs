@@ -867,7 +867,7 @@ impl TcpPeer {
     }
     
     #[cfg(feature = "mig-per-n-req")]
-    pub fn initiate_migration(&mut self, qd: QDesc) -> Result<bool, Fail> {
+    pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         #[cfg(feature = "tcp-migration-profiler")]
         tcpmig_profile!("prepare");
         
@@ -886,7 +886,7 @@ impl TcpPeer {
         };
         inner.tcpmig.stop_tracking_connection_stats(conn.0, conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
-        Ok(true)
+        Ok(())
     }
 
     pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {

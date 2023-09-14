@@ -386,7 +386,7 @@ impl NetworkLibOS {
         }
     }
     #[cfg(feature = "mig-per-n-req")]
-    pub fn initiate_migration(&mut self, _qd: QDesc) -> Result<bool, Fail> {
+    pub fn initiate_migration(&mut self, _qd: QDesc) -> Result<(), Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),

@@ -708,6 +708,28 @@ pub extern "C" fn demi_notify_migration_safety(was_migration_done: *mut c_int, q
 }
 
 //======================================================================================================================
+// initiate_migration
+//======================================================================================================================
+
+#[cfg(all(feature = "tcp-migration", feature = "mig-per-n-req"))]
+#[allow(unused)]
+#[no_mangle]
+pub extern "C" fn demi_initiate_migration(qd: c_int) -> c_int {
+    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.initiate_migration(qd.into()) {
+        Ok(result) => 0,
+        Err(e) => {
+            warn!("initiate_migration() failed: {:?}", e);
+            e.errno
+        },
+    });
+
+    match ret {
+        Ok(ret) => ret,
+        Err(e) => e.errno,
+    }
+}
+
+//======================================================================================================================
 // Standalone Functions
 //======================================================================================================================
 

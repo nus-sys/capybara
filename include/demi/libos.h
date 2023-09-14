@@ -134,6 +134,15 @@ extern "C"
      */
     extern int demi_notify_migration_safety(int *was_migration_done, int qd);
 
+    /**
+     * @brief Initiates migration of the TCP connection represented by `qd`.
+     *
+     * @param qd    Target I/O queue descriptor.
+     *
+     * @return On successful completion, zero is returned. On failure, a positive error code is returned instead.
+     */
+    extern int demi_initiate_migration(int qd);
+
 #endif /* __DEMIKERNEL_TCPMIG__ */
 
 #ifdef __cplusplus

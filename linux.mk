@@ -420,15 +420,20 @@ DEMIKERNEL_LOG_IO ?= 0
 REDIS_CONF ?= redis.conf
 
 all-libs-mig:
-	@echo "LD_LIBRARY_PATH: $(LD_LIBRARY_PATH)"
-	@echo "PKG_CONFIG_PATH: $(PKG_CONFIG_PATH)"
 	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration"
 	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration
+
+all-libs-mig-per-n:
+	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=mig-per-n-req"
+	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=mig-per-n-req
 
 redis-server: all-libs
 	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) make redis-server
 
 redis-server-mig: all-libs-mig
+	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 make redis-server
+
+redis-server-mig-per-n: all-libs-mig-per-n
 	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 make redis-server
 
 run-redis-server:
