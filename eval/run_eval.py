@@ -75,6 +75,7 @@ def run_server(mig_delay, mig_var, mig_per_n):
         cmd = [f'cd {CAPYBARA_PATH} && \
                sudo -E \
                LIBOS=catnip \
+               RECV_QUEUE_LEN=100 \
                MTU=1500 \
                MSS=1500 \
                NUM_CORES=4 \
@@ -160,9 +161,10 @@ def run_eval():
                                     --threads={conn} \
                                     --runtime={RUNTIME} \
                                     --discard_pct=10 \
-                                    --output=buckets \
+                                    --output=trace \
                                     --rampup=0 \
                                     --exptid={DATA_PATH}/{experiment_id} \
+                                    --loadshift=150000:2000000,300000:3000000 \
                                     > {DATA_PATH}/{experiment_id}.client']
                             # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \
                             #         -a 31:00.1 \
