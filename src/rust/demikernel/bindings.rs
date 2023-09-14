@@ -520,6 +520,62 @@ pub extern "C" fn demi_wait_any(
 }
 
 //======================================================================================================================
+// try_wait_any
+//======================================================================================================================
+
+#[no_mangle]
+pub extern "C" fn demi_try_wait_any(
+    qrs_out: *mut demi_qresult_t,
+    ready_offsets: *mut c_int,
+    num_out: *mut c_int,
+    qts: *mut demi_qtoken_t,
+    num_qts: c_int,
+) -> c_int {
+    trace!("demi_try_wait_any()");
+
+    // Check arguments.
+    if num_qts < 0 {
+        return libc::EINVAL;
+    }
+
+    // Get queue tokens.
+    let qts: Vec<QToken> = {
+        let raw_qts: &[u64] = unsafe { slice::from_raw_parts(qts, num_qts as usize) };
+        raw_qts.iter().map(|i| QToken::from(*i)).collect()
+    };
+
+    // Issue try_wait_any operation.
+    let ret = do_syscall(|libos| match libos.try_wait_any(&qts) {
+        Ok(None) => {
+            unsafe { *num_out = 0; }
+            0
+        },
+        Ok(Some(results)) => {
+            let max_len = unsafe { *num_out } as usize;
+            assert!(results.len() <= max_len, "Buffer not big enough to store all results");
+            unsafe { *num_out = results.len() as c_int; }
+
+            let qrs_out = unsafe { slice::from_raw_parts_mut(qrs_out, max_len) };
+            let ready_offsets = unsafe { slice::from_raw_parts_mut(ready_offsets, max_len) };
+            for (i, (index, result)) in results.into_iter().enumerate() {
+                qrs_out[i] = result;
+                ready_offsets[i] = index as c_int;
+            }
+            0
+        },
+        Err(e) => {
+            warn!("try_wait_any() failed: {:?}", e);
+            e.errno
+        },
+    });
+
+    match ret {
+        Ok(ret) => ret,
+        Err(e) => e.errno,
+    }
+}
+
+//======================================================================================================================
 // sgaalloc
 //======================================================================================================================
 

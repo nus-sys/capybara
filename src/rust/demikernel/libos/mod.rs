@@ -229,6 +229,12 @@ impl LibOS {
         }
     }
 
+    pub fn try_wait_any(&mut self, qts: &[QToken]) -> Result<Option<Vec<(usize, demi_qresult_t)>>, Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.try_wait_any(qts),
+        }
+    }
+
     /// Allocates a scatter-gather array.
     pub fn sgaalloc(&self, size: usize) -> Result<demi_sgarray_t, Fail> {
         match self {

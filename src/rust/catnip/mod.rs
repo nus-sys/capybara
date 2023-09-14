@@ -191,6 +191,19 @@ impl CatnipLibOS {
         Ok((i, pack_result(self.rt.clone(), r, qd, qts[i].into())))
     }
 
+    pub fn try_wait_any(&mut self, qts: &[QToken]) -> Result<Option<Vec<(usize, demi_qresult_t)>>, Fail> {
+        #[cfg(feature = "profiler")]
+        timer!("catnip::try_wait_any");
+        trace!("try_wait_any(): qts={:?}", qts);
+
+        match self.trywait_any2(qts)? {
+            None => Ok(None),
+            Some(results) => Ok(Some(results.into_iter()
+                .map(|(i, qd, r)| (i, pack_result(self.rt.clone(), r, qd, qts[i].into())))
+                .collect()))
+        }
+    }
+
     /// Allocates a scatter-gather array.
     pub fn sgaalloc(&self, size: usize) -> Result<demi_sgarray_t, Fail> {
         self.rt.alloc_sgarray(size)

@@ -61,7 +61,7 @@
 - Run `make redis-server` to compile `redis-server` without migration.
     OR
   Run `make redis-server-mig` to compile `redis-server` with migration.
-- Run `make run-redis-server` to run `redis-server`.
+- Run `make run-redis-server` to run `redis-server`. By default, Redis uses the `redis.conf` config file. Use a custom config file through environment variable `REDIS_CONF` (for replication, for instance).
 
 # Demikernel
 
