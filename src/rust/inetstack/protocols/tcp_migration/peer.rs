@@ -84,7 +84,7 @@ struct Inner {
     /// QDescs of connections prepared to be migrated.
     /// 
     /// key = QDesc.
-    migrations_prepared_qds: HashSet<QDesc>,
+    // migrations_prepared_qds: HashSet<QDesc>,
 
 
     /// Origins. Only used on the target side to get the origin of redirected packets.
@@ -267,10 +267,10 @@ impl TcpMigPeer {
                     active.send_connection_state(state);
                     assert!(inner.migrated_out_connections.insert(remote), "Duplicate migrated_out_connections set insertion");
                 }
-                #[cfg(not(feature = "mig-per-n-req"))] {
+                /* #[cfg(not(feature = "mig-per-n-req"))] {
                     let qd = active.qd().unwrap();
                     inner.migrations_prepared_qds.insert(qd);
-                }
+                } */
             },
             MigrationRequestStatus::StateReceived(state) => {
                 #[cfg(feature = "tcp-migration-profiler")]
@@ -381,9 +381,9 @@ impl TcpMigPeer {
             active.send_connection_state(state);
             #[cfg(not(feature = "mig-per-n-req"))] {
                 let qd = active.qd().unwrap();
-                if !inner.migrations_prepared_qds.remove(&qd){
-                    panic!("this qd is not migration-prepared");
-                }
+                // if !inner.migrations_prepared_qds.remove(&qd){
+                //     panic!("this qd is not migration-prepared");
+                // }
             }
         }
         if !inner.migrated_out_connections.insert(handle.client) {
@@ -576,8 +576,9 @@ impl TcpMigPeer {
     }
 
     pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
-        let prepared_qds = self.inner.borrow().migrations_prepared_qds.clone();
-        return Ok(prepared_qds)
+        // let prepared_qds = self.inner.borrow().migrations_prepared_qds.clone();
+        // return Ok(prepared_qds)
+        Err(Fail::new(libc::EINVAL, "Currently we don't use this optimization"))
     }
     
     pub fn start_tracking_connection_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4) {
@@ -620,7 +621,7 @@ impl Inner {
                 _ => Some(HeartbeatData::new())
             },
             active_migrations: HashMap::new(),
-            migrations_prepared_qds: HashSet::new(),
+            // migrations_prepared_qds: HashSet::new(),
             origins: HashMap::new(),
             incoming_connections: HashSet::new(),
             stats: TcpMigStats::new(recv_queue_length_threshold),

@@ -388,12 +388,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
             }
             #[cfg(not(feature = "mig-per-n-req"))] {
                 let mut qds_to_remove = Vec::new();
-                for qd in libos.get_migration_prepared_qds().unwrap().iter() {
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("qd: {:?}", qd));
-                    }
-                    let state = connstate.get_mut(&qd).unwrap();
+                for (qd, state) in connstate.iter() {
                     // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
                     if state.pushing > 0 || state.buffer.data_size() > 0 {
                         continue;
@@ -408,6 +403,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         _ => (),
                     };
                 }
+    
                 for qd in qds_to_remove {
                     connstate.remove(&qd);
                 }
