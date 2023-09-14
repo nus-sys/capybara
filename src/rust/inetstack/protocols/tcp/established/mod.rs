@@ -79,7 +79,8 @@ impl EstablishedSocket {
     }
 
     pub fn receive(
-        &self, header: &mut TcpHeader, 
+        &self, 
+        header: &mut TcpHeader, 
         data: Buffer,
         #[cfg(feature = "tcp-migration")]
         tcpmig: TcpMigPeer,

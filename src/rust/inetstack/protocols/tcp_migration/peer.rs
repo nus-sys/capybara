@@ -464,27 +464,43 @@ impl TcpMigPeer {
         self.inner.borrow_mut().stats.update_outgoing();
     }
 
-    // pub fn should_migrate(&self) -> bool {
-    //     let inner = self.inner.borrow();
-    //     if inner.is_currently_migrating || inner.stats.num_of_connections() <= 100 { return false; }
+    pub fn should_migrate(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
+        static mut NUM_MIG: u32 = 0;
+        
+        let inner = self.inner.borrow();
+        
+        if std::env::var("CORE_ID") != Ok("1".to_string()) {
+            return None;
+        }
 
-    //     let recv_queue_len = inner.stats.global_recv_queue_length();
-    //     // println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
-    //     recv_queue_len.is_finite() && recv_queue_len > inner.recv_queue_length_threshold
-    // }
+        if inner.stats.num_of_connections() <= 0 
+            || unsafe{ NUM_MIG } >= inner.migration_variable {
+            return None;
+        }
+        
+        let recv_queue_len = inner.stats.global_recv_queue_counter();
+        // println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
+        if recv_queue_len > inner.recv_queue_length_threshold {
+            // eprintln!("recv_queue_len: {}", recv_queue_len);
+            return inner.stats.get_connection_to_migrate_out();
+        }
+        return None;
+    }
 
     // TEMP (for migration test)
-    pub fn should_migrate(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
+    /* pub fn should_migrate(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
         static mut FLAG: u32 = 0;
         static mut WARMUP: u32 = 0;
         static mut NUM_MIG: u32 = 0;
 
-        // if std::env::var("CORE_ID") == Ok("1".to_string()) {
-        //     unsafe { WARMUP += 1; }
-        //     if unsafe { WARMUP } < 20000 {
-        //         return false;
-        //     }
-        // }
+        if std::env::var("CORE_ID") == Ok("1".to_string()) {
+            unsafe { WARMUP += 1; }
+            if unsafe { WARMUP } < 200000 {
+                return None;
+            }
+        }else{
+            return None;
+        }
 
         let mut inner = self.inner.borrow_mut();
         // println!("NUM_MIG: {} , num_conn: {}", unsafe{NUM_MIG}, inner.stats.num_of_connections());
@@ -507,7 +523,7 @@ impl TcpMigPeer {
             }
             return None;
         }
-    }
+    } */
 
     pub fn queue_length_heartbeat(&mut self) {
 
@@ -537,8 +553,19 @@ impl TcpMigPeer {
         }
     }
 
-    pub fn stop_tracking_connection_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4) {
-        self.inner.borrow_mut().stats.stop_tracking_connection(local, client)
+    pub fn stop_tracking_connection_stats(
+        &mut self, 
+        local: SocketAddrV4, 
+        client: SocketAddrV4,
+        #[cfg(not(feature = "mig-per-n-req"))] 
+        recv_queue_len: usize,
+    ) {
+        self.inner.borrow_mut().stats.stop_tracking_connection(
+                                                                local, 
+                                                                client, 
+                                                                #[cfg(not(feature = "mig-per-n-req"))] 
+                                                                recv_queue_len,
+                                                            )
     }
 
     pub fn print_stats(&self) {

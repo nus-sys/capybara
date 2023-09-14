@@ -144,7 +144,11 @@ impl TcpMigStats {
     }
 
     pub fn pop_recv_queue(&mut self) {
-        self.global_recv_queue_counter -= 1;
+        // self.global_recv_queue_counter -= 1;
+        // assert!(self.global_recv_queue_counter >= 0);
+        if self.global_recv_queue_counter > 0  {
+            self.global_recv_queue_counter -= 1;
+        }
         self.avg_global_recv_queue_counter.update(self.global_recv_queue_counter);
     }
 
@@ -176,7 +180,7 @@ impl TcpMigStats {
         .max_by_key(|(_, v)| v.get())
         .and_then(|(k, _)| Some(*k))
 
-        // let pivot = self.global_recv_queue_length - self.threshold;
+        // let pivot = self.avg_global_recv_queue_counter.get().0 - self.threshold;
 
         // self.recv_queue_lengths.iter()
         //     .filter(|(_, v)| v.get().0 > pivot)
@@ -195,17 +199,46 @@ impl TcpMigStats {
         }
         assert!(!self.recv_queue_lengths.contains_key(&(local, client)));
         self.recv_queue_lengths.insert((local, client), RollingAverage::new());
+
+        // Print all keys in recv_queue_lengths
+        // println!("Keys in recv_queue_lengths:");
+        // for key in self.recv_queue_lengths.keys() {
+        //     println!("{:?}", key);
+        // }
     }
 
-    pub fn stop_tracking_connection(&mut self, local: SocketAddrV4, client: SocketAddrV4) {
+    pub fn stop_tracking_connection(
+        &mut self, 
+        local: SocketAddrV4, 
+        client: SocketAddrV4,
+        #[cfg(not(feature = "mig-per-n-req"))] 
+        recv_queue_len: usize,
+    ) {
         #[cfg(feature = "capybara-log")]
         {
             tcp_log(format!("stop"));
         }
+        
         match self.recv_queue_lengths.remove(&(local, client)) {
-            Some(len) => self.global_recv_queue_length -= len.get().0,
             None => warn!("`TcpMigStats` was not tracking connection ({}, {})", local, client),
+            _ => {},
         }
+
+        #[cfg(not(feature = "mig-per-n-req"))] {
+            if self.global_recv_queue_counter <= recv_queue_len {
+                self.global_recv_queue_counter = 0;
+            }else{
+                self.global_recv_queue_counter -= recv_queue_len;
+            }
+            // assert!(self.global_recv_queue_counter >= 0);
+            self.avg_global_recv_queue_counter.update(self.global_recv_queue_counter);
+        }
+
+        // Print all keys in recv_queue_lengths
+        // println!("Keys in recv_queue_lengths:");
+        // for key in self.recv_queue_lengths.keys() {
+        //     println!("{:?}", key);
+        // }
     }
 }
 

@@ -372,6 +372,7 @@ impl NetworkLibOS {
             NetworkLibOS::Catnip(libos) => libos.notify_migration_safety(_qd),
         }
     }
+    #[cfg(feature = "mig-per-n-req")]
     pub fn initiate_migration(&mut self, _qd: QDesc) -> Result<bool, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]

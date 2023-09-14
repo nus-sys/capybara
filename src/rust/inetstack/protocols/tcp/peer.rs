@@ -679,48 +679,57 @@ impl Inner {
         }
         if let Some(s) = self.established.get(&key) {
             debug!("Routing to established connection: {:?}", key);
-            #[cfg(feature = "tcp-migration")]{
-            #[cfg(not(feature = "mig-per-n-req"))]{
-                // Remove
-                if tcp_hdr.fin || tcp_hdr.rst {
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("RX FIN or RST => tcpmig stops tracking this conn"));
-                    }
-                    self.tcpmig.stop_tracking_connection_stats(local, remote);
-                }
-                else {
-                    // println!("receive");
-                    // self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
-                    // self.tcpmig.queue_length_heartbeat();
-                    
-                    // Possible decision-making point.
-                    if let Some(conn) = self.tcpmig.should_migrate() {
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcpmig_log(format!("should migrate"));
-                        }
-                        #[cfg(feature = "tcp-migration-profiler")]
-                        tcpmig_profile!("prepare");
-                        // eprintln!("*** Should Migrate ***");
-                        // self.tcpmig.print_stats();
-                        let qd = self.qds.get(&conn).ok_or_else(|| Fail::new(EBADF, "socket not exist"))?;
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcpmig_log(format!("qd: {:?}", qd));
-                        }
-                        self.tcpmig.stop_tracking_connection_stats(local, remote);
-                        self.tcpmig.initiate_migration(conn, *qd);
-                    }
-                }
-            }}
-
             s.receive(&
                 mut tcp_hdr, 
                 data,
                 #[cfg(feature = "tcp-migration")]
                 self.tcpmig.clone(),
             );
+            #[cfg(feature = "tcp-migration")]{
+                #[cfg(not(feature = "mig-per-n-req"))]{
+                    // Remove
+                    if tcp_hdr.fin || tcp_hdr.rst {
+                        #[cfg(feature = "capybara-log")]
+                        {
+                            tcp_log(format!("RX FIN or RST => tcpmig stops tracking this conn"));
+                        }
+                        self.tcpmig.stop_tracking_connection_stats(local, remote, s.cb.receiver.recv_queue_len());
+                    }
+                    else {
+                        // println!("receive");
+                        // self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
+                        // self.tcpmig.queue_length_heartbeat();
+                        
+                        // Possible decision-making point.
+                        if let Some(conn) = self.tcpmig.should_migrate() {
+                            // eprintln!("{:?}", conn);
+                            #[cfg(feature = "capybara-log")]
+                            {
+                                tcpmig_log(format!("should migrate"));
+                            }
+                            #[cfg(feature = "tcp-migration-profiler")]
+                            tcpmig_profile!("prepare");
+                            // eprintln!("*** Should Migrate ***");
+                            // self.tcpmig.print_stats();
+                            let qd = self.qds.get(&conn).ok_or_else(|| Fail::new(EBADF, "socket not exist"))?;
+                            #[cfg(feature = "capybara-log")]
+                            {
+                                tcpmig_log(format!("qd: {:?}, conn: {:?}", qd, conn));
+                            }
+                            let mig_key = (conn.0, conn.1);
+                            // Attempt to retrieve the value from the hashmap
+                            if let Some(mig_socket) = self.established.get(&mig_key) {
+                                // The key exists in the hashmap, and mig_socket now contains the value.
+                                // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
+                                self.tcpmig.stop_tracking_connection_stats(conn.0, conn.1, mig_socket.cb.receiver.recv_queue_len());
+                                self.tcpmig.initiate_migration(conn, *qd);
+                            } else {
+                                // The key does not exist in the esablished hashmap, panic.
+                                panic!("Key not found in established HashMap: {:?}", mig_key);
+                            }
+                        }
+                    }
+                }}
             return Ok(());
         }
         if let Some(s) = self.connecting.get_mut(&key) {
@@ -856,7 +865,8 @@ impl TcpPeer {
 
         Ok(false)
     }
-
+    
+    #[cfg(feature = "mig-per-n-req")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<bool, Fail> {
         #[cfg(feature = "tcp-migration-profiler")]
         tcpmig_profile!("prepare");

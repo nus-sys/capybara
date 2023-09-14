@@ -737,6 +737,7 @@ impl InetStack {
     pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
         self.ipv4.tcp.notify_migration_safety(qd)
     }
+    #[cfg(feature = "mig-per-n-req")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<bool, Fail> {
         self.ipv4.tcp.initiate_migration(qd)
     }
