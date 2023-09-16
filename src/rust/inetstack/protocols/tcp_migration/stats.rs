@@ -7,8 +7,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
-    net::SocketAddrV4, time::Instant,
-    fmt,
+    net::SocketAddrV4,
 };
 
 #[cfg(feature = "capybara-log")]
@@ -18,82 +17,39 @@ use crate::tcpmig_profiler::tcp_log;
 // Constants
 //======================================================================================================================
 
-const WINDOW: usize = 100;
-
 //======================================================================================================================
 // Structures
 //======================================================================================================================
-
-struct PacketRate {
-    instants: VecDeque<Instant>,
-}
-
-impl fmt::Debug for PacketRate {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut prev_time = None;
-        let mut idx: i32 = 1;
-        writeln!(f, "")?;
-        for time in &self.instants {
-            if let Some(prev) = prev_time {
-                let time_diff = time.duration_since(prev);
-                writeln!(f, "GAP#{}: {:?}", idx, time_diff)?;
-                idx+=1;
-            }
-            prev_time = Some(*time);
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-struct RollingAverageResult(usize);
 
 struct RollingAverage {
     values: VecDeque<usize>,
     sum: usize,
 }
-impl fmt::Debug for RollingAverage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "\nvalues: {:?}\nsum: {}\naverage: {:?}\n", self.values, self.sum, self.get())
-    }
+
+struct BucketList {
+    /// Index 0: Connections with queue length 1-9. (0-length connections are not stored)
+    /// 
+    /// Index 1: Connections with queue length 10-19.
+    /// 
+    /// Index 2: Connections with queue length 20-29, and so on.
+    buckets: Vec<Vec<(SocketAddrV4, SocketAddrV4)>>,
+
+    /// Mapping from connection to its index in its corresponding bucket.
+    positions: HashMap<(SocketAddrV4, SocketAddrV4), usize>,
 }
 
 pub struct TcpMigStats {
-    global_incoming_traffic: PacketRate,
-    global_outgoing_traffic: PacketRate,
-
-    /// Incoming traffic rate per connection.
-    /// 
-    /// (local, client) -> requests per milli-second.
-    recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
+    // Receive Queue Stats
     global_recv_queue_length: usize,
-    global_recv_queue_counter: usize,
-    avg_global_recv_queue_counter: RollingAverage,
+    avg_global_recv_queue_length: RollingAverage,
     threshold: usize,
-    queue_length_vec: Vec<(usize, usize)>,
-}
-
-impl fmt::Debug for TcpMigStats {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TcpMigStats")
-            .field("\nglobal_incoming_traffic", &self.global_incoming_traffic)
-            .field("\nglobal_outgoing_traffic", &self.global_outgoing_traffic)
-            .field("\nrecv_queue_lengths\n", &self.recv_queue_lengths)
-            .finish()
-    }
+    recv_queue_stats: BucketList,
+    recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
 }
 
 //======================================================================================================================
 // Standard Library Trait Implementations
 //======================================================================================================================
-
-impl std::cmp::Eq for RollingAverageResult {}
-
-impl std::cmp::Ord for RollingAverageResult {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).expect("RollingAverageResult should never be NaN")
-    }
-}
 
 //======================================================================================================================
 // Associate Functions
@@ -102,14 +58,11 @@ impl std::cmp::Ord for RollingAverageResult {
 impl TcpMigStats {
     pub fn new(threshold: usize) -> Self {
         Self {
-            global_incoming_traffic: PacketRate::new(),
-            global_outgoing_traffic: PacketRate::new(),
-            recv_queue_lengths: HashMap::new(),
             global_recv_queue_length: 0,
-            global_recv_queue_counter: 0,
-            avg_global_recv_queue_counter: RollingAverage::new(),
+            avg_global_recv_queue_length: RollingAverage::new(),
             threshold,
-            queue_length_vec: Vec::new(),
+            recv_queue_stats: BucketList::new(),
+            recv_queue_lengths: HashMap::new(),
         }
     }
 
@@ -117,10 +70,7 @@ impl TcpMigStats {
         self.recv_queue_lengths.len()
     }
 
-    pub fn update_incoming(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {
-        let instant = Instant::now();
-        self.global_incoming_traffic.update(instant);
-        
+    /* pub fn update_incoming(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {        
         match self.recv_queue_lengths.get_mut(&(local, client)) {
             Some(len_entry) => {
                 let old_len = len_entry.get().0;
@@ -135,52 +85,43 @@ impl TcpMigStats {
                 return; // or any other action to finish the function
             },
         }
+    } */
+
+    pub fn recv_queue_push(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
+        self.global_recv_queue_length += 1;
+        self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
     }
 
-    pub fn push_recv_queue(&mut self) {
-        self.global_recv_queue_counter += 1;
-        
-        self.avg_global_recv_queue_counter.update(self.global_recv_queue_counter);
-    }
-
-    pub fn pop_recv_queue(&mut self) {
-        // self.global_recv_queue_counter -= 1;
-        // assert!(self.global_recv_queue_counter >= 0);
-        if self.global_recv_queue_counter > 0  {
-            self.global_recv_queue_counter -= 1;
-        }
-        self.avg_global_recv_queue_counter.update(self.global_recv_queue_counter);
-    }
-
-    pub fn update_outgoing(&mut self) {
-        let instant = Instant::now();
-        self.global_outgoing_traffic.update(instant);
+    pub fn recv_queue_pop(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
+        // Pop is always only called after at least one push.
+        // debug_assert!(self.global_recv_queue_length > 0);
+        self.global_recv_queue_length -= 1;
+        self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
     }
 
     pub fn global_recv_queue_length(&self) -> usize {
         self.global_recv_queue_length
     }
 
-    pub fn global_recv_queue_counter(&self) -> usize {
-        self.avg_global_recv_queue_counter.get().0
+    pub fn avg_global_recv_queue_length(&self) -> usize {
+        self.avg_global_recv_queue_length.get()
     }
 
     pub fn print_queue_length(&self) {
-        for (idx, qlen) in &self.queue_length_vec {
-            println!("{},{}", idx, qlen);
+        for (idx, qlen) in &self.recv_queue_lengths {
+            println!("{:?},{}", idx, qlen.get());
         }
     }
 
-    pub fn get_rx_tx_ratio(&self) -> f64 {
-        self.global_incoming_traffic.get() / self.global_outgoing_traffic.get()
-    }
-
-    pub fn get_connection_to_migrate_out(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
-        self.recv_queue_lengths.iter()
+    /// Needs global receive queue length to be greater than the threshold.
+    pub fn get_connection_to_migrate_out(&mut self) -> (SocketAddrV4, SocketAddrV4) {
+        /* self.recv_queue_lengths.iter()
         .max_by_key(|(_, v)| v.get())
-        .and_then(|(k, _)| Some(*k))
+        .and_then(|(k, _)| Some(*k)) */
 
-        // let pivot = self.avg_global_recv_queue_counter.get().0 - self.threshold;
+        assert!(self.avg_global_recv_queue_length() >= self.threshold);
+        let pivot = self.avg_global_recv_queue_length() - self.threshold;
+        self.recv_queue_stats.pop_connection(pivot)
 
         // self.recv_queue_lengths.iter()
         //     .filter(|(_, v)| v.get().0 > pivot)
@@ -197,8 +138,7 @@ impl TcpMigStats {
         {
             tcp_log(format!("start"));
         }
-        assert!(!self.recv_queue_lengths.contains_key(&(local, client)));
-        self.recv_queue_lengths.insert((local, client), RollingAverage::new());
+        assert!(self.recv_queue_lengths.insert((local, client), RollingAverage::new()).is_none());
 
         // Print all keys in recv_queue_lengths
         // println!("Keys in recv_queue_lengths:");
@@ -221,17 +161,17 @@ impl TcpMigStats {
         
         match self.recv_queue_lengths.remove(&(local, client)) {
             None => warn!("`TcpMigStats` was not tracking connection ({}, {})", local, client),
-            _ => {},
+            _ => (),
         }
 
         #[cfg(not(feature = "mig-per-n-req"))] {
-            if self.global_recv_queue_counter <= recv_queue_len {
-                self.global_recv_queue_counter = 0;
+            if self.global_recv_queue_length <= recv_queue_len {
+                self.global_recv_queue_length = 0;
             }else{
-                self.global_recv_queue_counter -= recv_queue_len;
+                self.global_recv_queue_length -= recv_queue_len;
             }
             // assert!(self.global_recv_queue_counter >= 0);
-            self.avg_global_recv_queue_counter.update(self.global_recv_queue_counter);
+            self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
         }
 
         // Print all keys in recv_queue_lengths
@@ -242,55 +182,91 @@ impl TcpMigStats {
     }
 }
 
-impl PacketRate {
+impl BucketList {
+    const BUCKET_SIZE: usize = 10;
+
     fn new() -> Self {
         Self {
-            instants: VecDeque::new(),
+            buckets: Vec::new(),
+            positions: HashMap::new(),
         }
     }
 
-    fn update(&mut self, instant: Instant) {
-        self.instants.push_back(instant);
-        if self.instants.len() > WINDOW {
-            self.instants.pop_front().unwrap();
+    /// Removes and returns a connection from the bucket list for the corresponding queue length.
+    fn pop_connection(&mut self, queue_length: usize) -> (SocketAddrV4, SocketAddrV4) {
+        for bucket in self.buckets[queue_length / Self::BUCKET_SIZE..].iter_mut() {
+            if let Some(connection) = bucket.pop() {
+                self.positions.remove(&connection).unwrap();
+                return connection;
+            };
         }
-        //eprintln!("{}", self.value);
+
+        panic!("Invalid queue_length = {}", queue_length)
     }
 
-    fn get(&self) -> f64 {
-        if self.instants.len() < WINDOW {
-            0.0
+    pub fn increment(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
+        if new_queue_len == 1 || new_queue_len % Self::BUCKET_SIZE == 0 {
+            // Add connection to the new bucket.
+            let new_bucket = new_queue_len / Self::BUCKET_SIZE;
+            if self.buckets.len() < new_bucket + 1 { // if instead of while because of incremental updates.
+                self.buckets.push(Vec::new());
+            }
+
+            let new_index = self.buckets[new_bucket].len();
+            self.buckets[new_bucket].push(connection);
+            let old_index = self.positions.insert(connection, new_index);
+
+            // Remove connection from the previous bucket if it's not in the first bucket.
+            if let Some(old_index) = old_index {
+                let old_bucket = &mut self.buckets[new_bucket - 1];
+                old_bucket.swap_remove(old_index);
+                
+                // Update the position of the swapped connection.
+                self.positions.insert(old_bucket[old_index], old_index);
+            }
+        }
+    }
+
+    pub fn decrement(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
+        let old_index = if new_queue_len == 0 {
+            self.positions.remove(&connection).unwrap()
+        }
+        else if (new_queue_len + 1) % Self::BUCKET_SIZE == 0 {
+            // Add connection to the new bucket.
+            let new_bucket = new_queue_len / Self::BUCKET_SIZE;
+            let new_index = self.buckets[new_bucket].len();
+            self.buckets[new_bucket].push(connection);
+            self.positions.insert(connection, new_index).unwrap()
         }
         else {
-            (WINDOW as f64) / (*self.instants.back().unwrap() - *self.instants.front().unwrap()).as_secs_f64()
-        }
+            return;
+        };
+
+        // Remove connection from old bucket.
+        let old_bucket = &mut self.buckets[(new_queue_len + 1) / Self::BUCKET_SIZE];
+        old_bucket.swap_remove(old_index);
+        self.positions.insert(old_bucket[old_index], old_index);
     }
 }
 
 impl RollingAverage {
+    const WINDOW_LOG_2: usize = 7;
+    const WINDOW: usize = 1 << Self::WINDOW_LOG_2;
+
     fn new() -> Self {
         Self {
-            values: VecDeque::new(),
+            values: VecDeque::from([0; Self::WINDOW]),
             sum: 0,
         }
     }
 
     fn update(&mut self, value: usize) {
-        self.values.push_back(value);
+        self.sum -= unsafe { self.values.pop_front().unwrap_unchecked() };
         self.sum += value;
-
-        if self.values.len() > WINDOW {
-            self.sum -= self.values.pop_front().unwrap();
-        }
-        //eprintln!("{}", self.value);
+        self.values.push_back(value);
     }
 
-    fn get(&self) -> RollingAverageResult {
-        if self.values.len() < WINDOW {
-            RollingAverageResult(0)
-        }
-        else {
-            RollingAverageResult((self.sum as usize) / (WINDOW as usize))
-        }
+    fn get(&self) -> usize {
+        self.sum >> Self::WINDOW_LOG_2
     }
 }

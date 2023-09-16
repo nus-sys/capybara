@@ -42,7 +42,7 @@ use ::std::{
         Ipv4Addr,
         SocketAddrV4,
     },
-    thread, time::Duration,
+    thread,
     rc::Rc,
     env,
 };
@@ -51,7 +51,7 @@ use ::std::{
 use crate::timer;
 
 #[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+use crate::tcpmig_profiler::tcpmig_log;
 
 
 //======================================================================================================================
@@ -439,7 +439,7 @@ impl TcpMigPeer {
         // eprintln!("migrated_out_connections: {:?}", inner.migrated_out_connections);
     }
 
-    pub fn update_incoming_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {
+    /* pub fn update_incoming_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {
         self.inner.borrow_mut().stats.update_incoming(local, client, recv_queue_len);
 
         // unsafe {
@@ -450,24 +450,24 @@ impl TcpMigPeer {
         //         println!("global_recv_queue_length: {}", self.inner.borrow().stats.global_recv_queue_length());
         //     }
         // }
+    } */
+
+    pub fn stats_recv_queue_push(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
+        self.inner.borrow_mut().stats.recv_queue_push(connection, new_queue_len);
     }
 
-    pub fn push_recv_queue(&mut self) {
-        self.inner.borrow_mut().stats.push_recv_queue();
+    pub fn stats_recv_queue_pop(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
+        self.inner.borrow_mut().stats.recv_queue_pop(connection, new_queue_len);
     }
 
-    pub fn pop_recv_queue(&mut self) {
-        self.inner.borrow_mut().stats.pop_recv_queue();
-    }
-
-    pub fn update_outgoing_stats(&mut self) {
+    /* pub fn update_outgoing_stats(&mut self) {
         self.inner.borrow_mut().stats.update_outgoing();
-    }
+    } */
 
-    pub fn should_migrate(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
+    pub fn should_migrate(&mut self) -> Option<(SocketAddrV4, SocketAddrV4)> {
         static mut NUM_MIG: u32 = 0;
-        
-        let inner = self.inner.borrow();
+                
+        let mut inner = self.inner.borrow_mut();
         
         if std::env::var("CORE_ID") != Ok("1".to_string()) {
             return None;
@@ -477,14 +477,15 @@ impl TcpMigPeer {
             || unsafe{ NUM_MIG } >= inner.migration_variable {
             return None;
         }
-        
-        let recv_queue_len = inner.stats.global_recv_queue_counter();
+
+        let recv_queue_len = inner.stats.avg_global_recv_queue_length();
         // println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
         if recv_queue_len > inner.recv_queue_length_threshold {
             // eprintln!("recv_queue_len: {}", recv_queue_len);
-            return inner.stats.get_connection_to_migrate_out();
+            Some(inner.stats.get_connection_to_migrate_out())
+        } else {
+            None
         }
-        return None;
     }
 
     // TEMP (for migration test)
@@ -586,7 +587,7 @@ impl TcpMigPeer {
     }
     
     pub fn global_recv_queue_length(&mut self) -> usize {
-        self.inner.borrow_mut().stats.global_recv_queue_counter()
+        self.inner.borrow_mut().stats.global_recv_queue_length()
     }
 
     pub fn print_queue_length(&mut self) {

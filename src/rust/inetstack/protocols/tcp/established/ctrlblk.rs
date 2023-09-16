@@ -69,7 +69,7 @@ use ::std::{
 };
 
 #[cfg(feature = "capybara-log")]
-use crate::{tcpmig_profiler::tcp_log};
+use crate::tcpmig_profiler::tcp_log;
 
 #[cfg(feature = "tcp-migration")]
 use crate::inetstack::protocols::tcp_migration::TcpMigPeer;
@@ -1050,7 +1050,7 @@ impl ControlBlock {
             .expect("poll_recv failed to pop data from receive queue");
        
         #[cfg(feature = "tcp-migration")]
-        tcpmig.pop_recv_queue();
+        tcpmig.stats_recv_queue_pop((self.local, self.remote), self.receiver.recv_queue_len());
 
         #[cfg(feature = "capybara-log")]
         {
@@ -1187,8 +1187,10 @@ impl ControlBlock {
         // Push the new segment data onto the end of the receive queue.
         let mut recv_next: SeqNumber = recv_next + SeqNumber::from(buf.len() as u32);
         self.receiver.push(buf);
+
         #[cfg(feature = "tcp-migration")]
-        tcpmig.push_recv_queue();
+        tcpmig.stats_recv_queue_push((self.local, self.remote), self.receiver.recv_queue_len());
+
         // Okay, we've successfully received some new data.  Check if any of the formerly out-of-order data waiting in
         // the out-of-order queue is now in-order.  If so, we can move it to the receive queue.
         let mut added_out_of_order: bool = false;
@@ -1202,9 +1204,10 @@ impl ControlBlock {
                     if let Some(temp) = out_of_order.pop_front() {
                         recv_next = recv_next + SeqNumber::from(temp.1.len() as u32);
                         self.receiver.push(temp.1);
-                        #[cfg(feature = "tcp-migration")]
-                        tcpmig.push_recv_queue();
                         added_out_of_order = true;
+
+                        #[cfg(feature = "tcp-migration")]
+                        tcpmig.stats_recv_queue_push((self.local, self.remote), self.receiver.recv_queue_len());
                     }
                 } else {
                     // Since our out-of-order list is sorted, we can stop when the next segment is not in sequence.

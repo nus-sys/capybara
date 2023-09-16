@@ -15,9 +15,7 @@ use crate::{
                 EtherType2,
                 Ethernet2Header,
             },
-            tcp::{
-                operations::ConnectFuture,
-            },
+            tcp::operations::ConnectFuture,
             udp::UdpOperation,
             Peer,
         },
@@ -74,7 +72,7 @@ use ::std::{
 use crate::timer;
 
 #[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log};
+use crate::tcpmig_profiler::tcp_log;
 
 //==============================================================================
 // Exports
