@@ -224,6 +224,9 @@ pub struct ControlBlock {
 
     // Retransmission Timeout (RTO) calculator.
     rto_calculator: RefCell<RtoCalculator>,
+
+    #[cfg(feature = "tcp-migration")]
+    stats_update_granularity_counter: Cell<i32>,
 }
 
 //==============================================================================
@@ -277,6 +280,9 @@ impl ControlBlock {
             cc: cc_constructor(sender_mss, sender_seq_no, congestion_control_options),
             retransmit_deadline: WatchedValue::new(None),
             rto_calculator: RefCell::new(RtoCalculator::new()),
+            
+            #[cfg(feature = "tcp-migration")]
+            stats_update_granularity_counter: Cell::new(0),
         }
     }
 
@@ -1050,7 +1056,11 @@ impl ControlBlock {
             .expect("poll_recv failed to pop data from receive queue");
        
         #[cfg(feature = "tcp-migration")]
-        tcpmig.stats_recv_queue_pop((self.local, self.remote), self.receiver.recv_queue_len());
+        tcpmig.stats_recv_queue_pop(
+            (self.local, self.remote),
+            self.receiver.recv_queue_len(),
+            &self.stats_update_granularity_counter
+        );
 
         #[cfg(feature = "capybara-log")]
         {
@@ -1189,7 +1199,11 @@ impl ControlBlock {
         self.receiver.push(buf);
 
         #[cfg(feature = "tcp-migration")]
-        tcpmig.stats_recv_queue_push((self.local, self.remote), self.receiver.recv_queue_len());
+        tcpmig.stats_recv_queue_push(
+            (self.local, self.remote),
+            self.receiver.recv_queue_len(),
+            &self.stats_update_granularity_counter
+        );
 
         // Okay, we've successfully received some new data.  Check if any of the formerly out-of-order data waiting in
         // the out-of-order queue is now in-order.  If so, we can move it to the receive queue.
@@ -1207,7 +1221,11 @@ impl ControlBlock {
                         added_out_of_order = true;
 
                         #[cfg(feature = "tcp-migration")]
-                        tcpmig.stats_recv_queue_push((self.local, self.remote), self.receiver.recv_queue_len());
+                        tcpmig.stats_recv_queue_push(
+                            (self.local, self.remote),
+                            self.receiver.recv_queue_len(),
+                            &self.stats_update_granularity_counter
+                        );
                     }
                 } else {
                     // Since our out-of-order list is sorted, we can stop when the next segment is not in sequence.
@@ -1317,6 +1335,7 @@ impl ControlBlock {
             cc: cc_constructor(mss, seq_no, congestion_control_options),
             retransmit_deadline: WatchedValue::new(None),
             rto_calculator: RefCell::new(RtoCalculator::new()), // Check
+            stats_update_granularity_counter: Cell::new(0),
         }
     }
 

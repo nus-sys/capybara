@@ -6,8 +6,8 @@
 //==============================================================================
 
 use std::{
-    collections::{HashMap, VecDeque},
-    net::SocketAddrV4,
+    collections::{HashMap, VecDeque, hash_map::Entry},
+    net::SocketAddrV4, cell::Cell,
 };
 
 #[cfg(feature = "capybara-log")]
@@ -34,8 +34,8 @@ struct BucketList {
     /// Index 2: Connections with queue length 20-29, and so on.
     buckets: Vec<Vec<(SocketAddrV4, SocketAddrV4)>>,
 
-    /// Mapping from connection to its index in its corresponding bucket.
-    positions: HashMap<(SocketAddrV4, SocketAddrV4), usize>,
+    /// Mapping from connection to its position in `buckets`.
+    positions: HashMap<(SocketAddrV4, SocketAddrV4), (usize, usize)>,
 }
 
 pub struct TcpMigStats {
@@ -45,6 +45,9 @@ pub struct TcpMigStats {
     threshold: usize,
     recv_queue_stats: BucketList,
     recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
+
+    // Granularity
+    granularity: i32,
 }
 
 //======================================================================================================================
@@ -57,12 +60,14 @@ pub struct TcpMigStats {
 
 impl TcpMigStats {
     pub fn new(threshold: usize) -> Self {
+        let granularity = std::env::var("STATS_GRANULARITY").map_or(10, |val| val.parse().unwrap());
         Self {
             global_recv_queue_length: 0,
             avg_global_recv_queue_length: RollingAverage::new(),
             threshold,
             recv_queue_stats: BucketList::new(),
             recv_queue_lengths: HashMap::new(),
+            granularity,
         }
     }
 
@@ -87,16 +92,24 @@ impl TcpMigStats {
         }
     } */
 
-    pub fn recv_queue_push(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
-        self.global_recv_queue_length += 1;
+    /// Returns the updated granularity counter.
+    pub(super) fn recv_queue_update(&mut self, connection: (SocketAddrV4, SocketAddrV4), is_increment: bool, new_queue_len: usize, granularity_counter: &Cell<i32>) {
+        if is_increment {
+            self.global_recv_queue_length += 1;
+        } else {
+            // Pop is always only called after at least one push.
+            // assert!(self.global_recv_queue_length > 0);
+            self.global_recv_queue_length -= 1;
+        }
         self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
-    }
 
-    pub fn recv_queue_pop(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
-        // Pop is always only called after at least one push.
-        // debug_assert!(self.global_recv_queue_length > 0);
-        self.global_recv_queue_length -= 1;
-        self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
+        let counter = granularity_counter.get() + 1;
+        if counter >= self.granularity {
+            granularity_counter.set(0);
+            self.recv_queue_stats.update(connection, new_queue_len);
+        } else {
+            granularity_counter.set(counter);
+        }
     }
 
     pub fn global_recv_queue_length(&self) -> usize {
@@ -174,6 +187,10 @@ impl TcpMigStats {
             self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
         }
 
+        self.recv_queue_stats.remove(&(local, client));
+
+        // Remove connection from bucket list.
+
         // Print all keys in recv_queue_lengths
         // println!("Keys in recv_queue_lengths:");
         // for key in self.recv_queue_lengths.keys() {
@@ -204,7 +221,67 @@ impl BucketList {
         panic!("Invalid queue_length = {}", queue_length)
     }
 
-    pub fn increment(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
+    fn update(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
+        if new_queue_len == 0 {
+            // Remove connection if connection existed previously.
+            self.remove(&connection);
+            return
+        }
+        
+        let bucket_index = new_queue_len % Self::BUCKET_SIZE;
+        let index = self.get_bucket_mut(bucket_index).len();
+
+        match self.positions.entry(connection) {
+            Entry::Vacant(entry) => {
+                entry.insert((bucket_index, index));
+            },
+
+            Entry::Occupied(mut entry) => {
+                let (old_bucket_index, old_index) = *entry.get();
+                if old_bucket_index == bucket_index {
+                    return
+                }
+
+                entry.insert((bucket_index, index));
+                self.remove_from_bucket(old_bucket_index, old_index);
+            },
+        }
+        self.add_to_bucket(bucket_index, connection);
+    }
+
+    fn remove(&mut self, connection: &(SocketAddrV4, SocketAddrV4)) {
+        if let Some((bucket_index, index)) = self.positions.remove(connection) {
+            self.remove_from_bucket(bucket_index, index);
+        }
+    }
+
+    fn add_to_bucket(&mut self, bucket_index: usize, connection: (SocketAddrV4, SocketAddrV4)) -> usize {
+        let bucket = self.get_bucket_mut(bucket_index);
+        let index = bucket.len();
+        bucket.push(connection);
+        index
+    }
+
+    fn remove_from_bucket(&mut self, bucket_index: usize, index: usize) {
+        let bucket = &mut self.buckets[bucket_index];
+        bucket.swap_remove(index);
+        if index < bucket.len() {
+            self.positions.insert(bucket[index], (bucket_index, index));
+        }
+    }
+
+    fn get_bucket_mut(&mut self, bucket_index: usize) -> &mut Vec<(SocketAddrV4, SocketAddrV4)> {
+        if bucket_index >= self.buckets.len() {
+            let additional = bucket_index + 1 - self.buckets.len();
+            self.buckets.reserve(additional);
+            for _ in 0..additional {
+                self.buckets.push(Vec::new());
+            }
+        }
+        &mut self.buckets[bucket_index]
+    }
+
+    /* pub fn increment(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
         if new_queue_len == 1 || new_queue_len % Self::BUCKET_SIZE == 0 {
             // Add connection to the new bucket.
             let new_bucket = new_queue_len / Self::BUCKET_SIZE;
@@ -246,7 +323,7 @@ impl BucketList {
         let old_bucket = &mut self.buckets[(new_queue_len + 1) / Self::BUCKET_SIZE];
         old_bucket.swap_remove(old_index);
         self.positions.insert(old_bucket[old_index], old_index);
-    }
+    } */
 }
 
 impl RollingAverage {

@@ -35,6 +35,7 @@ use crate::{
 #[cfg(feature = "tcp-migration-profiler")]
 use crate::{tcpmig_profile, tcpmig_profile_merge_previous};
 
+use std::cell::Cell;
 use std::{cell::RefCell, collections::{VecDeque, HashSet}, time::Instant};
 use ::std::{
     collections::HashMap,
@@ -452,12 +453,16 @@ impl TcpMigPeer {
         // }
     } */
 
-    pub fn stats_recv_queue_push(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
-        self.inner.borrow_mut().stats.recv_queue_push(connection, new_queue_len);
+    #[inline]
+    /// Returns the updated granularity counter.
+    pub fn stats_recv_queue_push(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize, granularity_counter: &Cell<i32>) {
+        self.inner.borrow_mut().stats.recv_queue_update(connection, true, new_queue_len, granularity_counter)
     }
 
-    pub fn stats_recv_queue_pop(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize) {
-        self.inner.borrow_mut().stats.recv_queue_pop(connection, new_queue_len);
+    #[inline]
+    /// Returns the updated granularity counter.
+    pub fn stats_recv_queue_pop(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize, granularity_counter: &Cell<i32>) {
+        self.inner.borrow_mut().stats.recv_queue_update(connection, false, new_queue_len, granularity_counter)
     }
 
     /* pub fn update_outgoing_stats(&mut self) {
