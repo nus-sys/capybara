@@ -60,7 +60,7 @@ pub struct TcpMigStats {
 
 impl TcpMigStats {
     pub fn new(threshold: usize) -> Self {
-        let granularity = std::env::var("STATS_GRANULARITY").map_or(10, |val| val.parse().unwrap());
+        let granularity = std::env::var("STATS_GRANULARITY").map_or(1, |val| val.parse().unwrap());
         Self {
             global_recv_queue_length: 0,
             avg_global_recv_queue_length: RollingAverage::new(),
