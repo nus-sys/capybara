@@ -214,7 +214,8 @@ impl BucketList {
 
     /// Removes and returns a connection from the bucket list for the corresponding queue length.
     fn pop_connection(&mut self, queue_length: usize) -> (SocketAddrV4, SocketAddrV4) {
-        for bucket in self.buckets[queue_length / Self::BUCKET_SIZE..].iter_mut() {
+        let start_index = std::cmp::min(queue_length / Self::BUCKET_SIZE, self.buckets.len()-1);
+        for bucket in self.buckets[start_index..].iter_mut() {
             if let Some(connection) = bucket.pop() {
                 self.positions.remove(&connection).unwrap();
                 return connection;
