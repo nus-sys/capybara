@@ -300,6 +300,12 @@ impl ControlBlock {
     }
 
     pub fn send(&self, buf: Buffer) -> Result<(), Fail> {
+        #[cfg(feature = "tcp-migration")]
+        tcpmig.stats_recv_queue_pop(
+            (self.local, self.remote),
+            self.receiver.recv_queue_len(),
+            &self.stats_update_granularity_counter
+        );
         self.sender.send(buf, self)
     }
 
@@ -1055,12 +1061,12 @@ impl ControlBlock {
             .pop()
             .expect("poll_recv failed to pop data from receive queue");
        
-        #[cfg(feature = "tcp-migration")]
-        tcpmig.stats_recv_queue_pop(
-            (self.local, self.remote),
-            self.receiver.recv_queue_len(),
-            &self.stats_update_granularity_counter
-        );
+        // #[cfg(feature = "tcp-migration")]
+        // tcpmig.stats_recv_queue_pop(
+        //     (self.local, self.remote),
+        //     self.receiver.recv_queue_len(),
+        //     &self.stats_update_granularity_counter
+        // );
 
         #[cfg(feature = "capybara-log")]
         {

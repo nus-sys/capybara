@@ -98,11 +98,12 @@ impl TcpMigStats {
             self.global_recv_queue_length += 1;
         } else {
             // Pop is always only called after at least one push.
-            // assert!(self.global_recv_queue_length > 0);
+            assert!(self.global_recv_queue_length > 0);
             self.global_recv_queue_length -= 1;
         }
         self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
 
+        // eprintln!("{}", self.global_recv_queue_length);
         let counter = granularity_counter.get() + 1;
         if counter >= self.granularity {
             granularity_counter.set(0);
@@ -113,10 +114,12 @@ impl TcpMigStats {
     }
 
     pub fn global_recv_queue_length(&self) -> usize {
+        // eprintln!("{}", self.global_recv_queue_length);
         self.global_recv_queue_length
     }
 
     pub fn avg_global_recv_queue_length(&self) -> usize {
+        // eprintln!("{}", self.avg_global_recv_queue_length.get());
         self.avg_global_recv_queue_length.get()
     }
 
@@ -344,6 +347,12 @@ impl RollingAverage {
     }
 
     fn get(&self) -> usize {
+        // if self.sum >> Self::WINDOW_LOG_2 > 50 {
+        //     for value in self.values.iter() {
+        //         eprint!("{} ", value);
+        //     }
+        //     eprintln!("\n\n");
+        // }
         self.sum >> Self::WINDOW_LOG_2
     }
 }
