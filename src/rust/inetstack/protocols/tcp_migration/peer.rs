@@ -577,6 +577,10 @@ impl TcpMigPeer {
                                                             )
     }
 
+    pub fn stats_decrease_global_queue_length(&mut self, by: usize) {
+        self.inner.borrow_mut().stats.decrease_global_queue_length(by)
+    }
+
     pub fn print_stats(&self) {
         let inner = self.inner.borrow();
         println!("global_recv_queue_length: {}", self.inner.borrow().stats.global_recv_queue_length());

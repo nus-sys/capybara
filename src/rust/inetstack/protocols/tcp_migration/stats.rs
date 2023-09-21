@@ -185,7 +185,7 @@ impl TcpMigStats {
             _ => (),
         }
 
-        #[cfg(not(feature = "mig-per-n-req"))] {
+        /* #[cfg(not(feature = "mig-per-n-req"))] {
             if self.global_recv_queue_length <= recv_queue_len {
                 self.global_recv_queue_length = 0;
             }else{
@@ -193,7 +193,7 @@ impl TcpMigStats {
             }
             // assert!(self.global_recv_queue_counter >= 0);
             self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
-        }
+        } */
 
         self.recv_queue_stats.remove(&(local, client));
 
@@ -204,6 +204,16 @@ impl TcpMigStats {
         // for key in self.recv_queue_lengths.keys() {
         //     println!("{:?}", key);
         // }
+    }
+
+    pub(super) fn decrease_global_queue_length(&mut self, by: usize) {
+        if self.global_recv_queue_length <= by {
+            self.global_recv_queue_length = 0;
+        } else {
+            self.global_recv_queue_length -= by;
+        }
+        // assert!(self.global_recv_queue_counter >= 0);
+        self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
     }
 }
 
