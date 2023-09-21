@@ -143,6 +143,11 @@ extern "C"
      */
     extern int demi_initiate_migration(int qd);
 
+    /**
+     * @brief Prints log of receive queue lengths.
+     */
+    extern void demi_print_queue_length_log(void);
+
 #endif /* __DEMIKERNEL_TCPMIG__ */
 
 #ifdef __cplusplus

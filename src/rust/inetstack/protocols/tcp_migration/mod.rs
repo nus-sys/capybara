@@ -4,7 +4,7 @@ mod peer;
 mod active;
 pub mod stats;
 
-pub use peer::TcpMigPeer;
+pub use peer::{TcpMigPeer, log_print};
 
 //======================================================================================================================
 // Structures

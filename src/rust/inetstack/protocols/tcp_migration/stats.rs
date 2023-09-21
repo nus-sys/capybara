@@ -130,14 +130,19 @@ impl TcpMigStats {
     }
 
     /// Needs global receive queue length to be greater than the threshold.
-    pub fn get_connection_to_migrate_out(&mut self) -> (SocketAddrV4, SocketAddrV4) {
+    pub fn get_connection_to_migrate_out(&mut self) -> Option<(SocketAddrV4, SocketAddrV4)> {
         /* self.recv_queue_lengths.iter()
         .max_by_key(|(_, v)| v.get())
         .and_then(|(k, _)| Some(*k)) */
 
         assert!(self.avg_global_recv_queue_length() >= self.threshold);
+
+        if self.recv_queue_stats.positions.is_empty() {
+            return None;
+        }
+
         let pivot = self.avg_global_recv_queue_length() - self.threshold;
-        self.recv_queue_stats.pop_connection(pivot)
+        Some(self.recv_queue_stats.pop_connection(pivot))
 
         // self.recv_queue_lengths.iter()
         //     .filter(|(_, v)| v.get().0 > pivot)
@@ -214,7 +219,7 @@ impl BucketList {
 
     /// Removes and returns a connection from the bucket list for the corresponding queue length.
     fn pop_connection(&mut self, queue_length: usize) -> (SocketAddrV4, SocketAddrV4) {
-        let start_index = std::cmp::min(queue_length / Self::BUCKET_SIZE, self.buckets.len()-1);
+        let start_index = std::cmp::min(queue_length / Self::BUCKET_SIZE, self.buckets.len() - 1);
         for bucket in self.buckets[start_index..].iter_mut() {
             if let Some(connection) = bucket.pop() {
                 self.positions.remove(&connection).unwrap();

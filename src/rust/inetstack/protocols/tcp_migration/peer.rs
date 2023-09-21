@@ -490,7 +490,7 @@ impl TcpMigPeer {
         // println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
         if recv_queue_len > inner.recv_queue_length_threshold {
             // eprintln!("recv_queue_len: {}", recv_queue_len);
-            Some(inner.stats.get_connection_to_migrate_out())
+            inner.stats.get_connection_to_migrate_out()
         } else {
             None
         }
@@ -678,7 +678,6 @@ impl HeartbeatData {
 /*************************************************************/
 
 static mut LOG: Option<Vec<usize>> = None;
-static mut PRINT_AFTER_N: i64 = 10000; // Prints the log after these many packets received.
 const GRANULARITY: i32 = 1; // Logs length after every GRANULARITY packets.
 
 fn log_init() {
@@ -688,14 +687,6 @@ fn log_init() {
 fn log_len(len: usize) {
     static mut GRANULARITY_FLAG: i32 = GRANULARITY;
 
-    let log = unsafe { LOG.as_mut().unwrap_unchecked() };
-    unsafe {
-        PRINT_AFTER_N -= 1;
-        if PRINT_AFTER_N == 0 {
-            log.iter().for_each(|len| println!("{}", len));
-        }
-    }
-
     unsafe {
         GRANULARITY_FLAG -= 1;
         if GRANULARITY_FLAG > 0 {
@@ -704,5 +695,9 @@ fn log_len(len: usize) {
         GRANULARITY_FLAG = GRANULARITY;
     }
     
-    log.push(len);
+    unsafe { LOG.as_mut().unwrap_unchecked() }.push(len);
+}
+
+pub fn log_print() {
+    unsafe { LOG.as_ref().unwrap_unchecked() }.iter().for_each(|len| println!("{}", len));
 }
