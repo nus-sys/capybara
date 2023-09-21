@@ -72,7 +72,10 @@ use ::std::{
 use crate::tcpmig_profiler::tcp_log;
 
 #[cfg(feature = "tcp-migration")]
-use crate::inetstack::protocols::tcp_migration::TcpMigPeer;
+use crate::inetstack::protocols::tcp_migration::{
+    TcpMigPeer,
+    stats::RollingAverage,
+};
 
 // ToDo: Review this value (and its purpose).  It (2048 segments) of 8 KB jumbo packets would limit the unread data to
 // just 16 MB.  If we don't want to lie, that is also about the max window size we should ever advertise.  Whereas TCP
@@ -124,6 +127,9 @@ pub struct Receiver {
 
     // Receive queue.  Contains in-order received (and acknowledged) data ready for the application to read.
     recv_queue: RefCell<VecDeque<Buffer>>,
+
+    #[cfg(feature = "tcp-migration")]
+    stats_recv_queue_len: RefCell<RollingAverage>,
 }
 
 impl Receiver {
@@ -132,11 +138,18 @@ impl Receiver {
             reader_next: Cell::new(reader_next),
             receive_next: Cell::new(receive_next),
             recv_queue: RefCell::new(VecDeque::with_capacity(RECV_QUEUE_SZ)),
+            #[cfg(feature = "tcp-migration")]
+            stats_recv_queue_len: RefCell::new(RollingAverage::new()),
         }
     }
 
     pub fn pop(&self) -> Option<Buffer> {
-        let buf: Buffer = self.recv_queue.borrow_mut().pop_front()?;
+        let mut recv_queue = self.recv_queue.borrow_mut();
+        let buf: Buffer = recv_queue.pop_front()?;
+
+        #[cfg(feature = "tcp-migration")]
+        self.stats_recv_queue_len.borrow_mut().update(recv_queue.len());
+
         self.reader_next
             .set(self.reader_next.get() + SeqNumber::from(buf.len() as u32));
 
@@ -145,7 +158,12 @@ impl Receiver {
 
     pub fn push(&self, buf: Buffer) {
         let buf_len: u32 = buf.len() as u32;
-        self.recv_queue.borrow_mut().push_back(buf);
+        let mut recv_queue = self.recv_queue.borrow_mut();
+        recv_queue.push_back(buf);
+
+        #[cfg(feature = "tcp-migration")]
+        self.stats_recv_queue_len.borrow_mut().update(recv_queue.len());
+
         self.receive_next
             .set(self.receive_next.get() + SeqNumber::from(buf_len as u32));
         #[cfg(feature = "capybara-log")]
@@ -299,13 +317,21 @@ impl ControlBlock {
         self.arp.clone()
     }
 
-    pub fn send(&self, buf: Buffer) -> Result<(), Fail> {
+    pub fn send(
+        &self,
+        buf: Buffer,
         #[cfg(feature = "tcp-migration")]
-        tcpmig.stats_recv_queue_pop(
-            (self.local, self.remote),
-            self.receiver.recv_queue_len(),
-            &self.stats_update_granularity_counter
-        );
+        tcpmig: Option<TcpMigPeer>,
+    ) -> Result<(), Fail> {
+        #[cfg(feature = "tcp-migration")]
+        if let Some(mut tcpmig) = tcpmig {
+            tcpmig.stats_recv_queue_pop(
+                (self.local, self.remote),
+                self.receiver.stats_recv_queue_len.borrow().get(),
+                &self.stats_update_granularity_counter
+            );
+        }
+        
         self.sender.send(buf, self)
     }
 
@@ -902,7 +928,10 @@ impl ControlBlock {
 
         // Send a FIN.
         let fin_buf: Buffer = Buffer::Heap(DataBuffer::empty());
-        self.send(fin_buf).expect("send failed");
+        self.send(
+            fin_buf,
+            #[cfg(feature = "tcp-migration")] None,
+        ).expect("send failed");
 
         // Remember that the user has called close.
         self.user_is_done_sending.set(true);
@@ -1207,7 +1236,7 @@ impl ControlBlock {
         #[cfg(feature = "tcp-migration")]
         tcpmig.stats_recv_queue_push(
             (self.local, self.remote),
-            self.receiver.recv_queue_len(),
+            self.receiver.stats_recv_queue_len.borrow().get(),
             &self.stats_update_granularity_counter
         );
 
@@ -1229,7 +1258,7 @@ impl ControlBlock {
                         #[cfg(feature = "tcp-migration")]
                         tcpmig.stats_recv_queue_push(
                             (self.local, self.remote),
-                            self.receiver.recv_queue_len(),
+                            self.receiver.stats_recv_queue_len.borrow().get(),
                             &self.stats_update_granularity_counter
                         );
                     }
@@ -1281,10 +1310,17 @@ impl ControlBlock {
 #[cfg(feature = "tcp-migration")]
 impl Receiver{
     pub fn migrated_in(reader_next: SeqNumber, receive_next: SeqNumber, recv_queue: VecDeque<Buffer>) -> Self{
+        let stats_recv_queue_len = {
+            let mut avg = RollingAverage::new();
+            avg.update(recv_queue.len());
+            RefCell::new(avg)
+        };
+
         Self {
             reader_next: Cell::new(reader_next),
             receive_next: Cell::new(receive_next),
             recv_queue: RefCell::new(recv_queue),
+            stats_recv_queue_len,
         }
     }
 
@@ -1318,6 +1354,7 @@ impl ControlBlock {
     ) -> Self {
         let mss = sender.get_mss();
         let seq_no = sender.get_send_unacked().0;
+
         Self {
             local,
             remote,

@@ -93,8 +93,8 @@ impl EstablishedSocket {
         )
     }
 
-    pub fn send(&self, buf: Buffer) -> Result<(), Fail> {
-        self.cb.send(buf)
+    pub fn send(&self, buf: Buffer, #[cfg(feature = "tcp-migration")] tcpmig: TcpMigPeer) -> Result<(), Fail> {
+        self.cb.send(buf, #[cfg(feature = "tcp-migration")] Some(tcpmig))
     }
 
     pub fn poll_recv(

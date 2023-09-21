@@ -484,6 +484,9 @@ impl TcpMigPeer {
         }
 
         let recv_queue_len = inner.stats.avg_global_recv_queue_length();
+
+        log_len(recv_queue_len);
+
         // println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
         if recv_queue_len > inner.recv_queue_length_threshold {
             // eprintln!("recv_queue_len: {}", recv_queue_len);
@@ -617,6 +620,8 @@ impl Inner {
             Err(..) => BASE_RECV_QUEUE_LENGTH_THRESHOLD,
         };
 
+        log_init();
+
         Self {
             rt: rt.clone(),
             //arp,
@@ -666,4 +671,38 @@ impl HeartbeatData {
     fn new() -> Self {
         Self { last_heartbeat_instant: Instant::now() }
     }
+}
+
+/*************************************************************/
+/* LOGGING QUEUE LENGTH */
+/*************************************************************/
+
+static mut LOG: Option<Vec<usize>> = None;
+static mut PRINT_AFTER_N: i64 = 10000; // Prints the log after these many packets received.
+const GRANULARITY: i32 = 1; // Logs length after every GRANULARITY packets.
+
+fn log_init() {
+    unsafe { LOG = Some(Vec::with_capacity(1024)); }
+}
+
+fn log_len(len: usize) {
+    static mut GRANULARITY_FLAG: i32 = GRANULARITY;
+
+    let log = unsafe { LOG.as_mut().unwrap_unchecked() };
+    unsafe {
+        PRINT_AFTER_N -= 1;
+        if PRINT_AFTER_N == 0 {
+            log.iter().for_each(|len| println!("{}", len));
+        }
+    }
+
+    unsafe {
+        GRANULARITY_FLAG -= 1;
+        if GRANULARITY_FLAG > 0 {
+            return;
+        }
+        GRANULARITY_FLAG = GRANULARITY;
+    }
+    
+    log.push(len);
 }

@@ -21,7 +21,7 @@ use crate::tcpmig_profiler::tcp_log;
 // Structures
 //======================================================================================================================
 
-struct RollingAverage {
+pub struct RollingAverage {
     values: VecDeque<usize>,
     sum: usize,
 }
@@ -231,7 +231,7 @@ impl BucketList {
             return
         }
         
-        let bucket_index = new_queue_len % Self::BUCKET_SIZE;
+        let bucket_index = new_queue_len / Self::BUCKET_SIZE;
         let index = self.get_bucket_mut(bucket_index).len();
 
         match self.positions.entry(connection) {
@@ -333,20 +333,20 @@ impl RollingAverage {
     const WINDOW_LOG_2: usize = 7;
     const WINDOW: usize = 1 << Self::WINDOW_LOG_2;
 
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             values: VecDeque::from([0; Self::WINDOW]),
             sum: 0,
         }
     }
 
-    fn update(&mut self, value: usize) {
+    pub fn update(&mut self, value: usize) {
         self.sum -= unsafe { self.values.pop_front().unwrap_unchecked() };
         self.sum += value;
         self.values.push_back(value);
     }
 
-    fn get(&self) -> usize {
+    pub fn get(&self) -> usize {
         // if self.sum >> Self::WINDOW_LOG_2 > 50 {
         //     for value in self.values.iter() {
         //         eprint!("{} ", value);

@@ -36,9 +36,9 @@ macro_rules! tcpmig_profile {
 /// Merges this time interval with the last one profiled, ensuring that the name is the same.
 #[macro_export]
 macro_rules! tcpmig_profile_merge_previous {
-    ($name:expr) => {{
+    ($name:expr) => {
         let __tcpmig_profiler_dropped_object__ = crate::tcpmig_profiler::MergeDroppedObject::begin($name);
-    }};
+    };
 }
 
 //==============================================================================

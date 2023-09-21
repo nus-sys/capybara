@@ -540,7 +540,7 @@ impl TcpPeer {
             },
         };
         let send_result = match inner.established.get(&key) {
-            Some(ref s) => s.send(buf),
+            Some(ref s) => s.send(buf, #[cfg(feature = "tcp-migration")] inner.tcpmig.clone()),
             None => Err(Fail::new(ENOTCONN, "connection not established")),
         };
 
