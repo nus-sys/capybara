@@ -86,7 +86,7 @@ const RECV_QUEUE_SZ: usize = 2048;
 // ToDo: Review this value (and its purpose).  It (16 segments) seems awfully small (would make fast retransmit less
 // useful), and this mechanism isn't the best way to protect ourselves against deliberate out-of-order segment attacks.
 // Ideally, we'd limit out-of-order data to that which (along with the unread data) will fit in the receive window.
-const MAX_OUT_OF_ORDER: usize = 200;
+const MAX_OUT_OF_ORDER: usize = 2048;
 
 // TCP Connection State.
 // Note: This ControlBlock structure is only used after we've reached the ESTABLISHED state, so states LISTEN,
@@ -168,7 +168,7 @@ impl Receiver {
             .set(self.receive_next.get() + SeqNumber::from(buf_len as u32));
         #[cfg(feature = "capybara-log")]
         {
-            tcp_log(format!("Insert payload into recv_queue ==> len(recv_queue): {}", self.recv_queue_len()));
+            tcp_log(format!("Insert payload into recv_queue ==> len(recv_queue): {}", recv_queue.len()));
         }
     }
 

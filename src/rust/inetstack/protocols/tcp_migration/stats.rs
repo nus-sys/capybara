@@ -47,7 +47,7 @@ pub struct TcpMigStats {
     recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
 
     // Granularity
-    granularity: i32,
+    pub granularity: i32,
 }
 
 //======================================================================================================================
@@ -346,7 +346,7 @@ impl BucketList {
 }
 
 impl RollingAverage {
-    const WINDOW_LOG_2: usize = 7;
+    const WINDOW_LOG_2: usize = 10;
     const WINDOW: usize = 1 << Self::WINDOW_LOG_2;
 
     pub fn new() -> Self {
