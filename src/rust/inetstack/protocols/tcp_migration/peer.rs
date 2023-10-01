@@ -456,13 +456,27 @@ impl TcpMigPeer {
     #[inline]
     /// Returns the updated granularity counter.
     pub fn stats_recv_queue_push(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize, granularity_counter: &Cell<i32>) {
-        self.inner.borrow_mut().stats.recv_queue_update(connection, true, new_queue_len, granularity_counter)
+        let mut inner = self.inner.borrow_mut();
+        match inner.active_migrations.get_mut(&connection) {
+            Some(active) => {},
+            None => { 
+                eprintln!("recv_queue_update: {:?}, qlen: {}", connection, new_queue_len);
+                inner.stats.recv_queue_update(connection, true, new_queue_len, granularity_counter); 
+            },
+        }
     }
 
     #[inline]
     /// Returns the updated granularity counter.
     pub fn stats_recv_queue_pop(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize, granularity_counter: &Cell<i32>) {
-        self.inner.borrow_mut().stats.recv_queue_update(connection, false, new_queue_len, granularity_counter)
+        let mut inner = self.inner.borrow_mut();
+        match inner.active_migrations.get_mut(&connection) {
+            Some(active) => {},
+            None => { 
+                eprintln!("recv_queue_update: {:?}, qlen: {}", connection, new_queue_len);
+                inner.stats.recv_queue_update(connection, false, new_queue_len, granularity_counter); 
+            },
+        }
     }
 
     /* pub fn update_outgoing_stats(&mut self) {
