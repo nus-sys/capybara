@@ -177,7 +177,7 @@ impl TcpMigStats {
     ) {
         #[cfg(feature = "capybara-log")]
         {
-            tcp_log(format!("stop"));
+            tcp_log(format!("stop tracking {:?}", (local, client)));
         }
         
         match self.recv_queue_lengths.remove(&(local, client)) {
@@ -230,6 +230,15 @@ impl BucketList {
     /// Removes and returns a connection from the bucket list for the corresponding queue length.
     fn pop_connection(&mut self, queue_length: usize) -> (SocketAddrV4, SocketAddrV4) {
         let start_index = std::cmp::min(queue_length / Self::BUCKET_SIZE, self.buckets.len() - 1);
+        /* // Iterate through the outer vector
+        for (bucket_index, bucket) in self.buckets.iter().enumerate() {
+            println!("Bucket {}:", bucket_index);
+
+            // Iterate through the inner vector
+            for (index, &(addr1, addr2)) in bucket.iter().enumerate() {
+                println!("Element {}: ({}, {})", index, addr1, addr2);
+            }
+        } */
         for bucket in self.buckets[start_index..].iter_mut() {
             if let Some(connection) = bucket.pop() {
                 self.positions.remove(&connection).unwrap();

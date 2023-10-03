@@ -315,6 +315,10 @@ impl TcpMigPeer {
     }
 
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4), qd: QDesc) {
+        #[cfg(feature = "capybara-log")]
+        {
+            tcpmig_log(format!("initiate_migration"));
+        }
         let mut inner = self.inner.borrow_mut();
         
         {
@@ -460,7 +464,6 @@ impl TcpMigPeer {
         match inner.active_migrations.get_mut(&connection) {
             Some(active) => {},
             None => { 
-                eprintln!("recv_queue_update: {:?}, qlen: {}", connection, new_queue_len);
                 inner.stats.recv_queue_update(connection, true, new_queue_len, granularity_counter); 
             },
         }
@@ -473,7 +476,6 @@ impl TcpMigPeer {
         match inner.active_migrations.get_mut(&connection) {
             Some(active) => {},
             None => { 
-                eprintln!("recv_queue_update: {:?}, qlen: {}", connection, new_queue_len);
                 inner.stats.recv_queue_update(connection, false, new_queue_len, granularity_counter); 
             },
         }
@@ -699,7 +701,7 @@ static mut LOG: Option<Vec<usize>> = None;
 const GRANULARITY: i32 = 1; // Logs length after every GRANULARITY packets.
 
 fn log_init() {
-    unsafe { LOG = Some(Vec::with_capacity(1024)); }
+    unsafe { LOG = Some(Vec::with_capacity(1024*1024)); }
 }
 
 fn log_len(len: usize) {
