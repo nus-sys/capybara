@@ -197,6 +197,7 @@ impl TcpMigStats {
         } */
 
         self.recv_queue_stats.remove(&(local, client));
+        self.force_decrease_global_queue_length(recv_queue_len);
 
         // Remove connection from bucket list.
 
@@ -207,14 +208,14 @@ impl TcpMigStats {
         // }
     }
 
-    pub(super) fn decrease_global_queue_length(&mut self, by: usize) {
+    pub(super) fn force_decrease_global_queue_length(&mut self, by: usize) {
         if self.global_recv_queue_length <= by {
             self.global_recv_queue_length = 0;
         } else {
             self.global_recv_queue_length -= by;
         }
         // assert!(self.global_recv_queue_counter >= 0);
-        self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
+        self.avg_global_recv_queue_length.force_set(self.global_recv_queue_length);
     }
 }
 
@@ -381,5 +382,12 @@ impl RollingAverage {
         //     eprintln!("\n\n");
         // }
         self.sum >> Self::WINDOW_LOG_2
+    }
+
+    fn force_set(&mut self, value: usize) {
+        for e in &mut self.values {
+            *e = value;
+        }
+        self.sum = value;
     }
 }

@@ -859,7 +859,6 @@ impl TcpPeer {
                 tcpmig_log(format!("\n\nMigrate Out ({}, {})", local, remote));
             }
             let state = inner.migrate_out_tcp_connection(qd)?;
-            inner.tcpmig.stats_decrease_global_queue_length(state.recv_queue.len());
             inner.tcpmig.migrate_out(handle, state);
             return Ok(true)
         }
