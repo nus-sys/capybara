@@ -388,6 +388,6 @@ impl RollingAverage {
         for e in &mut self.values {
             *e = value;
         }
-        self.sum = value;
+        self.sum = value << Self::WINDOW_LOG_2;
     }
 }
