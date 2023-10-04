@@ -88,6 +88,9 @@ const RECV_QUEUE_SZ: usize = 2048;
 // Ideally, we'd limit out-of-order data to that which (along with the unread data) will fit in the receive window.
 const MAX_OUT_OF_ORDER: usize = 2048;
 
+#[cfg(feature = "tcp-migration")]
+const RECV_QUEUE_LEN_ROLLAVG_WINDOW_LOG2: usize = 4;
+
 // TCP Connection State.
 // Note: This ControlBlock structure is only used after we've reached the ESTABLISHED state, so states LISTEN,
 // SYN_RCVD, and SYN_SENT aren't included here.
@@ -139,7 +142,7 @@ impl Receiver {
             receive_next: Cell::new(receive_next),
             recv_queue: RefCell::new(VecDeque::with_capacity(RECV_QUEUE_SZ)),
             #[cfg(feature = "tcp-migration")]
-            stats_recv_queue_len: RefCell::new(RollingAverage::new()),
+            stats_recv_queue_len: RefCell::new(RollingAverage::new(RECV_QUEUE_LEN_ROLLAVG_WINDOW_LOG2)),
         }
     }
 
@@ -1311,7 +1314,7 @@ impl ControlBlock {
 impl Receiver{
     pub fn migrated_in(reader_next: SeqNumber, receive_next: SeqNumber, recv_queue: VecDeque<Buffer>) -> Self{
         let stats_recv_queue_len = {
-            let mut avg = RollingAverage::new();
+            let mut avg = RollingAverage::new(RECV_QUEUE_LEN_ROLLAVG_WINDOW_LOG2);
             avg.update(recv_queue.len());
             RefCell::new(avg)
         };

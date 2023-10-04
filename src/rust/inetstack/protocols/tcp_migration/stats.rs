@@ -6,7 +6,7 @@
 //==============================================================================
 
 use std::{
-    collections::{HashMap, VecDeque, hash_map::Entry},
+    collections::{HashMap, VecDeque, hash_map::Entry, HashSet},
     net::SocketAddrV4, cell::Cell,
 };
 
@@ -17,6 +17,8 @@ use crate::tcpmig_profiler::tcp_log;
 // Constants
 //======================================================================================================================
 
+const GLOBAL_ROLLAVG_WINDOW_LOG2: usize = 10;
+
 //======================================================================================================================
 // Structures
 //======================================================================================================================
@@ -24,6 +26,7 @@ use crate::tcpmig_profiler::tcp_log;
 pub struct RollingAverage {
     values: VecDeque<usize>,
     sum: usize,
+    window_log2: usize,
 }
 
 struct BucketList {
@@ -44,7 +47,8 @@ pub struct TcpMigStats {
     avg_global_recv_queue_length: RollingAverage,
     threshold: usize,
     recv_queue_stats: BucketList,
-    recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
+    //recv_queue_lengths: HashMap<(SocketAddrV4, SocketAddrV4), RollingAverage>,
+    connections: HashSet<(SocketAddrV4, SocketAddrV4)>,
 
     // Granularity
     pub granularity: i32,
@@ -63,16 +67,16 @@ impl TcpMigStats {
         let granularity = std::env::var("STATS_GRANULARITY").map_or(1, |val| val.parse().unwrap());
         Self {
             global_recv_queue_length: 0,
-            avg_global_recv_queue_length: RollingAverage::new(),
+            avg_global_recv_queue_length: RollingAverage::new(GLOBAL_ROLLAVG_WINDOW_LOG2),
             threshold,
             recv_queue_stats: BucketList::new(),
-            recv_queue_lengths: HashMap::new(),
+            connections: HashSet::new(),
             granularity,
         }
     }
 
     pub fn num_of_connections(&self) -> usize {
-        self.recv_queue_lengths.len()
+        self.connections.len()
     }
 
     /* pub fn update_incoming(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {        
@@ -124,9 +128,10 @@ impl TcpMigStats {
     }
 
     pub fn print_queue_length(&self) {
-        for (idx, qlen) in &self.recv_queue_lengths {
+        /* for (idx, qlen) in &self.connections {
             println!("{:?},{}", idx, qlen.get());
-        }
+        } */
+        unimplemented!("print_queue_length()")
     }
 
     /// Needs global receive queue length to be greater than the threshold.
@@ -160,7 +165,7 @@ impl TcpMigStats {
         {
             tcp_log(format!("start"));
         }
-        assert!(self.recv_queue_lengths.insert((local, client), RollingAverage::new()).is_none());
+        assert!(self.connections.insert((local, client)));
 
         // Print all keys in recv_queue_lengths
         // println!("Keys in recv_queue_lengths:");
@@ -181,8 +186,8 @@ impl TcpMigStats {
             tcp_log(format!("stop tracking {:?}", (local, client)));
         }
         
-        match self.recv_queue_lengths.remove(&(local, client)) {
-            None => warn!("`TcpMigStats` was not tracking connection ({}, {})", local, client),
+        match self.connections.remove(&(local, client)) {
+            false => warn!("`TcpMigStats` was not tracking connection ({}, {})", local, client),
             _ => (),
         }
 
@@ -358,13 +363,11 @@ impl BucketList {
 }
 
 impl RollingAverage {
-    const WINDOW_LOG_2: usize = 10;
-    const WINDOW: usize = 1 << Self::WINDOW_LOG_2;
-
-    pub fn new() -> Self {
+    pub fn new(window_log2: usize) -> Self {
         Self {
-            values: VecDeque::from([0; Self::WINDOW]),
+            values: VecDeque::from(vec![0; 1 << window_log2]),
             sum: 0,
+            window_log2,
         }
     }
 
@@ -381,13 +384,13 @@ impl RollingAverage {
         //     }
         //     eprintln!("\n\n");
         // }
-        self.sum >> Self::WINDOW_LOG_2
+        self.sum >> self.window_log2
     }
 
     fn force_set(&mut self, value: usize) {
         for e in &mut self.values {
             *e = value;
         }
-        self.sum = value << Self::WINDOW_LOG_2;
+        self.sum = value << self.window_log2;
     }
 }
