@@ -487,28 +487,48 @@ impl TcpMigPeer {
 
     pub fn should_migrate(&mut self) -> Option<(SocketAddrV4, SocketAddrV4)> {
         static mut NUM_MIG: u32 = 0;
-                
+        static mut FLAG: u32 = 0;
+
         let mut inner = self.inner.borrow_mut();
         
         if std::env::var("CORE_ID") != Ok("1".to_string()) {
             return None;
         }
+        unsafe{
+            
+            // if inner.stats.num_of_connections() <= 1 
+            //     || inner.active_migrations.len() >= 3 
+            //     || NUM_MIG >= inner.migration_variable {
+            //     return None;
+            // }
 
-        if inner.stats.num_of_connections() <= 0 
-            || unsafe{ NUM_MIG } >= inner.migration_variable {
+            // FLAG += 1;
+            
+            // if FLAG % 1024 == 0{
+            //     FLAG = 0;
+            // }
+            // else{
+            //     return None;
+            // }
+            eprintln!("should_migrate");
+            let recv_queue_len = inner.stats.avg_global_recv_queue_length();
+
+            log_len(recv_queue_len);
             return None;
-        }
-
-        let recv_queue_len = inner.stats.avg_global_recv_queue_length();
-
-        log_len(recv_queue_len);
-
-        // println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
-        if recv_queue_len > inner.recv_queue_length_threshold {
-            // eprintln!("recv_queue_len: {}", recv_queue_len);
-            inner.stats.get_connection_to_migrate_out()
-        } else {
-            None
+            // println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
+            if recv_queue_len > inner.recv_queue_length_threshold {
+                match inner.stats.get_connection_to_migrate_out() {
+                    Some(connection) => {
+                        NUM_MIG += 1;
+                        return Some(connection);
+                    },
+                    None => {
+                        return None;
+                    },
+                }
+            
+            }
+            return None;
         }
     }
 
