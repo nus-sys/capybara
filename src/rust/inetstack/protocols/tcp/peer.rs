@@ -664,6 +664,7 @@ impl Inner {
         let cloned_buf = buf.clone();
 
         let (mut tcp_hdr, data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
+        let is_data_empty = data.is_empty();
         debug!("TCP received {:?}", tcp_hdr);
         let local = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
         let remote = SocketAddrV4::new(ip_hdr.get_src_addr(), tcp_hdr.src_port);
@@ -695,7 +696,7 @@ impl Inner {
                         }
                         self.tcpmig.stop_tracking_connection_stats(local, remote, s.cb.receiver.recv_queue_len());
                     }
-                    else if !data.is_empty() {
+                    else if !is_data_empty {
                         // println!("receive");
                         // self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
                         // self.tcpmig.queue_length_heartbeat();
