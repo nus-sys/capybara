@@ -73,22 +73,29 @@ def run_server(mig_delay, mig_var, mig_per_n):
     server_tasks = []
     for j in range(NUM_BACKENDS):
         cmd = [f'cd {CAPYBARA_PATH} && \
-               sudo -E \
-               LIBOS=catnip \
-               RECV_QUEUE_LEN=100 \
-               MTU=1500 \
-               MSS=1500 \
-               NUM_CORES=4 \
-               RUST_BACKTRACE=full \
-               CORE_ID={j+1} \
-               MIG_DELAY={int(mig_delay/10) * 72} \
-               MIG_VAR={int(mig_var)} \
-               MIG_PER_N={int(mig_per_n)} \
-               CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
-               LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
-               PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
-               {CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP} 10.0.1.9:1000{j} \
-               > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
+                sudo -E \
+                LIBOS=catnip \
+                RECV_QUEUE_LEN=100 \
+                MTU=1500 \
+                MSS=1500 \
+                NUM_CORES=4 \
+                RUST_BACKTRACE=full \
+                CORE_ID={j+1} \
+                MIG_DELAY={int(mig_delay/10) * 72} \
+                MIG_VAR={int(mig_var)} \
+                MIG_PER_N={int(mig_per_n)} \
+                CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
+                LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
+                PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
+                numactl -m0 {CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP} 10.0.1.9:1000{j} \
+                > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
+        if SERVER_APP == 'redis-server':
+            cmd = [f'cd {CAPYBARA_PATH} && \
+                    make run-redis-server \
+                    CORE_ID={j+1} \
+                    CONF=redis{j} \
+                    MIG_VAR={int(mig_var)} \
+                    > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
         task = host.run(cmd, quiet=False)
         server_tasks.append(task)
     pyrem.task.Parallel(server_tasks, aggregate=True).start(wait=False)    
@@ -150,7 +157,7 @@ def run_eval():
                             run_server(mig_delay, mig_var, mig_per_n)
                             
                             host = pyrem.host.RemoteHost(CLIENT_NODE)
-                            cmd = [f'sudo {HOME}/caladan/apps/synthetic/target/release/synthetic \
+                            cmd = [f'sudo numactl -m0 {HOME}/caladan/apps/synthetic/target/release/synthetic \
                                     10.0.1.1:10000 \
                                     --config {HOME}/caladan/client.config \
                                     --mode runtime-client \
@@ -161,11 +168,28 @@ def run_eval():
                                     --threads={conn} \
                                     --runtime={RUNTIME} \
                                     --discard_pct=10 \
-                                    --output=trace \
+                                    --output=buckets \
                                     --rampup=0 \
                                     --exptid={DATA_PATH}/{experiment_id} \
                                     --loadshift=150000:2000000,300000:3000000 \
                                     > {DATA_PATH}/{experiment_id}.client']
+                            if SERVER_APP == 'redis-server':
+                                cmd = [f'sudo numactl -m0 {HOME}/caladan/apps/synthetic/target/release/synthetic \
+                                        10.0.1.1:10000 \
+                                        --config {HOME}/caladan/client.config \
+                                        --mode runtime-client \
+                                        --transport=tcp \
+                                        --samples=1 \
+                                        --pps={pps} \
+                                        --threads={conn} \
+                                        --runtime={RUNTIME} \
+                                        --discard_pct=10 \
+                                        --output=buckets \
+                                        --rampup=0 \
+                                        --exptid={DATA_PATH}/{experiment_id} \
+                                        --protocol=resp \
+                                        --redis-string=1000000 \
+                                        > {DATA_PATH}/{experiment_id}.client']
                             # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \
                             #         -a 31:00.1 \
                             #         -n 4 \
@@ -185,7 +209,7 @@ def run_eval():
                             print('================ TEST COMPLETE =================\n')
                             
                             try:
-                                cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]"'
+                                cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]" | tail -1'
                                 result = subprocess.run(
                                     cmd,
                                     shell=True,

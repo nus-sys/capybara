@@ -503,15 +503,14 @@ impl TcpMigPeer {
             //     return None;
             // }
 
-            // FLAG += 1;
+            FLAG += 1;
             
-            // if FLAG % 1024 == 0{
-            //     FLAG = 0;
-            // }
-            // else{
-            //     return None;
-            // }
-            eprintln!("should_migrate");
+            if FLAG % 1024 == 0{
+                FLAG = 0;
+            }
+            else{
+                return None;
+            }
             let recv_queue_len = inner.stats.avg_global_recv_queue_length();
 
             log_len(recv_queue_len);

@@ -417,12 +417,13 @@ tcp-pushpop:
 
 DEMIKERNEL_REPO_DIR ?= $(HOME)/Capybara/capybara
 DEMIKERNEL_LOG_IO ?= 0
-CONF ?= redis
+CONF ?= redis0
 NODE ?= 9
 
 all-libs-mig:
 	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration"
-	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,tcp-migration-profiler,capybara-log
+	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,tcp-migration-profiler
+#,capybara-log
 
 all-libs-mig-per-n:
 	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=mig-per-n-req"
@@ -438,7 +439,7 @@ redis-server-mig-per-n: all-libs-mig-per-n
 	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 make redis-server
 
 run-redis-server:
-	cd ../capybara-redis && sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/node$(NODE)_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./src/redis-server $(CONF).conf
+	cd ../capybara-redis && sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/node$(NODE)_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) numactl -m0 ./src/redis-server $(CONF).conf
 
 clean-redis:
 	cd ../capybara-redis && make distclean
