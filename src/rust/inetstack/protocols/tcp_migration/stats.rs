@@ -147,7 +147,7 @@ impl TcpMigStats {
         }
 
         let pivot = self.avg_global_recv_queue_length() - self.threshold;
-        eprintln!("pivot {} = {} - {}", pivot, self.avg_global_recv_queue_length(), self.threshold);
+        // eprintln!("pivot {} = {} - {}", pivot, self.avg_global_recv_queue_length(), self.threshold);
         Some(self.recv_queue_stats.pop_connection(pivot))
 
         // self.recv_queue_lengths.iter()
@@ -239,22 +239,32 @@ impl BucketList {
     fn pop_connection(&mut self, queue_length: usize) -> (SocketAddrV4, SocketAddrV4) {
         let start_index = std::cmp::min(queue_length / Self::BUCKET_SIZE, self.buckets.len() - 1);
         // Iterate through the outer vector
-        for (bucket_index, bucket) in self.buckets.iter().enumerate() {
+        /* for (bucket_index, bucket) in self.buckets.iter().enumerate() {
             eprintln!("Bucket {}:", bucket_index);
 
             // Iterate through the inner vector
             for (index, &(addr1, addr2)) in bucket.iter().enumerate() {
                 eprintln!("Element {}: ({}, {})", index, addr1, addr2);
             }
-        }
+        } */
         for bucket in self.buckets[start_index..].iter_mut() {
             if let Some(connection) = bucket.pop() {
                 self.positions.remove(&connection).unwrap();
-                eprintln!("conn: {:?}", connection);
+                // eprintln!("conn: {:?}", connection);
                 return connection;
             };
         }
+        // use std::ops::RangeInclusive;
+        // let range = start_index..=0;
 
+        for bucket in self.buckets[0..start_index].iter_mut().rev() {
+
+            if let Some(connection) = bucket.pop() {
+                self.positions.remove(&connection).unwrap();
+                // eprintln!("conn: {:?}", connection);
+                return connection;
+            };
+        }
         panic!("Invalid queue_length = {}", queue_length)
     }
 
@@ -390,7 +400,7 @@ impl RollingAverage {
 
     fn force_set(&mut self, value: usize) {
         for e in &mut self.values {
-            *e = value;
+            *e = 0;
         }
         self.sum = value << self.window_log2;
     }

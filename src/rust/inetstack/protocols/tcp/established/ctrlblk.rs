@@ -89,7 +89,7 @@ const RECV_QUEUE_SZ: usize = 2048;
 const MAX_OUT_OF_ORDER: usize = 2048;
 
 #[cfg(feature = "tcp-migration")]
-const RECV_QUEUE_LEN_ROLLAVG_WINDOW_LOG2: usize = 4;
+const RECV_QUEUE_LEN_ROLLAVG_WINDOW_LOG2: usize = 0;
 
 // TCP Connection State.
 // Note: This ControlBlock structure is only used after we've reached the ESTABLISHED state, so states LISTEN,
