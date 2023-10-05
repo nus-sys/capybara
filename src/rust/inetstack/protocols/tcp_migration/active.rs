@@ -4,7 +4,7 @@
 //==============================================================================
 // Imports
 //==============================================================================
-use super::constants::*;
+
 use super::{segment::{
     TcpMigHeader,
     TcpMigSegment, TcpMigDefragmenter,
@@ -35,7 +35,6 @@ use crate::{tcpmig_profile, tcpmig_profile_merge_previous};
 #[cfg(feature = "capybara-log")]
 use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
 
-use std::collections::VecDeque;
 use ::std::{
     net::{
         Ipv4Addr,
@@ -76,7 +75,7 @@ pub struct ActiveMigration {
     /// QDesc representing the connection, only on the origin side.
     qd: Option<QDesc>,
 
-    pub recv_queue: VecDeque<(Ipv4Header, TcpHeader, Buffer)>,
+    pub recv_queue: Vec<(TcpHeader, Buffer)>,
 
     defragmenter: TcpMigDefragmenter,
 }
@@ -111,7 +110,7 @@ impl ActiveMigration {
             last_sent_stage: MigrationStage::None,
             is_prepared: false,
             qd,
-            recv_queue: VecDeque::new(),
+            recv_queue: Vec::new(),
             defragmenter: TcpMigDefragmenter::new(),
         }
     }
@@ -306,8 +305,8 @@ impl ActiveMigration {
         self.send(tcpmig_hdr, Buffer::Heap(data_buffer));
     }
 
-    pub fn buffer_packet(&mut self, ip_hdr: Ipv4Header, tcp_hdr: TcpHeader, buf: Buffer) {
-        self.recv_queue.push_back((ip_hdr, tcp_hdr, buf));
+    pub fn buffer_packet(&mut self, tcp_hdr: TcpHeader, data: Buffer) {
+        self.recv_queue.push((tcp_hdr, data));
     }
 
     /// Sends a TCPMig segment from local to remote.

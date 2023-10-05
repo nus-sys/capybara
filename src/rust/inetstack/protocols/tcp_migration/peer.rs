@@ -36,7 +36,7 @@ use crate::{
 use crate::{tcpmig_profile, tcpmig_profile_merge_previous};
 
 use std::cell::Cell;
-use std::{cell::RefCell, collections::{VecDeque, HashSet}, time::Instant};
+use std::{cell::RefCell, collections::HashSet, time::Instant};
 use ::std::{
     collections::HashMap,
     net::{
@@ -396,20 +396,21 @@ impl TcpMigPeer {
         }
     }
 
-    pub fn try_buffer_packet(&mut self, target: SocketAddrV4, client: SocketAddrV4, ip_hdr: Ipv4Header, tcp_hdr: TcpHeader, buf: Buffer) -> Result<(), ()> {
+    /// Returns the moved buffers for further use by the caller if packet was not buffered.
+    pub fn try_buffer_packet(&mut self, target: SocketAddrV4, client: SocketAddrV4, tcp_hdr: TcpHeader, data: Buffer) -> Result<(), (TcpHeader, Buffer)> {
         let mut inner = self.inner.borrow_mut();
 
         let origin = match inner.origins.get(&(target, client)) {
             Some(origin) => *origin,
-            None => return Err(()),
+            None => return Err((tcp_hdr, data)),
         };
 
         match inner.active_migrations.get_mut(&(origin, client)) {
             Some(active) => {
-                active.buffer_packet(ip_hdr, tcp_hdr, buf);
+                active.buffer_packet(tcp_hdr, data);
                 Ok(())
             },
-            None => Err(()),
+            None => Err((tcp_hdr, data)),
         }
     }
 
@@ -418,7 +419,7 @@ impl TcpMigPeer {
         .incoming_connections.remove(&(local, client))
     }
 
-    pub fn take_buffer_queue(&mut self, target: SocketAddrV4, client: SocketAddrV4) -> Result<VecDeque<(Ipv4Header, TcpHeader, Buffer)>, Fail> {
+    pub fn take_buffer_queue(&mut self, target: SocketAddrV4, client: SocketAddrV4) -> Result<Vec<(TcpHeader, Buffer)>, Fail> {
         let mut inner = self.inner.borrow_mut();
 
         let origin = match inner.origins.get(&(target, client)) {
@@ -427,7 +428,7 @@ impl TcpMigPeer {
         };
 
         match inner.active_migrations.get_mut(&(origin, client)) {
-            Some(active) => Ok(active.recv_queue.drain(..).collect()),
+            Some(active) => Ok(std::mem::take(&mut active.recv_queue)),
             None => Err(Fail::new(libc::EINVAL, "no active migration found")),
         }
     }
@@ -459,7 +460,7 @@ impl TcpMigPeer {
 
     #[inline]
     /// Returns the updated granularity counter.
-    pub fn stats_recv_queue_push(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize, granularity_counter: &Cell<i32>) {
+    pub fn stats_recv_queue_push(&self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize, granularity_counter: &Cell<i32>) {
         let mut inner = self.inner.borrow_mut();
         match inner.active_migrations.get_mut(&connection) {
             Some(active) => {},
@@ -471,7 +472,7 @@ impl TcpMigPeer {
 
     #[inline]
     /// Returns the updated granularity counter.
-    pub fn stats_recv_queue_pop(&mut self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize, granularity_counter: &Cell<i32>) {
+    pub fn stats_recv_queue_pop(&self, connection: (SocketAddrV4, SocketAddrV4), new_queue_len: usize, granularity_counter: &Cell<i32>) {
         let mut inner = self.inner.borrow_mut();
         match inner.active_migrations.get_mut(&connection) {
             Some(active) => {},

@@ -324,7 +324,7 @@ impl ControlBlock {
         &self,
         buf: Buffer,
         #[cfg(feature = "tcp-migration")]
-        tcpmig: Option<TcpMigPeer>,
+        tcpmig: Option<&TcpMigPeer>,
     ) -> Result<(), Fail> {
         #[cfg(feature = "tcp-migration")]
         if let Some(mut tcpmig) = tcpmig {
@@ -449,7 +449,7 @@ impl ControlBlock {
         mut header: &mut TcpHeader, 
         mut data: Buffer,
         #[cfg(feature = "tcp-migration")]
-        mut tcpmig: TcpMigPeer,
+        tcpmig: &TcpMigPeer,
     ) {
         #[cfg(feature = "capybara-log")]
         {
@@ -1070,7 +1070,7 @@ impl ControlBlock {
         &self, 
         ctx: &mut Context,
         #[cfg(feature = "tcp-migration")]
-        mut tcpmig: TcpMigPeer,
+        tcpmig: &TcpMigPeer,
     ) -> Poll<Result<Buffer, Fail>> {
         // ToDo: Need to add a way to indicate that the other side closed (i.e. that we've received a FIN).
         // Should we do this via a zero-sized buffer?  Same as with the unsent and unacked queues on the send side?
@@ -1225,7 +1225,7 @@ impl ControlBlock {
         seg_start: SeqNumber, 
         buf: Buffer,
         #[cfg(feature = "tcp-migration")]
-        mut tcpmig: TcpMigPeer,
+        tcpmig: &TcpMigPeer,
     ) -> bool {
         let recv_next: SeqNumber = self.receiver.receive_next.get();
 

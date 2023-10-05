@@ -83,7 +83,7 @@ impl EstablishedSocket {
         header: &mut TcpHeader, 
         data: Buffer,
         #[cfg(feature = "tcp-migration")]
-        tcpmig: TcpMigPeer,
+        tcpmig: &TcpMigPeer,
     ) {
         self.cb.receive(
             header, 
@@ -93,7 +93,7 @@ impl EstablishedSocket {
         )
     }
 
-    pub fn send(&self, buf: Buffer, #[cfg(feature = "tcp-migration")] tcpmig: TcpMigPeer) -> Result<(), Fail> {
+    pub fn send(&self, buf: Buffer, #[cfg(feature = "tcp-migration")] tcpmig: &TcpMigPeer) -> Result<(), Fail> {
         self.cb.send(buf, #[cfg(feature = "tcp-migration")] Some(tcpmig))
     }
 
@@ -101,7 +101,7 @@ impl EstablishedSocket {
         &self, 
         ctx: &mut Context,
         #[cfg(feature = "tcp-migration")]
-        tcpmig: TcpMigPeer,
+        tcpmig: &TcpMigPeer,
     ) -> Poll<Result<Buffer, Fail>> {
         self.cb.poll_recv(
             ctx,
