@@ -220,7 +220,8 @@ impl TcpMigStats {
             self.global_recv_queue_length -= by;
         }
         // assert!(self.global_recv_queue_counter >= 0);
-        self.avg_global_recv_queue_length.force_set(self.global_recv_queue_length);
+        //self.avg_global_recv_queue_length.force_set(self.global_recv_queue_length);
+        self.avg_global_recv_queue_length.force_clear();
     }
 }
 
@@ -392,5 +393,16 @@ impl RollingAverage {
             *e = value;
         }
         self.sum = value << self.window_log2;
+    }
+
+    fn force_clear(&mut self) {
+        let (l, r) = self.values.as_mut_slices();
+        unsafe {
+            libc::memset(l.as_mut_ptr() as *mut libc::c_void, 0, l.len() * std::mem::size_of::<usize>());
+            if !r.is_empty() {
+                libc::memset(r.as_mut_ptr() as *mut libc::c_void, 0, r.len() * std::mem::size_of::<usize>());
+            }
+        }
+        self.sum = 0;
     }
 }
