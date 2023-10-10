@@ -132,6 +132,7 @@ pub struct Receiver {
     recv_queue: RefCell<VecDeque<Buffer>>,
 
     #[cfg(feature = "tcp-migration")]
+    #[cfg(not(feature = "mig-per-n-req"))]
     stats_recv_queue_len: RefCell<RollingAverage>,
 }
 
@@ -142,6 +143,7 @@ impl Receiver {
             receive_next: Cell::new(receive_next),
             recv_queue: RefCell::new(VecDeque::with_capacity(RECV_QUEUE_SZ)),
             #[cfg(feature = "tcp-migration")]
+            #[cfg(not(feature = "mig-per-n-req"))]
             stats_recv_queue_len: RefCell::new(RollingAverage::new(RECV_QUEUE_LEN_ROLLAVG_WINDOW_LOG2)),
         }
     }
@@ -151,6 +153,7 @@ impl Receiver {
         let buf: Buffer = recv_queue.pop_front()?;
 
         #[cfg(feature = "tcp-migration")]
+        #[cfg(not(feature = "mig-per-n-req"))]
         self.stats_recv_queue_len.borrow_mut().update(recv_queue.len());
 
         self.reader_next
@@ -165,6 +168,7 @@ impl Receiver {
         recv_queue.push_back(buf);
 
         #[cfg(feature = "tcp-migration")]
+        #[cfg(not(feature = "mig-per-n-req"))]
         self.stats_recv_queue_len.borrow_mut().update(recv_queue.len());
 
         self.receive_next
@@ -175,6 +179,7 @@ impl Receiver {
         }
     }
 
+    #[cfg(not(feature = "mig-per-n-req"))]
     pub fn recv_queue_len(&self) -> usize {
         self.recv_queue.borrow().len()
     }
@@ -327,6 +332,7 @@ impl ControlBlock {
         tcpmig: Option<&TcpMigPeer>,
     ) -> Result<(), Fail> {
         #[cfg(feature = "tcp-migration")]
+        #[cfg(not(feature = "mig-per-n-req"))]
         if let Some(mut tcpmig) = tcpmig {
             tcpmig.stats_recv_queue_pop(
                 (self.local, self.remote),
@@ -1236,12 +1242,13 @@ impl ControlBlock {
         let mut recv_next: SeqNumber = recv_next + SeqNumber::from(buf.len() as u32);
         self.receiver.push(buf);
 
-        #[cfg(feature = "tcp-migration")]
+        #[cfg(feature = "tcp-migration")]{ #[cfg(not(feature = "mig-per-n-req"))]{
         tcpmig.stats_recv_queue_push(
             (self.local, self.remote),
             self.receiver.stats_recv_queue_len.borrow().get(),
             &self.stats_update_granularity_counter
         );
+        }}
 
         // Okay, we've successfully received some new data.  Check if any of the formerly out-of-order data waiting in
         // the out-of-order queue is now in-order.  If so, we can move it to the receive queue.
@@ -1258,12 +1265,13 @@ impl ControlBlock {
                         self.receiver.push(temp.1);
                         added_out_of_order = true;
 
-                        #[cfg(feature = "tcp-migration")]
+                        #[cfg(feature = "tcp-migration")]{ #[cfg(not(feature = "mig-per-n-req"))]{
                         tcpmig.stats_recv_queue_push(
                             (self.local, self.remote),
                             self.receiver.stats_recv_queue_len.borrow().get(),
                             &self.stats_update_granularity_counter
                         );
+                        }}
                     }
                 } else {
                     // Since our out-of-order list is sorted, we can stop when the next segment is not in sequence.
@@ -1323,6 +1331,7 @@ impl Receiver{
             reader_next: Cell::new(reader_next),
             receive_next: Cell::new(receive_next),
             recv_queue: RefCell::new(recv_queue),
+            #[cfg(not(feature = "mig-per-n-req"))]
             stats_recv_queue_len,
         }
     }

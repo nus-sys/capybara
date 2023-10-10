@@ -393,7 +393,9 @@ impl TcpPeer {
             match inner.migrate_in_tcp_connection(new_qd, cb) {
                 Ok(()) => {
                     // eprintln!("*** Accepted migrated connection ***");
+                    #[cfg(not(feature = "mig-per-n-req"))]
                     inner.tcpmig.start_tracking_connection_stats(local, remote);
+                    
                     #[cfg(feature = "capybara-log")]
                     tcpmig_log(format!("MIG-CONNECTION ESTABLISHED (REMOTE: {:?})", remote));
                     
@@ -424,6 +426,7 @@ impl TcpPeer {
             panic!("duplicate queue descriptor in established sockets table");
         }
         #[cfg(feature = "tcp-migration")]
+        #[cfg(not(feature = "mig-per-n-req"))]
         inner.tcpmig.start_tracking_connection_stats(local, remote);
         Poll::Ready(Ok(new_qd))
     }
@@ -885,7 +888,6 @@ impl TcpPeer {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
         };
-        inner.tcpmig.stop_tracking_connection_stats(conn.0, conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
         Ok(())
     }

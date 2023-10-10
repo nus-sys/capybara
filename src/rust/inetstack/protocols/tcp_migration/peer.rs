@@ -602,13 +602,11 @@ impl TcpMigPeer {
         &mut self, 
         local: SocketAddrV4, 
         client: SocketAddrV4,
-        #[cfg(not(feature = "mig-per-n-req"))] 
         recv_queue_len: usize,
     ) {
         self.inner.borrow_mut().stats.stop_tracking_connection(
                                                                 local, 
                                                                 client, 
-                                                                #[cfg(not(feature = "mig-per-n-req"))] 
                                                                 recv_queue_len,
                                                             )
     }
