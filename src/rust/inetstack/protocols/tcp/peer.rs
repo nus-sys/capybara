@@ -390,11 +390,12 @@ impl TcpPeer {
             #[cfg(feature = "tcp-migration-profiler")]
             tcpmig_profile!("migrated_accept");
             
+            let recv_queue_len = cb.receiver.recv_queue_len();
             match inner.migrate_in_tcp_connection(new_qd, cb) {
                 Ok(()) => {
                     // eprintln!("*** Accepted migrated connection ***");
                     #[cfg(not(feature = "mig-per-n-req"))]
-                    inner.tcpmig.start_tracking_connection_stats(local, remote);
+                    inner.tcpmig.start_tracking_connection_stats(local, remote, recv_queue_len);
                     
                     #[cfg(feature = "capybara-log")]
                     tcpmig_log(format!("MIG-CONNECTION ESTABLISHED (REMOTE: {:?})", remote));
@@ -427,7 +428,7 @@ impl TcpPeer {
         }
         #[cfg(feature = "tcp-migration")]
         #[cfg(not(feature = "mig-per-n-req"))]
-        inner.tcpmig.start_tracking_connection_stats(local, remote);
+        inner.tcpmig.start_tracking_connection_stats(local, remote, 0);
         Poll::Ready(Ok(new_qd))
     }
 

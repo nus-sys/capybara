@@ -160,12 +160,13 @@ impl TcpMigStats {
         //     .and_then(|(k, _)| Some(*k))
     }
     
-    pub fn start_tracking_connection(&mut self, local: SocketAddrV4, client: SocketAddrV4) {
+    pub fn start_tracking_connection(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {
         #[cfg(feature = "capybara-log")]
         {
             tcp_log(format!("start"));
         }
         assert!(self.connections.insert((local, client)));
+        self.global_recv_queue_length += recv_queue_len;
 
         // Print all keys in recv_queue_lengths
         // println!("Keys in recv_queue_lengths:");

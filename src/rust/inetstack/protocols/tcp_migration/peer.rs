@@ -628,8 +628,8 @@ impl TcpMigPeer {
         Err(Fail::new(libc::EINVAL, "Currently we don't use this optimization"))
     }
     
-    pub fn start_tracking_connection_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4) {
-        self.inner.borrow_mut().stats.start_tracking_connection(local, client)
+    pub fn start_tracking_connection_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {
+        self.inner.borrow_mut().stats.start_tracking_connection(local, client, recv_queue_len)
     }
     
     pub fn global_recv_queue_length(&mut self) -> usize {
