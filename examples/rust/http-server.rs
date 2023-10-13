@@ -32,7 +32,7 @@ const ROOT: &str = "/var/www/demo";
 use std::sync::atomic::{AtomicBool, Ordering};
 use ctrlc;
 use std::sync::Arc;
-
+use demikernel::demikernel::bindings::demi_print_queue_length_log;
 const BUFSZ: usize = 4096;
 
 static mut START_TIME: Option<Instant> = None;
@@ -217,10 +217,27 @@ fn server(local: SocketAddrV4) -> Result<()> {
     
     loop {
         if !running.load(Ordering::SeqCst) {
-            // #[cfg(feature = "tcp-migration")]
-            // for (idx, qlen) in queue_length_vec {
-            //     println!("{},{}", idx, qlen);
-            // }
+            /* #[cfg(feature = "tcp-migration")]
+            // Get the length of the vector
+            let vec_len = queue_length_vec.len();
+
+            // Calculate the starting index for the last 10,000 elements
+            let start_index = if vec_len >= 5_000 {
+                vec_len - 5_000
+            } else {
+                0 // If the vector has fewer than 10,000 elements, start from the beginning
+            };
+
+            // Create a slice of the last 10,000 elements
+            let last_10_000 = &queue_length_vec[start_index..];
+
+            // Iterate over the slice and print the elements
+            let mut cnt = 0;
+            for (idx, qlen) in last_10_000.iter() {
+                println!("{},{}", cnt, qlen);
+                cnt+=1;
+            } */
+            demi_print_queue_length_log();
             break;
         }
 
@@ -271,10 +288,20 @@ fn server(local: SocketAddrV4) -> Result<()> {
         } */
         let result = libos.trywait_any2(&qts).expect("result");
         
+        #[cfg(feature = "mig-per-n-req")]
+        let mut qds_to_migrate = HashSet::new();
+
         if let Some(completed_results) = result {
             let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
                 matches!(result, OperationResult::Pop(_, _))
             }).count();
+            /* #[cfg(feature = "tcp-migration")]{
+                request_count += 1;
+                if request_count % 1 == 0 {
+                    eprintln!("request_counnt: {} {}", request_count, libos.global_recv_queue_length());
+                queue_length_vec.push((request_count, libos.global_recv_queue_length()));
+                }
+            } */
             #[cfg(feature = "capybara-log")]
             {
                 tcp_log(format!("\n\n======= OS: I/O operations have been completed, take the results! ======="));
@@ -323,7 +350,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         }
                     },
                     OperationResult::Pop(_, recvbuf) => {
-                        // pop_count -= 1;
+                        pop_count -= 1;
                         #[cfg(feature = "capybara-log")]
                         {
                             tcp_log(format!("POP complete ==> request PUSH and POP"));
@@ -334,13 +361,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         state.pushing += sent;
                         
 
-                        // #[cfg(feature = "tcp-migration")]{
-                        //     request_count += sent;
-                        //     if request_count % 100 == 0 {
-                        //         // eprintln!("request_counnt: {} {}", request_count, libos.global_recv_queue_length());
-                        //         queue_length_vec.push((request_count, libos.global_recv_queue_length() + pop_count));
-                        //     }
-                        // }
 
                         
                         #[cfg(feature = "mig-per-n-req")] {
