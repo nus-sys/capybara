@@ -72,4 +72,7 @@ pub use crate::runtime::{
     QType,
 };
 
+#[cfg(feature = "tcp-migration")]
+pub use crate::inetstack::protocols::tcp_migration::ETCPMIG;
+
 pub mod demikernel;

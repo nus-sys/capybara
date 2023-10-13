@@ -360,26 +360,34 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
                         state.pushing += sent;
                         
-
-
                         
                         #[cfg(feature = "mig-per-n-req")] {
                             let remaining = requests_remaining.entry(qd).or_insert(migration_per_n);
                             *remaining -= 1;
                             if *remaining > 0 {
                                 // queue next pop
-                                let pop_qt = libos.pop(qd).expect("pop qt");
-                                qts.push(pop_qt);
-                                state.pop_qt = pop_qt;
+                                match libos.pop(qd) {
+                                    Ok(qt) => {
+                                        qts.push(qt);
+                                        state.pop_qt = qt;
+                                    },
+                                    Err(e) if e.errno == demikernel::ETCPMIG => (),
+                                    Err(e) => panic!("pop qt: {}", e),
+                                }
                             } else{
                                 requests_remaining.remove(&qd).unwrap();
                             }
                         }
                         #[cfg(not(feature = "mig-per-n-req"))]{
                             // queue next pop
-                            let pop_qt = libos.pop(qd).expect("pop qt");
-                            qts.push(pop_qt);
-                            state.pop_qt = pop_qt;
+                            match libos.pop(qd) {
+                                Ok(qt) => {
+                                    qts.push(qt);
+                                    state.pop_qt = qt;
+                                },
+                                Err(e) if e.errno == demikernel::ETCPMIG => (),
+                                Err(e) => panic!("pop qt: {}", e),
+                            }
                         }
                     },
                     _ => {

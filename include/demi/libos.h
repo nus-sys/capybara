@@ -124,6 +124,8 @@ extern "C"
 
 #ifdef __DEMIKERNEL_TCPMIG__
 
+#define ETCPMIG 199
+
     /**
      * @brief Signals that the TCP connection represented by `qd` can be migrated right now.
      *
