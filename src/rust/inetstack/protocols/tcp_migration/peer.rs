@@ -4,6 +4,7 @@
 //==============================================================================
 // Imports
 //==============================================================================
+use bit_vec::BitVec;
 use super::constants::*;
 use super::{segment::TcpMigHeader, active::ActiveMigration, stats::TcpMigStats};
 use crate::QDesc;
@@ -100,6 +101,9 @@ struct Inner {
 
     stats: TcpMigStats,
 
+    /// Marks which QD is ready to migrate out.
+    ready_to_migrate_out: BitVec,
+
     //is_currently_migrating: bool,
 
     //rx_tx_threshold_ratio: f64,
@@ -128,10 +132,7 @@ pub struct TcpMigPeer {
     inner: Rc<RefCell<Inner>>,
 }
 
-pub struct MigrationHandle {
-    origin: SocketAddrV4,
-    client: SocketAddrV4,
-}
+pub struct MigrationHandle((SocketAddrV4, SocketAddrV4), QDesc);
 
 //======================================================================================================================
 // Associate Functions
@@ -254,7 +255,9 @@ impl TcpMigPeer {
         }
         match active.process_packet(ipv4_hdr, hdr, buf)? {
             MigrationRequestStatus::Rejected => unimplemented!("migration rejection"),
-            MigrationRequestStatus::PrepareMigrationAcked => {
+            MigrationRequestStatus::PrepareMigrationAcked(qd) => {
+                inner.set_as_ready_to_migrate_out(qd);
+                
                 #[cfg(feature = "mig-per-n-req")]{
                     #[cfg(feature = "tcp-migration-profiler")]
                     tcpmig_profile!("migrate");
@@ -368,30 +371,36 @@ impl TcpMigPeer {
         self.inner.borrow().migrated_out_connections.contains(&client)
     }
 
-    pub fn can_migrate_out(&self, origin: SocketAddrV4, client: SocketAddrV4) -> Option<MigrationHandle> {
-        let key = (origin, client);
+    pub fn is_ready_to_migrate_out(&self, qd: QDesc) -> bool {
+        self.inner.borrow().ready_to_migrate_out.get(qd.into()).unwrap_or(false)
+    }
+
+    pub fn get_migration_handle(&self, conn: (SocketAddrV4, SocketAddrV4), qd: QDesc) -> Option<MigrationHandle> {
         let inner = self.inner.borrow();
-        if let Some(active) = inner.active_migrations.get(&key) {
-            if active.is_prepared() {
-                return Some(MigrationHandle { origin, client })
-            }
+        if let Some(true) = inner.ready_to_migrate_out.get(qd.into()) {
+            let active = inner.active_migrations.get(&conn).expect("active migration should exist");
+            assert!(active.is_prepared());
+            return Some(MigrationHandle(conn, qd))
         }
         None
     }
 
     pub fn migrate_out(&mut self, handle: MigrationHandle, state: TcpState) {
-        let key = (handle.origin, handle.client);
+        let key = handle.0;
+        let qd = handle.1;
         let mut inner = self.inner.borrow_mut();
-        if let Some(active) = inner.active_migrations.get_mut(&key) {
-            active.send_connection_state(state);
-            #[cfg(not(feature = "mig-per-n-req"))] {
-                let qd = active.qd().unwrap();
-                // if !inner.migrations_prepared_qds.remove(&qd){
-                //     panic!("this qd is not migration-prepared");
-                // }
-            }
+
+        inner.ready_to_migrate_out.set(qd.into(), false);
+
+        let active = inner.active_migrations.get_mut(&key).unwrap();
+        active.send_connection_state(state);
+        #[cfg(not(feature = "mig-per-n-req"))] {
+            let qd = active.qd().unwrap();
+            // if !inner.migrations_prepared_qds.remove(&qd){
+            //     panic!("this qd is not migration-prepared");
+            // }
         }
-        if !inner.migrated_out_connections.insert(handle.client) {
+        if !inner.migrated_out_connections.insert(key.1) {
             panic!("Duplicate migrated_out_connections set insertion");
         }
     }
@@ -674,6 +683,7 @@ impl Inner {
             origins: HashMap::new(),
             incoming_connections: HashSet::new(),
             stats: TcpMigStats::new(recv_queue_length_threshold),
+            ready_to_migrate_out: BitVec::from_elem(64, false),
             //is_currently_migrating: false,
             recv_queue_length_threshold,
             self_udp_port: SELF_UDP_PORT, // TEMP
@@ -695,6 +705,14 @@ impl Inner {
             requests_remaining: HashMap::new(),
             //background: handle,
         }
+    }
+
+    fn set_as_ready_to_migrate_out(&mut self, qd: QDesc) {
+        let idx = qd.into();
+        if self.ready_to_migrate_out.len() <= idx {
+            self.ready_to_migrate_out.grow(self.ready_to_migrate_out.len(), false);
+        }
+        self.ready_to_migrate_out.set(idx, true);
     }
 
     // fn is_currently_migrating(&self) -> bool {

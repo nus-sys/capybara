@@ -465,7 +465,7 @@ impl InetStack {
 
         let future = match self.file_table.get(qd) {
             Some(qtype) => match QType::try_from(qtype) {
-                Ok(QType::TcpSocket) => Ok(FutureOperation::from(self.ipv4.tcp.pop(qd))),
+                Ok(QType::TcpSocket) => Ok(FutureOperation::from(self.ipv4.tcp.pop(qd)?)),
                 Ok(QType::UdpSocket) => {
                     let udp_op = UdpOperation::Pop(FutureResult::new(self.ipv4.udp.do_pop(qd), None));
                     Ok(FutureOperation::Udp(udp_op))
@@ -733,7 +733,11 @@ impl InetStack {
 #[cfg(feature = "tcp-migration")]
 impl InetStack {
     pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
-        self.ipv4.tcp.notify_migration_safety(qd)
+        let result = self.ipv4.tcp.notify_migration_safety(qd);
+        if let Ok(true) = result {
+            self.file_table.free(qd);
+        }
+        result
     }
     #[cfg(feature = "mig-per-n-req")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {

@@ -51,7 +51,7 @@ use ::std::{
 pub enum MigrationRequestStatus {
     Ok,
     Rejected,
-    PrepareMigrationAcked,
+    PrepareMigrationAcked(QDesc),
     StateReceived(TcpState),
     MigrationCompleted,
 }
@@ -178,7 +178,7 @@ impl ActiveMigration {
                         {
                             tcpmig_log(format!("PREPARE_MIG_ACK => ({}, {}) is PREPARED", hdr.origin, hdr.client));
                         }
-                        return Ok(MigrationRequestStatus::PrepareMigrationAcked);
+                        return Ok(MigrationRequestStatus::PrepareMigrationAcked(self.qd.expect("no qd on origin side")));
                     },
                     MigrationStage::Rejected => {
                         #[cfg(feature = "capybara-log")]

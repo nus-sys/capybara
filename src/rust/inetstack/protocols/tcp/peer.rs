@@ -523,11 +523,16 @@ impl TcpPeer {
         PushFuture { fd, err }
     }
 
-    pub fn pop(&self, fd: QDesc) -> PopFuture {
-        PopFuture {
+    pub fn pop(&self, fd: QDesc) -> Result<PopFuture, Fail> {
+        #[cfg(feature = "tcp-migration")]
+        if self.inner.borrow().tcpmig.is_ready_to_migrate_out(fd) {
+            return Err(Fail::new(super::super::tcp_migration::ETCPMIG, "connection ready to be migrated"))
+        }
+
+        Ok(PopFuture {
             fd,
             inner: self.inner.clone(),
-        }
+        })
     }
 
     fn send(&self, fd: QDesc, buf: Buffer) -> Result<(), Fail> {
@@ -842,26 +847,14 @@ impl TcpPeer {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
         };
-        let (local, remote) = match inner.sockets.get(&qd) {
-            None => {
-                debug!("No entry in `sockets` for fd: {:?}", qd);
-                return Err(Fail::new(EBADF, "socket does not exist"));
-            },
-            Some(Socket::Established { local, remote }) => {
-                (*local, *remote)
-            },
-            Some(..) => {
-                return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
-            },
-        };
 
-        if let Some(handle) = inner.tcpmig.can_migrate_out(local, remote) {
+        if let Some(handle) = inner.tcpmig.get_migration_handle(conn, qd) {
             #[cfg(feature = "tcp-migration-profiler")]
             tcpmig_profile!("migrate");
 
             #[cfg(feature = "capybara-log")]
             {
-                tcpmig_log(format!("\n\nMigrate Out ({}, {})", local, remote));
+                tcpmig_log(format!("\n\nMigrate Out ({}, {})", conn.0, conn.1));
             }
             let state = inner.migrate_out_tcp_connection(qd)?;
             inner.tcpmig.migrate_out(handle, state);
