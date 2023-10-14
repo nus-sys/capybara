@@ -179,7 +179,6 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
 
 struct ConnectionState {
     pushing: usize,
-    pop_qt: QToken,
     buffer: Buffer,
 
 }
@@ -323,11 +322,15 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             tcp_log(format!("ACCEPT complete ==> request POP and ACCEPT"));
                         }
                         // Pop from new_qd
-                        let pop_qt = libos.pop(new_qd).expect("pop qt");
+                        match libos.pop(new_qd) {
+                            Ok(pop_qt) => {
                         qts.push(pop_qt);
+                            },
+                            Err(e) if e.errno == demikernel::ETCPMIG => (),
+                            Err(e) => panic!("pop qt: {}", e),
+                        }
                         connstate.insert(new_qd, ConnectionState {
                             pushing: 0,
-                            pop_qt: pop_qt,
                             buffer: Buffer::new(),
                         });
     
@@ -369,7 +372,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
                                 match libos.pop(qd) {
                                     Ok(qt) => {
                                         qts.push(qt);
-                                        state.pop_qt = qt;
                                     },
                                     Err(e) if e.errno == demikernel::ETCPMIG => (),
                                     Err(e) => panic!("pop qt: {}", e),
@@ -423,8 +425,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     }
                     match libos.notify_migration_safety(*qd) {
                         Ok(true) => {
-                            let index = qts.iter().position(|&qt| qt == state.pop_qt).expect("`pop_qt` should be in `qts`");
-                            qts.swap_remove(index);
                             qds_to_remove.push(*qd);
                         },
                         Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
