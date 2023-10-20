@@ -628,16 +628,6 @@ impl Inner {
 
         log_init();
 
-        {
-            crate::capy_profile!("test");
-            thread::sleep(std::time::Duration::from_millis(200));
-        }
-
-        capy_log!("***** Inside capy log: {}", 1);
-        crate::capy_log_mig!("INSIDE CAPY LOG MIG");
-        crate::capy_profile_dump!(&mut std::io::stderr().lock());
-        panic!();
-
         Self {
             rt: rt.clone(),
             //arp,
