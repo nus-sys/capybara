@@ -60,12 +60,8 @@ use crate::{
         timer::TimerRc,
         QDesc,
     },
-    scheduler::scheduler::Scheduler, 
-    
+    scheduler::scheduler::Scheduler,
 };
-
-#[cfg(feature = "tcp-migration-profiler")]
-use crate::tcpmig_profile;
 
 use ::futures::channel::mpsc;
 use ::libc::{
@@ -112,9 +108,7 @@ use crate::inetstack::protocols::tcp_migration::TcpMigPeer;
 #[cfg(feature = "profiler")]
 use crate::timer;
 
-
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+use crate::{capy_profile, capy_log, capy_log_mig};
 
 //==============================================================================
 // Enumerations
@@ -387,8 +381,7 @@ impl TcpPeer {
         let remote = cb.get_remote();
         #[cfg(feature = "tcp-migration")]
         if inner.tcpmig.take_connection(local, remote) {
-            #[cfg(feature = "tcp-migration-profiler")]
-            tcpmig_profile!("migrated_accept");
+            capy_profile!("migrated_accept");
             
             let recv_queue_len = cb.receiver.recv_queue_len();
             match inner.migrate_in_tcp_connection(new_qd, cb) {
@@ -397,8 +390,7 @@ impl TcpPeer {
                     #[cfg(not(feature = "mig-per-n-req"))]
                     inner.tcpmig.start_tracking_connection_stats(local, remote, recv_queue_len);
                     
-                    #[cfg(feature = "capybara-log")]
-                    tcpmig_log(format!("MIG-CONNECTION ESTABLISHED (REMOTE: {:?})", remote));
+                    capy_log_mig!("MIG-CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
                     
                     return Poll::Ready(Ok(new_qd));
                 },
@@ -413,10 +405,9 @@ impl TcpPeer {
         let key: (SocketAddrV4, SocketAddrV4) = (local, remote);
 
         let socket: Socket = Socket::Established { local, remote };
-        #[cfg(feature = "capybara-log")]
-        tcp_log(format!("CONNECTION ESTABLISHED (REMOTE: {:?})", remote));
 
-        eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
+        capy_log!("CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
+
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         if inner.sockets.insert(new_qd, socket).is_some() {
             panic!("duplicate queue descriptor in sockets table");
@@ -500,10 +491,7 @@ impl TcpPeer {
             Some(Socket::MigratedOut { .. }) => return Poll::Ready(Err(Fail::new(EBADF, "socket migrated out"))),
             None => return Poll::Ready(Err(Fail::new(EBADF, "bad queue descriptor"))),
         };
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("\n\npolling POP on {:?}", key));
-        }
+        capy_log!("\n\npolling POP on {:?}", key);
         match inner.established.get(&key) {
             Some(ref s) 
             => s.poll_recv(
@@ -642,10 +630,7 @@ impl Inner {
         let ephemeral_ports: EphemeralPorts = EphemeralPorts::new(&mut rng);
         let nonce: u32 = rng.gen();
 
-        /* #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("Creating new TcpPeer::Inner"));
-        } */
+        /* capy_log!("Creating new TcpPeer::Inner"); */
         Self {
             isn_generator: IsnGenerator::new(nonce),
             ephemeral_ports,
@@ -681,10 +666,7 @@ impl Inner {
         }
         let key = (local, remote);
 
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("\n\n[RX] {:?} => {:?}", remote, local));
-        }
+        capy_log!("\n\n[RX] {:?} => {:?}", remote, local);
         if let Some(s) = self.established.get(&key) {
             let is_data_empty = data.is_empty();
 
@@ -699,10 +681,7 @@ impl Inner {
             #[cfg(all(feature = "tcp-migration", not(feature = "mig-per-n-req")))]
             // Remove
             if tcp_hdr.fin || tcp_hdr.rst {
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcp_log(format!("RX FIN or RST => tcpmig stops tracking this conn"));
-                }
+                capy_log!("RX FIN or RST => tcpmig stops tracking this conn");
                 self.tcpmig.stop_tracking_connection_stats(local, remote, s.cb.receiver.recv_queue_len());
             }
             else if !is_data_empty {
@@ -713,29 +692,23 @@ impl Inner {
                 // Possible decision-making point.
                 if let Some(conn) = self.tcpmig.should_migrate() {
                     // eprintln!("{:?}", conn);
-                    #[cfg(feature = "capybara-log")]
+                    capy_log_mig!("should migrate");
                     {
-                        tcpmig_log(format!("should migrate"));
-                    }
-                    #[cfg(feature = "tcp-migration-profiler")]
-                    tcpmig_profile!("prepare");
-                    // eprintln!("*** Should Migrate ***");
-                    // self.tcpmig.print_stats();
-                    let qd = self.qds.get(&conn).ok_or_else(|| Fail::new(EBADF, "socket not exist"))?;
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcpmig_log(format!("qd: {:?}, conn: {:?}", qd, conn));
-                    }
-                    let mig_key = (conn.0, conn.1);
-                    // Attempt to retrieve the value from the hashmap
-                    if let Some(mig_socket) = self.established.get(&mig_key) {
-                        // The key exists in the hashmap, and mig_socket now contains the value.
-                        // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
-                        self.tcpmig.stop_tracking_connection_stats(conn.0, conn.1, mig_socket.cb.receiver.recv_queue_len());
-                        self.tcpmig.initiate_migration(conn, *qd);
-                    } else {
-                        // The key does not exist in the esablished hashmap, panic.
-                        panic!("Key not found in established HashMap: {:?}", mig_key);
+                        capy_profile!("prepare");
+                        // self.tcpmig.print_stats();
+                        let qd = self.qds.get(&conn).ok_or_else(|| Fail::new(EBADF, "socket not exist"))?;
+                        capy_log_mig!("qd: {:?}, conn: {:?}", qd, conn);
+                        let mig_key = (conn.0, conn.1);
+                        // Attempt to retrieve the value from the hashmap
+                        if let Some(mig_socket) = self.established.get(&mig_key) {
+                            // The key exists in the hashmap, and mig_socket now contains the value.
+                            // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
+                            self.tcpmig.stop_tracking_connection_stats(conn.0, conn.1, mig_socket.cb.receiver.recv_queue_len());
+                            self.tcpmig.initiate_migration(conn, *qd);
+                        } else {
+                            // The key does not exist in the esablished hashmap, panic.
+                            panic!("Key not found in established HashMap: {:?}", mig_key);
+                        }
                     }
                 }
             }
@@ -849,16 +822,13 @@ impl TcpPeer {
         };
 
         if let Some(handle) = inner.tcpmig.get_migration_handle(conn, qd) {
-            #[cfg(feature = "tcp-migration-profiler")]
-            tcpmig_profile!("migrate");
-
-            #[cfg(feature = "capybara-log")]
+            capy_log_mig!("\n\nMigrate Out ({}, {})", conn.0, conn.1);
             {
-                tcpmig_log(format!("\n\nMigrate Out ({}, {})", conn.0, conn.1));
+                capy_profile!("migrate");
+                let state = inner.migrate_out_tcp_connection(qd)?;
+                inner.tcpmig.migrate_out(handle, state);
+                return Ok(true)
             }
-            let state = inner.migrate_out_tcp_connection(qd)?;
-            inner.tcpmig.migrate_out(handle, state);
-            return Ok(true)
         }
 
         Ok(false)
@@ -866,8 +836,7 @@ impl TcpPeer {
     
     #[cfg(feature = "mig-per-n-req")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
-        #[cfg(feature = "tcp-migration-profiler")]
-        tcpmig_profile!("prepare");
+        capy_profile!("prepare");
         
         let mut inner = self.inner.borrow_mut();
         let conn = match inner.sockets.get(&qd) {
@@ -1088,10 +1057,7 @@ impl Inner {
             buf[tcp_hdr_size..].copy_from_slice(&data);
 
             let buf = Buffer::Heap(crate::runtime::memory::DataBuffer::from_slice(&buf)); */
-            #[cfg(feature = "capybara-log")]
-            {
-                tcpmig_log(format!("take_buffer_queue"));
-            }
+            capy_log_mig!("take_buffer_queue");
             cb.receive(&mut tcp_hdr, data, &self.tcpmig);
         }
 
@@ -1126,10 +1092,7 @@ impl Inner {
         }
 
         self.tcpmig.complete_migrating_in(local, remote);
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("\n\n!!! Accepted ({}, {}) !!!\n\n", local, remote));
-        }
+        capy_log_mig!("\n\n!!! Accepted ({}, {}) !!!\n\n", local, remote);
         Ok(())
     }
 }

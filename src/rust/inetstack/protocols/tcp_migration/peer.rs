@@ -7,11 +7,6 @@
 use bit_vec::BitVec;
 use super::constants::*;
 use super::{segment::TcpMigHeader, active::ActiveMigration, stats::TcpMigStats};
-use crate::QDesc;
-use crate::inetstack::protocols::ethernet2::{EtherType2, Ethernet2Header};
-use crate::inetstack::protocols::ip::IpProtocol;
-use crate::inetstack::protocols::udp::{UdpDatagram, UdpHeader};
-use crate::runtime::memory::DataBuffer;
 use crate::{
     inetstack::protocols::{
             ipv4::Ipv4Header, 
@@ -22,19 +17,21 @@ use crate::{
                 MigrationStage,
                 active::MigrationRequestStatus
             },
+            ethernet2::{EtherType2, Ethernet2Header},
+            ip::IpProtocol,
+            udp::{UdpDatagram, UdpHeader},
         },
     runtime::{
         fail::Fail,
-        memory::Buffer,
+        memory::{Buffer, DataBuffer},
         network::{
             types::MacAddress,
             NetworkRuntime,
         },
-    }, 
+    },
+    QDesc,
+    capy_profile, capy_profile_merge_previous,
 };
-
-#[cfg(feature = "tcp-migration-profiler")]
-use crate::{tcpmig_profile, tcpmig_profile_merge_previous};
 
 use std::cell::Cell;
 use std::{cell::RefCell, collections::HashSet, time::Instant};
@@ -52,8 +49,7 @@ use ::std::{
 #[cfg(feature = "profiler")]
 use crate::timer;
 
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::tcpmig_log;
+use crate::{capy_log, capy_log_mig};
 
 
 //======================================================================================================================
@@ -190,10 +186,7 @@ impl TcpMigPeer {
         let (hdr, buf) = TcpMigHeader::parse(ipv4_hdr, buf)?;
         debug!("TCPMig received {:?}", hdr);
         // eprintln!("TCPMig received {:#?}", hdr);
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("\n\n[RX] TCPMig"));
-        }
+        capy_log_mig!("\n\n[RX] TCPMig");
 
         let key = (hdr.origin, hdr.client);
 
@@ -201,14 +194,11 @@ impl TcpMigPeer {
 
         // First packet that target receives.
         if hdr.stage == MigrationStage::PrepareMigration {
-            #[cfg(feature = "tcp-migration-profiler")]
-            tcpmig_profile!("prepare_ack");
+            capy_profile!("prepare_ack");
 
-            #[cfg(feature = "capybara-log")]
-            {
-                tcpmig_log(format!("******* MIGRATION REQUESTED *******"));
-                tcpmig_log(format!("PREPARE_MIG {:?}", key));
-            }
+            capy_log_mig!("******* MIGRATION REQUESTED *******");
+            capy_log_mig!("PREPARE_MIG {:?}", key);
+
             let active = ActiveMigration::new(
                 inner.rt.clone(),
                 inner.local_ipv4_addr,
@@ -226,20 +216,14 @@ impl TcpMigPeer {
                 // It happens when a backend send PREPARE_MIGRATION to the switch
                 // but it receives back the message again (i.e., this is the current minimum workload backend)
                 // In this case, remove the active migration.
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcpmig_log(format!("It returned back to itself, maybe it's the current-min-workload server"));
-                }
+                capy_log_mig!("It returned back to itself, maybe it's the current-min-workload server");
                 inner.active_migrations.remove(&key); 
                 //inner.is_currently_migrating = false;
                 return Ok(())
             }
 
             let target = SocketAddrV4::new(inner.local_ipv4_addr, inner.self_udp_port);
-            #[cfg(feature = "capybara-log")]
-            {
-                tcpmig_log(format!("I'm target {}", target));
-            }
+            capy_log_mig!("I'm target {}", target);
             inner.origins.insert((target, hdr.client), hdr.origin);
         }
 
@@ -249,23 +233,16 @@ impl TcpMigPeer {
         };
         
 
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("Active migration {:?}", key));
-        }
+        capy_log_mig!("Active migration {:?}", key);
         match active.process_packet(ipv4_hdr, hdr, buf)? {
             MigrationRequestStatus::Rejected => unimplemented!("migration rejection"),
             MigrationRequestStatus::PrepareMigrationAcked(qd) => {
                 inner.set_as_ready_to_migrate_out(qd);
                 
                 #[cfg(feature = "mig-per-n-req")]{
-                    #[cfg(feature = "tcp-migration-profiler")]
-                    tcpmig_profile!("migrate");
+                    capy_profile!("migrate");
 
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcpmig_log(format!("\n\nMigrate Out ({}, {})", hdr.origin, hdr.client));
-                    }
+                    capy_log_mig!("\n\nMigrate Out ({}, {})", hdr.origin, hdr.client);
                     let state = tcp_peer.migrate_out_tcp_connection(active.qd().unwrap())?;
                     let remote = state.remote;
                     active.send_connection_state(state);
@@ -277,39 +254,28 @@ impl TcpMigPeer {
                 } */
             },
             MigrationRequestStatus::StateReceived(state) => {
-                #[cfg(feature = "tcp-migration-profiler")]
-                tcpmig_profile_merge_previous!("migrate_ack");
+                capy_profile_merge_previous!("migrate_ack");
 
                 let (local, client) = (state.local, state.remote);
                 // println!("migrating in connection local: {}, client: {}", local, client);
                 
                 tcp_peer.notify_passive(state)?;
                 inner.incoming_connections.insert((local, client));
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcpmig_log(format!("======= MIGRATING IN STATE ({}, {}) =======", local, client));
-                }
+                capy_log_mig!("======= MIGRATING IN STATE ({}, {}) =======", local, client);
                 // inner.active_migrations.remove(&(hdr.origin, hdr.client)).expect("active migration should exist"); 
                 // Shouldn't be removed yet. Should be after processing migration queue.
             },
             MigrationRequestStatus::MigrationCompleted => {
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcpmig_log(format!("1"));
-                }
+                capy_log_mig!("1");
                 let (local, client) = (hdr.origin, hdr.client);
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcpmig_log(format!("2, active_migrations: {:?}, removing {:?}", 
-                        inner.active_migrations.keys().collect::<Vec<_>>(), (local, client)));
-                }
+
+                capy_log_mig!("2, active_migrations: {:?}, removing {:?}", 
+                    inner.active_migrations.keys().collect::<Vec<_>>(), (local, client));
+
                 inner.active_migrations.remove(&(local, client)).expect("active migration should exist"); 
                 
                 //inner.is_currently_migrating = false;
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcpmig_log(format!("CONN_STATE_ACK ({}, {})\n=======  MIGRATION COMPLETE! =======\n\n", local, client));
-                }
+                capy_log_mig!("CONN_STATE_ACK ({}, {})\n=======  MIGRATION COMPLETE! =======\n\n", local, client);
             },
             MigrationRequestStatus::Ok => (),
         };
@@ -318,15 +284,11 @@ impl TcpMigPeer {
     }
 
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4), qd: QDesc) {
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("initiate_migration"));
-        }
+        capy_log_mig!("initiate_migration");
         let mut inner = self.inner.borrow_mut();
         
         {
-            #[cfg(feature = "tcp-migration-profiler")]
-            tcpmig_profile!("additional_delay");
+            capy_profile!("additional_delay");
             for _ in 0..inner.additional_mig_delay {
                 thread::yield_now();
             }
@@ -569,10 +531,7 @@ impl TcpMigPeer {
             if FLAG == 3 {
                 FLAG = 0;
                 NUM_MIG+=1;
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcpmig_log(format!("START MIG"));
-                }
+                capy_log_mig!("START MIG");
                 return inner.stats.get_connection_to_migrate_out();
             }
             return None;
@@ -668,6 +627,16 @@ impl Inner {
         };
 
         log_init();
+
+        {
+            crate::capy_profile!("test");
+            thread::sleep(std::time::Duration::from_millis(200));
+        }
+
+        capy_log!("***** Inside capy log: {}", 1);
+        crate::capy_log_mig!("INSIDE CAPY LOG MIG");
+        crate::capy_profile_dump!(&mut std::io::stderr().lock());
+        panic!();
 
         Self {
             rt: rt.clone(),

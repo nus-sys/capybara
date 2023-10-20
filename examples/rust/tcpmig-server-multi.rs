@@ -181,7 +181,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
-    #[cfg(feature = "tcp-migration-profiler")]
+
     demikernel::tcpmig_profiler::write_profiler_data(&mut std::io::stdout()).unwrap();
     // TODO: close socket when we get close working properly in catnip.
     Ok(())
@@ -202,8 +202,6 @@ fn usage(program_name: &String) {
 
 pub fn main() -> Result<()> {
     logging::initialize();
-    #[cfg(feature = "tcp-migration-profiler")]
-    demikernel::tcpmig_profiler::init_profiler();
 
     let args: Vec<String> = env::args().collect();
 

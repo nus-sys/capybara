@@ -422,8 +422,8 @@ NODE ?= 9
 
 all-libs-mig:
 	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration"
-	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,tcp-migration-profiler
-#,capybara-log
+	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,capy-profile
+#,capy-log
 
 all-libs-mig-per-n:
 	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=mig-per-n-req"

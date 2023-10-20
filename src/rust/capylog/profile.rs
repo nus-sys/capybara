@@ -4,53 +4,51 @@ use std::time::{Duration, Instant};
 // Data
 //==============================================================================
 
+#[allow(unused)]
 static mut DATA: Option<Vec<(&str, Duration)>> = None;
 
 //==============================================================================
 // Macros
 //==============================================================================
-use colored::*; 
-pub fn tcp_log<T: std::fmt::Display>(param: T) {
-    if let Ok(val) = std::env::var("CAPYBARA_LOG") {
-        if val == "all" || val == "tcp" {
-            println!("{}", format!("{}", param).green());
-        }
-    }
-}
 
-pub fn tcpmig_log<T: std::fmt::Display>(param: T) {
-    if let Ok(val) = std::env::var("CAPYBARA_LOG") {
-        if val == "all" || val == "tcpmig" {
-            println!("{}", format!("{}", param).yellow());
-        }
-    }
-}
-
-#[macro_export]
-macro_rules! tcpmig_profile {
+macro_rules! __capy_profile {
     ($name:expr) => {
-        let __tcpmig_profiler_dropped_object__ = crate::tcpmig_profiler::DroppedObject::begin($name);
+        let __capy_log_profile_dropped_object = crate::capylog::profile::__DroppedObject::new($name);
     };
 }
 
 /// Merges this time interval with the last one profiled, ensuring that the name is the same.
-#[macro_export]
-macro_rules! tcpmig_profile_merge_previous {
+macro_rules! __capy_profile_merge_previous {
     ($name:expr) => {
-        let __tcpmig_profiler_dropped_object__ = crate::tcpmig_profiler::MergeDroppedObject::begin($name);
+        let __capy_log_profile_dropped_object = crate::capylog::profile::__MergeDroppedObject::new($name);
     };
 }
+
+macro_rules! __capy_profile_dump {
+    ($dump:expr) => {
+        $crate::capylog::profile::__write_profiler_data($dump).expect("capy_profile_dump failed");
+    };
+}
+
+#[allow(unused)]
+pub(crate) use __capy_profile;
+#[allow(unused)]
+pub(crate) use __capy_profile_merge_previous;
+#[allow(unused)]
+pub(crate) use __capy_profile_dump;
 
 //==============================================================================
 // Structures
 //==============================================================================
 
-pub struct DroppedObject {
+#[allow(unused)]
+pub(crate) struct __DroppedObject {
     name: &'static str,
     begin: Instant,
 }
 
-pub struct MergeDroppedObject {
+#[allow(unused)]
+pub(crate) struct __MergeDroppedObject {
     begin: Instant,
 }
 
@@ -58,14 +56,16 @@ pub struct MergeDroppedObject {
 // Standard Library Trait Implementations
 //==============================================================================
 
-impl Drop for DroppedObject {
+#[allow(unused)]
+impl Drop for __DroppedObject {
     fn drop(&mut self) {
         let end = Instant::now();
         data().push((self.name, end - self.begin));
     }
 }
 
-impl Drop for MergeDroppedObject {
+#[allow(unused)]
+impl Drop for __MergeDroppedObject {
     fn drop(&mut self) {
         let end = Instant::now();
         data().last_mut().expect("no previous value").1 += end - self.begin;
@@ -76,8 +76,9 @@ impl Drop for MergeDroppedObject {
 // Implementations
 //==============================================================================
 
-impl DroppedObject {
-    pub fn begin(name: &'static str) -> Self {
+#[allow(unused)]
+impl __DroppedObject {
+    pub(crate) fn new(name: &'static str) -> Self {
         Self {
             name,
             begin: Instant::now()
@@ -85,8 +86,9 @@ impl DroppedObject {
     }
 }
 
-impl MergeDroppedObject {
-    pub fn begin(name: &'static str) -> Self {
+#[allow(unused)]
+impl __MergeDroppedObject {
+    pub(crate) fn new(name: &'static str) -> Self {
         match data().last() {
             None => panic!("tcpmig_profiler: no previous value"),
             Some(&(prev, _)) if prev != name => panic!("tcpmig_profiler: expected \"{}\", found \"{}\"", name, prev),
@@ -103,18 +105,25 @@ impl MergeDroppedObject {
 // Functions
 //==============================================================================
 
-pub fn data() -> &'static mut Vec<(&'static str, Duration)> {
-    unsafe { DATA.as_mut().expect("tcpmig_profiler not initialised") }
+#[allow(unused)]
+#[inline]
+fn data() -> &'static mut Vec<(&'static str, Duration)> {
+    unsafe { DATA.as_mut().expect("capy-log profiler not initialised") }
 }
 
-pub fn init_profiler() {
-    if let Some(..)  = unsafe { DATA.as_ref() } {
-        panic!("Double initialisation of tcpmig_profiler");
+#[allow(unused)]
+pub(super) fn init() {
+    if unsafe { DATA.as_ref().is_some() } {
+        panic!("Double initialisation of capy-log profiler");
     }
-    unsafe { DATA = Some(Vec::new()); }
+    unsafe { DATA = Some(Vec::with_capacity(32)); }
+
+    eprintln!("[CAPYLOG] capy_profile is on");
 }
 
-pub fn write_profiler_data<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
+#[allow(unused)]
+pub(crate) fn __write_profiler_data<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
+    eprintln!("\n[CAPYLOG] dumping profiler data");
     let data: &Vec<(&str, Duration)> = data();
     for (name, datum) in data {
         write!(w, "{}: {} ns\n", name, datum.as_nanos())?;

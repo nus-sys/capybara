@@ -26,8 +26,8 @@ pub struct SchedulerHandle {
     chunk: WakerPageRef,
 }
 
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+use crate::capy_log;
+
 //==============================================================================
 // Associate Functions
 //==============================================================================
@@ -68,10 +68,7 @@ impl Drop for SchedulerHandle {
     /// Decreases the reference count of the target [SchedulerHandle].
     fn drop(&mut self) {
         if let Some(key) = self.key.take() {
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("Drop {} from scheduler", key));
-            }
+            capy_log!("Drop {} from scheduler", key);
             let subpage_ix: usize = key as usize & (WAKER_BIT_LENGTH - 1);
             self.chunk.mark_dropped(subpage_ix);
         }

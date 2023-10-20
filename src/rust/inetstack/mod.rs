@@ -71,8 +71,7 @@ use ::std::{
 #[cfg(feature = "profiler")]
 use crate::timer;
 
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::tcp_log;
+use crate::capy_log;
 
 //==============================================================================
 // Exports
@@ -290,10 +289,7 @@ impl InetStack {
                 Ok(QType::TcpSocket) => {
                     let new_qd: QDesc = self.file_table.alloc(QType::TcpSocket.into());
                     let future: FutureOperation = FutureOperation::from(self.ipv4.tcp.do_accept(qd, new_qd));
-                    /* #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("Scheduling Accept operation"));
-                    } */
+                    /* capy_log!("Scheduling Accept operation"); */
                     let handle: SchedulerHandle = match self.scheduler.insert(future) {
                         Some(handle) => handle,
                         None => {
@@ -403,10 +399,7 @@ impl InetStack {
 
         // Issue operation.
         let future: FutureOperation = self.do_push(qd, buf)?;
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("Scheduling PUSH"));
-        }
+        capy_log!("Scheduling PUSH");
         let handle: SchedulerHandle = match self.scheduler.insert(future) {
             Some(handle) => handle,
             None => return Err(Fail::new(libc::EAGAIN, "cannot schedule co-routine")),
@@ -474,10 +467,7 @@ impl InetStack {
             },
             _ => Err(Fail::new(EBADF, "bad queue descriptor")),
         }?;
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("Scheduling POP"));
-        }
+        capy_log!("Scheduling POP");
         let handle: SchedulerHandle = match self.scheduler.insert(future) {
             Some(handle) => handle,
             None => return Err(Fail::new(libc::EAGAIN, "cannot schedule co-routine")),

@@ -77,9 +77,6 @@ pub extern "C" fn demi_init(argc: c_int, argv: *mut *mut c_char) -> c_int {
 
     unsafe { DEMIKERNEL = RefCell::new(Some(libos)) };
 
-    #[cfg(feature = "tcp-migration-profiler")]
-    crate::tcpmig_profiler::init_profiler();
-
     0
 }
 

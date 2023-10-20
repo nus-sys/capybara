@@ -14,9 +14,6 @@ use ::demikernel::{
     QToken,
 };
 
-#[cfg(feature = "capybara-log")]
-use ::demikernel::tcpmig_profiler::tcp_log;
-
 use std::{collections::{HashMap, HashSet}, time::Instant};
 use ::std::{
     env,
@@ -24,18 +21,31 @@ use ::std::{
     panic,
     str::FromStr,
 };
-
-#[cfg(feature = "profiler")]
-use ::demikernel::perftools::profiler;
-const ROOT: &str = "/var/www/demo";
-
 use std::sync::atomic::{AtomicBool, Ordering};
 use ctrlc;
 use std::sync::Arc;
 use demikernel::demikernel::bindings::demi_print_queue_length_log;
+
+#[cfg(feature = "profiler")]
+use ::demikernel::perftools::profiler;
+
+//=====================================================================================
+
+macro_rules! server_log {
+    ($($arg:tt)*) => {
+        #[cfg(feature = "capy-log")]
+        eprintln!("{}", format_args!($($arg)*));
+    };
+}
+
+//=====================================================================================
+
+const ROOT: &str = "/var/www/demo";
 const BUFSZ: usize = 4096;
 
 static mut START_TIME: Option<Instant> = None;
+
+//=====================================================================================
 
 // Borrowed from Loadgen
 struct Buffer {
@@ -122,10 +132,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         },
         Err(_) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n"),
     };
-    #[cfg(feature = "capybara-log")]
-    {
-        tcp_log(format!("PUSH: {}", response.lines().next().unwrap_or("")));
-    }
+    server_log!("PUSH: {}", response.lines().next().unwrap_or(""));
 
     libos.push2(qd, response.as_bytes()).expect("push success")
 }
@@ -301,15 +308,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 queue_length_vec.push((request_count, libos.global_recv_queue_length()));
                 }
             } */
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("\n\n======= OS: I/O operations have been completed, take the results! ======="));
-            }
+            server_log!("\n\n======= OS: I/O operations have been completed, take the results! =======");
             let indices_to_remove: Vec<usize> = completed_results.iter().map(|(index, _, _)| *index).collect();
-            /* #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("\n\n1, indicies_to_remove: {:?}", indices_to_remove));
-            } */
+            /* server_log!("\n\n1, indicies_to_remove: {:?}", indices_to_remove); */
             let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
             qts = new_qts;
             for (index, qd, result) in completed_results {
@@ -317,10 +318,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     
                 match result {
                     OperationResult::Accept(new_qd) => {
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcp_log(format!("ACCEPT complete ==> request POP and ACCEPT"));
-                        }
+                        server_log!("ACCEPT complete ==> request POP and ACCEPT");
                         // Pop from new_qd
                         match libos.pop(new_qd) {
                             Ok(pop_qt) => {
@@ -343,8 +341,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         // #[cfg(feature = "tcp-migration")]
                         // libos.pushed_response();
 
-                        #[cfg(feature = "capybara-log")]
-                        tcp_log(format!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing));
+                        server_log!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing);
                         
                         #[cfg(feature = "mig-per-n-req")]
                         if migration_per_n > 0  && !requests_remaining.contains_key(&qd) {
@@ -354,10 +351,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     },
                     OperationResult::Pop(_, recvbuf) => {
                         pop_count -= 1;
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcp_log(format!("POP complete ==> request PUSH and POP"));
-                        }
+                        server_log!("POP complete ==> request PUSH and POP");
 
                         let mut state = connstate.get_mut(&qd).unwrap();
                         let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
@@ -385,7 +379,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             match libos.pop(qd) {
                                 Ok(qt) => {
                                     qts.push(qt);
-                                    state.pop_qt = qt;
+                                    //state.pop_qt = qt;
                                 },
                                 Err(e) if e.errno == demikernel::ETCPMIG => (),
                                 Err(e) => panic!("pop qt: {}", e),
@@ -397,10 +391,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     },
                 }
             }
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("******* APP: Okay, handled the results! *******"));
-            }
+            server_log!("******* APP: Okay, handled the results! *******");
         }
 
         #[cfg(feature = "tcp-migration")]
@@ -446,8 +437,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
 
-    #[cfg(feature = "tcp-migration-profiler")]
-    demikernel::tcpmig_profiler::write_profiler_data(&mut std::io::stdout()).unwrap();
+    libos.capylog_dump(&mut std::io::stderr().lock());
 
     // TODO: close socket when we get close working properly in catnip.
     Ok(())
@@ -467,14 +457,8 @@ fn usage(program_name: &String) {
 //======================================================================================================================
 
 pub fn main() -> Result<()> {
-    #[cfg(feature = "capybara-log")]
-    {
-        tcp_log(format!("*** CAPYBARA LOGGING IS ON ***"));
-    }
+    server_log!("*** HTTP SERVER LOGGING IS ON ***");
     // logging::initialize();
-
-    #[cfg(feature = "tcp-migration-profiler")]
-    demikernel::tcpmig_profiler::init_profiler();
 
     let args: Vec<String> = env::args().collect();
 

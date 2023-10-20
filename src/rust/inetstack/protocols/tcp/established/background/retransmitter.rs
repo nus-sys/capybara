@@ -18,15 +18,11 @@ use ::std::{
     },
 };
 
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+use crate::capy_log;
 
 pub async fn retransmitter(cb: Rc<ControlBlock>) -> Result<!, Fail> {
     loop {
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("retransmitter polled"));
-        }
+        capy_log!("retransmitter polled");
         // Pin future for timeout retransmission.
         let (rtx_deadline, rtx_deadline_changed) = cb.watch_retransmit_deadline();
         futures::pin_mut!(rtx_deadline_changed);

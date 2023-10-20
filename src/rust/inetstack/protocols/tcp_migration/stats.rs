@@ -10,8 +10,7 @@ use std::{
     net::SocketAddrV4, cell::Cell,
 };
 
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::tcp_log;
+use crate::capy_log;
 
 //======================================================================================================================
 // Constants
@@ -161,10 +160,7 @@ impl TcpMigStats {
     }
     
     pub fn start_tracking_connection(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("start"));
-        }
+        capy_log!("start");
         assert!(self.connections.insert((local, client)));
         self.global_recv_queue_length += recv_queue_len;
 
@@ -181,10 +177,7 @@ impl TcpMigStats {
         client: SocketAddrV4,
         recv_queue_len: usize,
     ) {
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("stop tracking {:?}", (local, client)));
-        }
+        capy_log!("stop tracking {:?}", (local, client));
         
         match self.connections.remove(&(local, client)) {
             false => warn!("`TcpMigStats` was not tracking connection ({}, {})", local, client),

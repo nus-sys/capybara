@@ -160,11 +160,13 @@ catnip-libos = [ "libdpdk" ]
 libdpdk = [ "dpdk-rs" ]
 mlx4 = [ "dpdk-rs/mlx4" ]
 mlx5 = [ "dpdk-rs/mlx5" ]
-profiler = [  ]
-tcp-migration = [  ]
-tcp-migration-profiler = [ ]
-capybara-log = [ "tcp-migration-profiler" ]
+profiler = [ ]
+tcp-migration = [ ]
 mig-per-n-req = [ "tcp-migration" ]
+
+capy-profile = [ ]
+capy-log = [ ]
+capy-time-log = [ ]
 
 #=======================================================================================================================
 # Profile

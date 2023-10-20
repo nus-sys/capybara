@@ -12,8 +12,7 @@ use ::futures::{
 };
 use ::std::rc::Rc;
 
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+use crate::capy_log;
 
 pub async fn acknowledger(cb: Rc<ControlBlock>) -> Result<!, Fail> {
     loop {

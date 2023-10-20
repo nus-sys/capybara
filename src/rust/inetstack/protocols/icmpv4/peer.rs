@@ -68,8 +68,8 @@ use ::std::{
 };
 use libc::EAGAIN;
 
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log};
+use crate::capy_log;
+
 //==============================================================================
 // ReqQueue
 //==============================================================================
@@ -153,10 +153,7 @@ impl Icmpv4Peer {
         let requests = ReqQueue::new();
         let rng: Rc<RefCell<SmallRng>> = Rc::new(RefCell::new(SmallRng::from_seed(rng_seed)));
         let future = Self::background(rt.clone(), local_link_addr, local_ipv4_addr, arp.clone(), rx);
-       /*  #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("Scheduling ICMP background"));
-        } */
+       /*  capy_log!("Scheduling ICMP background"); */
         let handle: SchedulerHandle = match scheduler.insert(FutureOperation::Background(future.boxed_local())) {
             Some(handle) => handle,
             None => {

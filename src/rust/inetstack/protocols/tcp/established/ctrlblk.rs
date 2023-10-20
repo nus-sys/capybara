@@ -68,8 +68,7 @@ use ::std::{
     },
 };
 
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::tcp_log;
+use crate::capy_log;
 
 #[cfg(feature = "tcp-migration")]
 use crate::inetstack::protocols::tcp_migration::{
@@ -173,10 +172,7 @@ impl Receiver {
 
         self.receive_next
             .set(self.receive_next.get() + SeqNumber::from(buf_len as u32));
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("Insert payload into recv_queue ==> len(recv_queue): {}", recv_queue.len()));
-        }
+        capy_log!("Insert payload into recv_queue ==> len(recv_queue): {}", recv_queue.len());
     }
 
     #[cfg(not(feature = "mig-per-n-req"))]
@@ -278,10 +274,7 @@ impl ControlBlock {
         cc_constructor: CongestionControlConstructor,
         congestion_control_options: Option<congestion_control::Options>,
     ) -> Self {
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("Creating ControlBlock"));
-        }
+        capy_log!("Creating ControlBlock");
         let sender = Sender::new(sender_seq_no, sender_window_size, sender_window_scale, sender_mss);
         Self {
             local,
@@ -457,10 +450,7 @@ impl ControlBlock {
         #[cfg(feature = "tcp-migration")]
         tcpmig: &TcpMigPeer,
     ) {
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("CTRLBLK RECEIVE seq_num: {}", header.seq_num));
-        }
+        capy_log!("CTRLBLK RECEIVE seq_num: {}", header.seq_num);
         debug!(
             "{:?} Connection Receiving {} bytes + {:?}",
             self.state.get(),
@@ -514,10 +504,7 @@ impl ControlBlock {
         let receive_next: SeqNumber = self.receiver.receive_next.get();
 
         let after_receive_window: SeqNumber = receive_next + SeqNumber::from(self.get_receive_window_size());
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("RX WINDOW SIZE: {}", self.get_receive_window_size()));
-        }
+        capy_log!("RX WINDOW SIZE: {}", self.get_receive_window_size());
         // Check if this segment fits in our receive window.
         // In the optimal case it starts at RCV.NXT, so we check for that first.
         //
@@ -532,10 +519,7 @@ impl ControlBlock {
                     // This is an entirely duplicate (i.e. old) segment.  ACK (if not RST) and drop.
                     //
                     if !header.rst {
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcp_log(format!("Duplicate pkt received. ACK and Drop."));
-                        }
+                        capy_log!("Duplicate pkt received. ACK and Drop.");
                         self.send_ack();
                     }
                     return;
@@ -550,10 +534,7 @@ impl ControlBlock {
                         header.syn = false;
                         duplicate -= 1;
                     }
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("Partially duplicate pkt received. Cut duplicate part."));
-                    }
+                    capy_log!("Partially duplicate pkt received. Cut duplicate part.");
                     data.adjust(duplicate as usize);
                 }
             } else {
@@ -564,11 +545,7 @@ impl ControlBlock {
                     // This segment is completely outside of our window.  ACK (if not RST) and drop.
                     //
                     if !header.rst {
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcp_log(format!("Segment outside window received. ACK and Drop."));
-                            // panic!("");
-                        }
+                        capy_log!("Segment outside window received. ACK and Drop.");
                         self.send_ack();
                     }
                     return;
@@ -592,10 +569,7 @@ impl ControlBlock {
                 header.fin = false;
                 excess -= 1;
             }
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("Segment go over the window by {} bytes. Trim.", excess));
-            }
+            capy_log!("Segment go over the window by {} bytes. Trim.", excess);
             data.trim(excess as usize);
         }
 
@@ -613,10 +587,7 @@ impl ControlBlock {
 
             // Our peer has given up.  Shut the connection down hard.
             info!("Received RST");
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("RST"));
-            }
+            capy_log!("RST");
             match self.state.get() {
                 // Data transfer states.
                 State::Established | State::FinWait1 | State::FinWait2 | State::CloseWait => {
@@ -624,10 +595,7 @@ impl ControlBlock {
                     // ToDo: Flush all segment queues.
 
                     // Enter Closed state.
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("Set this conn CLOSED"));
-                    }
+                    capy_log!("Set this conn CLOSED");
                     self.state.set(State::Closed);
 
                     // ToDo: Delete the ControlBlock.
@@ -637,10 +605,7 @@ impl ControlBlock {
                 // Closing states.
                 State::Closing | State::LastAck | State::TimeWait => {
                     // Enter Closed state.
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("Set this conn CLOSED"));
-                    }
+                    capy_log!("Set this conn CLOSED");
                     self.state.set(State::Closed);
 
                     // ToDo: Delete the ControlBlock.
@@ -668,10 +633,7 @@ impl ControlBlock {
 
         // Check the SYN bit.
         if header.syn {
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("SYN on established conn => Error"));
-            }
+            capy_log!("SYN on established conn => Error");
             // ToDo: RFC 5961 "Blind Reset Attack Using the SYN Bit" prevention would have us always ACK and drop here.
 
             // Receiving a SYN here is an error.
@@ -691,10 +653,7 @@ impl ControlBlock {
         if !header.ack {
             // All segments on established connections should be ACKs.  Drop this segment.
             warn!("Received non-ACK segment on established connection.");
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("non-ACK on established conn => Error"));
-            }
+            capy_log!("non-ACK on established conn => Error");
             return;
         }
 
@@ -739,10 +698,7 @@ impl ControlBlock {
                     // This segment acknowledges everything we've sent so far (i.e. nothing is currently outstanding).
 
                     // Since we no longer have anything outstanding, we can turn off the retransmit timer.
-                    #[cfg(feature = "capybara-log")]
-                    {
-                        tcp_log(format!("ALL sent data ACK'ed => Retransmit OFF"));
-                    }
+                    capy_log!("ALL sent data ACK'ed => Retransmit OFF");
                     self.retransmit_deadline.set(None);
 
                     // Some states require additional processing.
@@ -783,10 +739,7 @@ impl ControlBlock {
                 return;
             }
         } else {
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("Duplicate ACK"));
-            }
+            capy_log!("Duplicate ACK");
             // Duplicate ACK (doesn't acknowledge anything new).  We can mostly ignore this, except for fast-retransmit.
             // ToDo: Implement fast-retransmit.  In which case, we'd increment our dup-ack counter here.
         }
@@ -799,10 +752,7 @@ impl ControlBlock {
         // We can only process in-order data (or FIN).  Check for out-of-order segment.
         if seg_start != receive_next {
             debug!("Received out-of-order segment");
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("Out-of-order // seg_start: {}, receive_next: {}", seg_start, receive_next));
-            }
+            capy_log!("Out-of-order // seg_start: {}, receive_next: {}", seg_start, receive_next);
             // This segment is out-of-order.  If it carries data, and/or a FIN, we should store it for later processing
             // after the "hole" in the sequence number space has been filled.
             if seg_len > 0 {
@@ -850,10 +800,7 @@ impl ControlBlock {
         if header.fin {
             trace!("Received FIN");
             // eprintln!("[RX] FIN");
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("FIN"));
-            }
+            capy_log!("FIN");
             // ToDo: Signal the user "connection closing" and return any pending Receive requests.
 
             // Advance RCV.NXT over the FIN.
@@ -885,10 +832,7 @@ impl ControlBlock {
 
             // Since we consumed the FIN we ACK immediately rather than opportunistically.
             // ToDo: Consider doing this opportunistically.  Note our current tests expect the immediate behavior.
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("Sending ACK for the FIN"));
-            }
+            capy_log!("Sending ACK for the FIN");
             self.send_ack();
             return;
         }
@@ -899,17 +843,11 @@ impl ControlBlock {
             // ToDo: Consider replacing the delayed ACK timer with a simple flag.
             if self.ack_deadline.get().is_none() {
                 // Start the delayed ACK timer to ensure an ACK gets sent soon even if no piggyback opportunity occurs.
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcp_log(format!("ACK scheduled"));
-                }
+                capy_log!("ACK scheduled");
                 self.ack_deadline.set(Some(now + self.ack_delay_timeout));
             } else {
                 // We already owe our peer an ACK (the timer was already running), so cancel the timer and ACK now.
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcp_log(format!("ACK immediate"));
-                }
+                capy_log!("ACK immediate");
                 self.ack_deadline.set(None);
                 self.send_ack();
             }
@@ -973,10 +911,7 @@ impl ControlBlock {
         // ToDo: Remove this if clause once emit() is fixed to not require the remote hardware addr (this should be
         // left to the ARP layer and not exposed to TCP).
         if let Some(remote_link_addr) = self.arp().try_query(self.remote.ip().clone()) {
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("Sending ACK"));
-            }
+            capy_log!("Sending ACK");
             self.emit(header, None, remote_link_addr);
         }
     }
@@ -999,15 +934,14 @@ impl ControlBlock {
 
         // Prepare description of TCP segment to send.
         // ToDo: Change this to call lower levels to fill in their header information, handle routing, ARPing, etc.
-        #[cfg(feature = "capybara-log")]
         {
             let len = if let Some(body) = &body {
                 body.len()
             } else {
                 0
             };
-            tcp_log(format!("[TX] {} => {}: // {} bytes", 
-                                        self.local.ip(), self.remote.ip(), len));
+            capy_log!("[TX] {} => {}: // {} bytes", 
+                                        self.local.ip(), self.remote.ip(), len);
         }
         let segment = TcpSegment {
             ethernet2_hdr: Ethernet2Header::new(remote_link_addr, self.local_link_addr, EtherType2::Ipv4),
@@ -1087,10 +1021,7 @@ impl ControlBlock {
         // number space.  Now we call is_empty() on the receive queue instead.
         if self.receiver.recv_queue.borrow().is_empty() {
             *self.waker.borrow_mut() = Some(ctx.waker().clone());
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("Pending (nothing in recv_queue)"));
-            }
+            capy_log!("Pending (nothing in recv_queue)");
             return Poll::Pending;
         }
 
@@ -1106,10 +1037,9 @@ impl ControlBlock {
         //     &self.stats_update_granularity_counter
         // );
 
-        #[cfg(feature = "capybara-log")]
         {
             let queue_length = self.receiver.recv_queue.borrow().len();
-            tcp_log(format!("Ready, take the segment ==> len(recv_queue): {}", queue_length));
+            capy_log!("Ready, take the segment ==> len(recv_queue): {}", queue_length);
         }
         Poll::Ready(Ok(segment))
     }
@@ -1292,10 +1222,7 @@ impl ControlBlock {
         // Note: unlike updating receive_next (see above comment) we only do this once (i.e. outside the while loop).
         // ToDo: Verify that this is the right place and time to do this.
         if let Some(w) = self.waker.borrow_mut().take() {
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("Wake recv!"));
-            }
+            capy_log!("Wake recv!");
             w.wake()
         }
 

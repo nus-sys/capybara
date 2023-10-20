@@ -62,8 +62,7 @@ use ::std::{
     time::Duration,
 };
 
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log};
+use crate::capy_log;
 //==============================================================================
 // Structures
 //==============================================================================
@@ -108,10 +107,7 @@ impl ArpPeer {
         )));
 
         let future = Self::background(clock.clone(), cache.clone());
-        /* #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("Scheduling ARP background"));
-        } */
+        /* capy_log!("Scheduling ARP background"); */
         let handle: SchedulerHandle = match scheduler.insert(FutureOperation::Background(future.boxed_local())) {
             Some(handle) => handle,
             None => {

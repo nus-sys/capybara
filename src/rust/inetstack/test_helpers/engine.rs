@@ -157,7 +157,7 @@ impl Engine {
     }
 
     pub fn tcp_pop(&mut self, socket_fd: QDesc) -> PopFuture {
-        self.ipv4.tcp.pop(socket_fd)
+        self.ipv4.tcp.pop(socket_fd).unwrap()
     }
 
     pub fn tcp_close(&mut self, socket_fd: QDesc) -> Result<(), Fail> {

@@ -63,6 +63,7 @@ impl LibOS {
     /// Instantiates a new LibOS.
     pub fn new(libos_name: LibOSName) -> Result<Self, Fail> {
         logging::initialize();
+        crate::capylog::init();
 
         // Read in configuration file.
         let config_path: String = match env::var("CONFIG_PATH") {
@@ -289,5 +290,13 @@ impl LibOS {
         match self {
             LibOS::NetworkLibOS(libos) => libos.rt_receive(),
         }
+    }
+}
+
+// For logging-related functions.
+
+impl LibOS {
+    pub fn capylog_dump<W: std::io::Write>(&self, dump: &mut W) {
+        crate::capy_profile_dump!(dump);
     }
 }

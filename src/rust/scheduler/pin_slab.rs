@@ -42,8 +42,7 @@ use ::std::{
     ptr::NonNull,
 };
 
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+use crate::capy_log;
 
 //======================================================================================================================
 // Constants
@@ -195,10 +194,7 @@ impl<T> PinSlab<T> {
             self.len -= 1;
             self.next = key;
         }
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("Removed {} (next: {})", key, self.next));
-        }
+        capy_log!("Removed {} (next: {})", key, self.next);
         Some(true)
     }
 
@@ -226,10 +222,7 @@ impl<T> PinSlab<T> {
             };
             self.len -= 1;
             self.next = key;
-            #[cfg(feature = "capybara-log")]
-            {
-                tcp_log(format!("Removed {} (next: {})", key, self.next));
-            }
+            capy_log!("Removed {} (next: {})", key, self.next);
             Some(value)
         }
     }

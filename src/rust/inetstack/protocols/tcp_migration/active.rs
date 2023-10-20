@@ -9,7 +9,6 @@ use super::{segment::{
     TcpMigHeader,
     TcpMigSegment, TcpMigDefragmenter,
 }, MigrationStage};
-use crate::QDesc;
 use crate::{
     inetstack::protocols::{
             ethernet2::{
@@ -27,13 +26,11 @@ use crate::{
             NetworkRuntime,
         },
     },
+    QDesc,
+    capy_profile, capy_profile_merge_previous,
 };
 
-#[cfg(feature = "tcp-migration-profiler")]
-use crate::{tcpmig_profile, tcpmig_profile_merge_previous};
-
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+use crate::{capy_log, capy_log_mig};
 
 use ::std::{
     net::{
@@ -141,8 +138,7 @@ impl ActiveMigration {
             MigrationStage::None => {
                 match hdr.stage {
                     MigrationStage::PrepareMigration => {
-                        #[cfg(feature = "tcp-migration-profiler")]
-                        tcpmig_profile_merge_previous!("prepare_ack");
+                        capy_profile_merge_previous!("prepare_ack");
 
                         // Decide if migration should be accepted or not and send corresponding segment.
 
@@ -150,10 +146,7 @@ impl ActiveMigration {
                         let mut hdr = next_header(hdr, MigrationStage::PrepareMigrationAck);
                         hdr.flag_load = true;
                         self.last_sent_stage = MigrationStage::PrepareMigrationAck;
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcpmig_log(format!("[TX] PREPARE_MIG_ACK ({}, {})", hdr.origin, hdr.client));
-                        }
+                        capy_log_mig!("[TX] PREPARE_MIG_ACK ({}, {})", hdr.origin, hdr.client);
                         self.send(hdr, empty_buffer());
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected PREPARE_MIGRATION"))
@@ -174,17 +167,11 @@ impl ActiveMigration {
 
                         // Mark migration as prepared so that it can be migrated out at the next decision point.
                         self.is_prepared = true;
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcpmig_log(format!("PREPARE_MIG_ACK => ({}, {}) is PREPARED", hdr.origin, hdr.client));
-                        }
+                        capy_log_mig!("PREPARE_MIG_ACK => ({}, {}) is PREPARED", hdr.origin, hdr.client);
                         return Ok(MigrationRequestStatus::PrepareMigrationAcked(self.qd.expect("no qd on origin side")));
                     },
                     MigrationStage::Rejected => {
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcpmig_log(format!("REJECTED"));
-                        }
+                        capy_log_mig!("REJECTED");
                         return Ok(MigrationRequestStatus::Rejected);
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected PREPARE_MIGRATION_ACK or REJECTED"))
@@ -195,18 +182,13 @@ impl ActiveMigration {
             MigrationStage::PrepareMigrationAck => {
                 match hdr.stage {
                     MigrationStage::ConnectionState => {
-                        #[cfg(feature = "tcp-migration-profiler")]
-                        {
-                            tcpmig_profile!("migrate_ack");
-                        }
+                        capy_profile!("migrate_ack");
+
                         // Handle fragmentation.
                         let (hdr, buf) = match self.defragmenter.defragment(hdr, buf) {
                             Some((hdr, buf)) => (hdr, buf),
                             None => {
-                                #[cfg(feature = "capybara-log")]
-                                {
-                                    tcpmig_log(format!("Receiving CONN_STATE fragments..."));
-                                }
+                                capy_log_mig!("Receiving CONN_STATE fragments...");
                                 return Ok(MigrationRequestStatus::Ok)
                             },
                         };
@@ -224,10 +206,7 @@ impl ActiveMigration {
                         // ACK CONNECTION_STATE.
                         let hdr = next_header(hdr, MigrationStage::ConnectionStateAck);
                         self.last_sent_stage = MigrationStage::ConnectionStateAck;
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcpmig_log(format!("[TX] CONN_STATE_ACK ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port));
-                        }
+                        capy_log_mig!("[TX] CONN_STATE_ACK ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port);
                         self.send(hdr, empty_buffer());
                         
                         return Ok(MigrationRequestStatus::StateReceived(state));
@@ -241,10 +220,7 @@ impl ActiveMigration {
                 match hdr.stage {
                     MigrationStage::ConnectionStateAck => {
                         // eprintln!("*** Migration completed ***");
-                        #[cfg(feature = "capybara-log")]
-                        {
-                            tcpmig_log(format!("CONN_STATE_ACK for ({}, {})", self.origin, self.client));
-                        }
+                        capy_log_mig!("CONN_STATE_ACK for ({}, {})", self.origin, self.client);
                         // TODO: Start closing the active migration.
                         return Ok(MigrationRequestStatus::MigrationCompleted);
                     },
@@ -255,10 +231,7 @@ impl ActiveMigration {
             // Expect FIN and close active migration.
             MigrationStage::ConnectionStateAck => {
                 // TODO: Close active migration.
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcpmig_log(format!("Received someting after sending CONN_STATE_ACK"));
-                }
+                capy_log_mig!("Received someting after sending CONN_STATE_ACK");
             },
 
             MigrationStage::Rejected => unreachable!("Target should not receive a packet after rejecting origin."),
@@ -275,22 +248,17 @@ impl ActiveMigration {
                                                         self.self_udp_port, 
                                                         if self.self_udp_port == 10001 { 10000 } else { 10001 });
         self.last_sent_stage = MigrationStage::PrepareMigration;
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("\n\n******* START MIGRATION *******\n[TX] PREPARE_MIG ({}, {})", self.origin, self.client));
-        }
+        capy_log_mig!("\n\n******* START MIGRATION *******\n[TX] PREPARE_MIG ({}, {})", self.origin, self.client);
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::empty()));
     }
 
     pub fn send_connection_state(&mut self, state: TcpState) {
         assert_eq!(self.last_sent_stage, MigrationStage::PrepareMigration);
 
-        #[cfg(feature = "capybara-log")]
-        {
-            tcpmig_log(format!("[TX] CONNECTION_STATE: ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port));
-            // print the length of recv_queue here
-            tcpmig_log(format!("Length of recv_queue: {}", state.recv_queue.len()));
-        }
+        capy_log_mig!("[TX] CONNECTION_STATE: ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port);
+        // print the length of recv_queue here
+        capy_log_mig!("Length of recv_queue: {}", state.recv_queue.len());
+        
         let buf = match state.serialize() {
             Ok(buf) => buf,
             Err(e) => panic!("TCPState serialisation failed: {}", e),

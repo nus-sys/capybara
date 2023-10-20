@@ -26,8 +26,7 @@ use ::std::{
     },
 };
 
-#[cfg(feature = "capybara-log")]
-use crate::tcpmig_profiler::{tcp_log, tcpmig_log};
+use crate::capy_log;
 
 pub enum TcpOperation {
     Accept(FutureResult<AcceptFuture>),
@@ -196,10 +195,7 @@ impl Future for PushFuture {
     type Output = Result<(), Fail>;
 
     fn poll(self: Pin<&mut Self>, _context: &mut Context) -> Poll<Self::Output> {
-        #[cfg(feature = "capybara-log")]
-        {
-            tcp_log(format!("\n\npolling PUSH"));
-        }
+        capy_log!("\n\npolling PUSH");
         match self.get_mut().err.take() {
             None => Poll::Ready(Ok(())),
             Some(e) => Poll::Ready(Err(e)),
