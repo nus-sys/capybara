@@ -50,7 +50,19 @@ macro_rules! capy_log_mig {
 // Time Log
 //==============================================================================
 
+#[macro_export]
+macro_rules! capy_time_log {
+    ($($arg:tt)*) => {
+        $crate::invoke_if_feature!("capy-time-log", $crate::capylog::time_log::__capy_time_log, $($arg)*)
+    };
+}
 
+#[macro_export]
+macro_rules! capy_time_log_dump {
+    ($dump:expr) => {
+        $crate::invoke_if_feature!("capy-time-log", crate::capylog::time_log::__capy_time_log_dump, $dump)
+    };
+}
 
 //==============================================================================
 // General
@@ -74,4 +86,6 @@ pub(crate) fn init() {
     profile::init();
     #[cfg(feature = "capy-log")]
     log::init();
+    #[cfg(feature = "capy-time-log")]
+    time_log::init();
 }

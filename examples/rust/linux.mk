@@ -42,7 +42,7 @@ all-examples:
 #	@echo "$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,capy-profile,capy-log
+	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,capy-profile,capy-log,capy-time-log
 #,mig-per-n-req
 
 clean:

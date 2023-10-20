@@ -106,6 +106,16 @@ impl __MergeDroppedObject {
 //==============================================================================
 
 #[allow(unused)]
+pub(crate) fn __write_profiler_data<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
+    eprintln!("\n[CAPYLOG] dumping profiler data");
+    let data: &Vec<(&str, Duration)> = data();
+    for (name, datum) in data {
+        write!(w, "{}: {} ns\n", name, datum.as_nanos())?;
+    }
+    Ok(())
+}
+
+#[allow(unused)]
 #[inline]
 fn data() -> &'static mut Vec<(&'static str, Duration)> {
     unsafe { DATA.as_mut().expect("capy-log profiler not initialised") }
@@ -119,14 +129,4 @@ pub(super) fn init() {
     unsafe { DATA = Some(Vec::with_capacity(32)); }
 
     eprintln!("[CAPYLOG] capy_profile is on");
-}
-
-#[allow(unused)]
-pub(crate) fn __write_profiler_data<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
-    eprintln!("\n[CAPYLOG] dumping profiler data");
-    let data: &Vec<(&str, Duration)> = data();
-    for (name, datum) in data {
-        write!(w, "{}: {} ns\n", name, datum.as_nanos())?;
-    }
-    Ok(())
 }

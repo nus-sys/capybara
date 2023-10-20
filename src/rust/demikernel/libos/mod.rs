@@ -296,7 +296,8 @@ impl LibOS {
 // For logging-related functions.
 
 impl LibOS {
-    pub fn capylog_dump<W: std::io::Write>(&self, dump: &mut W) {
+    pub fn capylog_dump<W: std::io::Write>(dump: &mut W) {
         crate::capy_profile_dump!(dump);
+        crate::capy_time_log_dump!(dump);
     }
 }
