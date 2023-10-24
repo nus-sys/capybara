@@ -58,13 +58,15 @@ impl TcpMigDefragmenter {
             hdr.flag_next_fragment = false;
             hdr.fragment_offset = 0;
 
-            let mut buf: Vec<u8> = Vec::with_capacity(self.data_len);
+            let mut buf = Buffer::Heap(DataBuffer::new(self.data_len).unwrap());
+            let mut buf_index = 0;
             while let Some(Reverse(fragment)) = self.fragments.pop() {
-                buf.extend_from_slice(&fragment.1);
+                buf[buf_index..buf_index + fragment.1.len()].copy_from_slice(&fragment.1);
+                buf_index += fragment.1.len();
             }
             
             self.reset();
-            Some((hdr, Buffer::Heap(DataBuffer::from_slice(&buf))))
+            Some((hdr, buf))
         }
     }
 

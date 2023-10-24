@@ -31,16 +31,16 @@ pub use defragmenter::TcpMigDefragmenter;
 // Structures
 //==============================================================================
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TcpMigSegment {
     /// Ethernet header.
     ethernet2_hdr: Ethernet2Header,
     /// IPv4 header.
     ipv4_hdr: Ipv4Header,
     /// TCPMig header.
-    tcpmig_hdr: TcpMigHeader,
+    pub tcpmig_hdr: TcpMigHeader,
     /// Payload
-    data: Buffer,
+    pub data: Buffer,
 }
 
 /// A generator of fragments of a [TcpMigSegment].
@@ -71,6 +71,7 @@ impl TcpMigSegment {
     }
 
     pub fn fragments(self, max_fragment_size: usize) -> TcpMigFragmenter {
+        assert_ne!(max_fragment_size, 0, "max_fragment_size is zero");
         TcpMigFragmenter {
             segment: self,
             max_fragment_size,

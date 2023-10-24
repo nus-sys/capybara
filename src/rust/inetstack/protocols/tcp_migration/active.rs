@@ -32,6 +32,7 @@ use crate::{
 
 use crate::{capy_log, capy_log_mig};
 
+use std::sync::Arc;
 use ::std::{
     net::{
         Ipv4Addr,
@@ -259,17 +260,15 @@ impl ActiveMigration {
         // print the length of recv_queue here
         capy_log_mig!("Length of recv_queue: {}", state.recv_queue.len());
         
-        let buf = match state.serialize() {
-            Ok(buf) => buf,
-            Err(e) => panic!("TCPState serialisation failed: {}", e),
-        };
+        let buf = state.serialize();
+        let buf_len = buf.len();
         let tcpmig_hdr = TcpMigHeader::new(self.origin, self.client, 
                                                         0, 
                                                         MigrationStage::ConnectionState, 
                                                         self.self_udp_port, 
                                                         self.dest_udp_port); // PORT should be the sender of PREPARE_MIGRATION_ACK
         self.last_sent_stage = MigrationStage::ConnectionState;
-        let data_buffer = DataBuffer::from_slice(&buf); 
+        let data_buffer = DataBuffer::from_raw_parts(Arc::into_raw(buf) as *mut u8, buf_len).unwrap(); 
         self.send(tcpmig_hdr, Buffer::Heap(data_buffer));
     }
 

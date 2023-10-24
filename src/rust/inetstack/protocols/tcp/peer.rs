@@ -79,6 +79,7 @@ use ::rand::{
     Rng,
     SeedableRng,
 };
+use std::sync::Arc;
 use ::std::{
     cell::{
         RefCell,
@@ -166,30 +167,34 @@ pub struct TcpPeer {
 /// State needed for TCP Migration.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TcpState {
-    pub local: SocketAddrV4,
-    pub remote: SocketAddrV4,
+    // Serialisation structure as comment for each field.
 
-    pub reader_next: SeqNumber,
-    pub receive_next: SeqNumber,
+    pub local: SocketAddrV4, // 0-6 (lower byte limit inclusive, upper limit exclusive)
+    pub remote: SocketAddrV4, // 6-12
 
+    pub reader_next: SeqNumber, // 12-16
+    pub receive_next: SeqNumber, // 16-20
+
+    pub unsent_seq_no: SeqNumber, // 20-24
+    pub send_unacked: SeqNumber, // 24-28
+    pub send_next: SeqNumber, // 28-32
+    pub send_window: u32, // 32-26
+    pub send_window_last_update_seq: SeqNumber, // 36-40
+    pub send_window_last_update_ack: SeqNumber, // 40-44
+    pub mss: usize, // 44-48 (Assumption: < 4GB)
+
+    pub receiver_window_size: u32, // 48-52
+    pub receiver_window_scale: u32, // 52-56
+
+    pub window_scale: u8, // 56
+    out_of_order_fin: Option<SeqNumber>, // 57: Discriminant, 58-62: SeqNumber
+
+    // For queues, 4 bytes of size (Assumption: < 4B elements), then elements.
+    // For Buffer, 4 bytes of size (Assumption: < 4GB), then buffer contents.
+    out_of_order_queue: VecDeque<(SeqNumber, Buffer)>,
     pub recv_queue: VecDeque<Buffer>,
-
-    pub unsent_seq_no: SeqNumber,
-    pub send_unacked: SeqNumber,
-    pub send_next: SeqNumber,
-    pub send_window: u32,
-    pub send_window_last_update_seq: SeqNumber,
-    pub send_window_last_update_ack: SeqNumber,
-    pub window_scale: u8,
-    pub mss: usize,
     pub unacked_queue: VecDeque<UnackedSegment>,
     pub unsent_queue: VecDeque<Buffer>,
-
-    pub receiver_window_size: u32,
-    pub receiver_window_scale: u32,
-
-    out_of_order_queue: VecDeque<(SeqNumber, Buffer)>,
-    out_of_order_fin: Option<SeqNumber>,
 }
 
 //==============================================================================
@@ -878,6 +883,10 @@ impl TcpPeer {
     }
 }
 
+//==============================================================================
+// TCP Migration
+//==============================================================================
+
 #[cfg(feature = "tcp-migration")]
 impl Inner {
     fn take_tcp_state(&mut self, fd: QDesc) -> Result<TcpState, Fail> {
@@ -1099,6 +1108,8 @@ impl Inner {
 
 #[cfg(feature = "tcp-migration")]
 impl TcpState {
+    const SERIALISED_SIZED_SECTION_SIZE: usize = 62;
+
     pub fn new(
         local: SocketAddrV4,
         remote: SocketAddrV4,
@@ -1151,12 +1162,183 @@ impl TcpState {
         }
     }
 
-    pub fn serialize(&self) -> Result<Vec<u8>, postcard::Error> {
-        postcard::to_allocvec(self)
+    pub fn serialize(&self) -> Arc<[u8]> {
+        let size = postcard::serialize_with_flavor(self, postcard::ser_flavors::Size::default())
+            .expect("serialised size calculation failed");
+
+        let mut arc = unsafe { Arc::<[u8]>::new_zeroed_slice(size).assume_init() };
+        let buf = Arc::get_mut(&mut arc).unwrap_or_else(|| unreachable!());
+        postcard::to_slice(self, buf).expect("TcpState serialisation failed");
+        arc
     }
 
     pub fn deserialize(serialized: &[u8]) -> Result<Self, postcard::Error> {
         // TODO: Check if having all `UnackedSegment` timestamps as `None` affects anything.
         postcard::from_bytes(serialized)
     }
+
+    pub fn deserialize2(serialized: &[u8]) -> Result<Self, postcard::Error> {
+        todo!()
+    }
 }
+
+#[cfg(test)]
+mod test {
+    use std::{net::{SocketAddrV4, Ipv4Addr}, collections::VecDeque, sync::Arc};
+
+    use crate::{
+        runtime::memory::{Buffer, DataBuffer},
+        inetstack::protocols::{
+            tcp::established::UnackedSegment,
+            tcp_migration::segment::{TcpMigSegment, TcpMigHeader, TcpMigDefragmenter},
+            ethernet2::Ethernet2Header, ipv4::Ipv4Header
+        },
+        capy_profile, capy_profile_dump, MacAddress
+    };
+
+    use super::TcpState;
+
+    fn get_socket_addr() -> SocketAddrV4 {
+        SocketAddrV4::new(Ipv4Addr::LOCALHOST, 10000)
+    }
+
+    fn get_buf() -> Buffer {
+        Buffer::Heap(DataBuffer::from_slice(&vec![1; 64]))
+    }
+
+    fn get_state() -> TcpState {
+        TcpState::new(
+            get_socket_addr(),            
+            get_socket_addr(),
+            10.into(),
+            10.into(),
+            VecDeque::from(vec![get_buf(); 100]),
+            10.into(),
+            10.into(),
+            10.into(),
+            10,
+            10.into(),
+            10.into(),
+            10,
+            10,
+            VecDeque::from(vec![UnackedSegment { bytes: get_buf(), initial_tx: None }; 100]),
+            VecDeque::from(vec![get_buf(); 100]),
+            10,
+            10,
+            VecDeque::from(vec![(7.into(), get_buf()); 10]),
+            None,
+        )
+    }
+
+    fn get_header() -> TcpMigHeader {
+        TcpMigHeader::new(
+            get_socket_addr(),
+            get_socket_addr(),
+            100,
+            crate::inetstack::protocols::tcp_migration::MigrationStage::ConnectionState,
+            10000,
+            10000,
+        )
+    }
+
+    #[inline(always)]
+    fn create_segment2(payload: Arc<[u8]>) -> TcpMigSegment {
+        let len = payload.len();
+        TcpMigSegment::new(
+            Ethernet2Header::new(MacAddress::broadcast(), MacAddress::broadcast(), crate::inetstack::protocols::ethernet2::EtherType2::Ipv4),
+            Ipv4Header::new(Ipv4Addr::LOCALHOST, Ipv4Addr::LOCALHOST, crate::inetstack::protocols::ip::IpProtocol::UDP),
+            get_header(),
+            Buffer::Heap(DataBuffer::from_raw_parts(Arc::into_raw(payload) as *mut u8, len).unwrap()),
+        )
+    }
+
+    #[test]
+    fn measure_state_time() {
+        std::env::set_var("CAPY_LOG", "all");
+        crate::capylog::init();
+        eprintln!();
+        let state = get_state();
+
+        let state = {
+            capy_profile!("serialise");
+            state.serialize()
+        };
+        let segment = {
+            capy_profile!("segment creation");
+            create_segment2(state)
+        };
+
+        let seg_clone = segment.clone();
+        let count = seg_clone.fragments(1500).count();
+
+        let mut fragments = Vec::with_capacity(count);
+        {
+            capy_profile!("total fragment");
+            for e in segment.fragments(1500) {
+                fragments.push((e.tcpmig_hdr, e.data));
+            }
+        }
+        
+        let mut defragmenter = TcpMigDefragmenter::new();
+
+        let mut i = 0;
+        let mut segment = None;
+        {
+            capy_profile!("total defragment");
+            for (hdr, buf) in fragments {
+                i += 1;
+                if let Some(seg) = {
+                    capy_profile!("defragment");
+                    defragmenter.defragment(hdr, buf)
+                } {
+                    segment = Some(seg);
+                }
+            }
+        };
+        assert_eq!(count, i);
+        
+        let (hdr, buf) = segment.unwrap();
+        let state = {
+            capy_profile!("deserialise");
+            TcpState::deserialize(&buf).unwrap()
+        };
+        assert_eq!(state, get_state());
+
+        capy_profile_dump!(&mut std::io::stderr().lock());
+        eprintln!();
+    }
+}
+
+/*
+ * TODO:
+ * - Manually write serialisation to allocate an Arc.
+ * - Fragmentation copies: Use single Arc buf in fragmenter.
+ * - Preallocate Arc buf for defragmentation using length field.
+ * - Use hashmap crate for faster lookups.
+ */
+
+/*
+OLD:
+
+serialise: 26392 ns
+empty segment creation: 177 ns
+segment creation: 8916 ns
+total fragment: 6811 ns
+defragment: 317 ns
+defragment: 52 ns
+defragment: 38 ns
+defragment: 38 ns
+defragment: 215 ns
+defragment: 38 ns
+defragment: 42 ns
+defragment: 38 ns
+defragment: 77 ns
+defragment: 38 ns
+defragment: 38 ns
+defragment: 39 ns
+defragment: 38 ns
+defragment: 38 ns
+defragment: 6557 ns
+total defragment: 11900 ns
+deserialise: 62189 ns
+*/

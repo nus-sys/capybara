@@ -425,6 +425,9 @@ all-libs-mig:
 	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,capy-profile
 #,capy-log
 
+state-time-test:
+	$(CARGO) test measure_state_time $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,capy-profile,capy-log,capy-time-log -- --nocapture
+
 all-libs-mig-per-n:
 	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=mig-per-n-req"
 	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=mig-per-n-req
