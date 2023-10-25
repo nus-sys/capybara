@@ -167,34 +167,32 @@ pub struct TcpPeer {
 /// State needed for TCP Migration.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TcpState {
-    // Serialisation structure as comment for each field.
+    pub local: SocketAddrV4,
+    pub remote: SocketAddrV4,
 
-    pub local: SocketAddrV4, // 0-6 (lower byte limit inclusive, upper limit exclusive)
-    pub remote: SocketAddrV4, // 6-12
+    pub reader_next: SeqNumber,
+    pub receive_next: SeqNumber,
 
-    pub reader_next: SeqNumber, // 12-16
-    pub receive_next: SeqNumber, // 16-20
+    pub unsent_seq_no: SeqNumber,
+    pub send_unacked: SeqNumber,
+    pub send_next: SeqNumber,
+    pub send_window: u32,
+    pub send_window_last_update_seq: SeqNumber,
+    pub send_window_last_update_ack: SeqNumber,
+    pub mss: usize,
 
-    pub unsent_seq_no: SeqNumber, // 20-24
-    pub send_unacked: SeqNumber, // 24-28
-    pub send_next: SeqNumber, // 28-32
-    pub send_window: u32, // 32-26
-    pub send_window_last_update_seq: SeqNumber, // 36-40
-    pub send_window_last_update_ack: SeqNumber, // 40-44
-    pub mss: usize, // 44-48 (Assumption: < 4GB)
+    pub receiver_window_size: u32,
+    pub receiver_window_scale: u32,
 
-    pub receiver_window_size: u32, // 48-52
-    pub receiver_window_scale: u32, // 52-56
+    pub window_scale: u8,
+    out_of_order_fin: Option<SeqNumber>,
 
-    pub window_scale: u8, // 56
-    out_of_order_fin: Option<SeqNumber>, // 57: Discriminant, 58-62: SeqNumber
-
-    // For queues, 4 bytes of size (Assumption: < 4B elements), then elements.
-    // For Buffer, 4 bytes of size (Assumption: < 4GB), then buffer contents.
     out_of_order_queue: VecDeque<(SeqNumber, Buffer)>,
     pub recv_queue: VecDeque<Buffer>,
     pub unacked_queue: VecDeque<UnackedSegment>,
     pub unsent_queue: VecDeque<Buffer>,
+
+    user_data: Option<Buffer>,
 }
 
 //==============================================================================
@@ -384,6 +382,7 @@ impl TcpPeer {
             Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
         };
         let remote = cb.get_remote();
+        
         #[cfg(feature = "tcp-migration")]
         if inner.tcpmig.take_connection(local, remote) {
             capy_profile!("migrated_accept");
@@ -391,10 +390,9 @@ impl TcpPeer {
             let recv_queue_len = cb.receiver.recv_queue_len();
             match inner.migrate_in_tcp_connection(new_qd, cb) {
                 Ok(()) => {
-                    // eprintln!("*** Accepted migrated connection ***");
                     #[cfg(not(feature = "mig-per-n-req"))]
                     inner.tcpmig.start_tracking_connection_stats(local, remote, recv_queue_len);
-                    
+
                     capy_log_mig!("MIG-CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
                     
                     return Poll::Ready(Ok(new_qd));
@@ -422,9 +420,11 @@ impl TcpPeer {
         if inner.established.insert(key, established).is_some() {
             panic!("duplicate queue descriptor in established sockets table");
         }
+
         #[cfg(feature = "tcp-migration")]
         #[cfg(not(feature = "mig-per-n-req"))]
         inner.tcpmig.start_tracking_connection_stats(local, remote, 0);
+        
         Poll::Ready(Ok(new_qd))
     }
 
@@ -811,7 +811,7 @@ impl Inner {
 
 #[cfg(feature = "tcp-migration")]
 impl TcpPeer {
-    pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
+    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>) -> Result<bool, Fail> {
         let mut inner = self.inner.borrow_mut();
         let conn = match inner.sockets.get(&qd) {
             None => {
@@ -830,7 +830,11 @@ impl TcpPeer {
             capy_log_mig!("\n\nMigrate Out ({}, {})", conn.0, conn.1);
             {
                 capy_profile!("migrate");
-                let state = inner.migrate_out_tcp_connection(qd)?;
+                let mut state = inner.migrate_out_tcp_connection(qd)?;
+                if let Some(data) = data {
+                    state.set_user_data(data);
+                }
+
                 inner.tcpmig.migrate_out(handle, state);
                 return Ok(true)
             }
@@ -838,6 +842,24 @@ impl TcpPeer {
 
         Ok(false)
     }
+
+    pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<Buffer>, Fail> {
+        let mut inner = self.inner.borrow_mut();
+        let conn = match inner.sockets.get(&qd) {
+            None => {
+                debug!("No entry in `sockets` for fd: {:?}", qd);
+                return Err(Fail::new(EBADF, "socket does not exist"));
+            },
+            Some(Socket::Established { local, remote }) => {
+                (*local, *remote)
+            },
+            Some(..) => {
+                return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
+            },
+        };
+
+        Ok(inner.tcpmig.take_incoming_user_data(&conn))
+    }   
     
     #[cfg(feature = "mig-per-n-req")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
@@ -1108,8 +1130,6 @@ impl Inner {
 
 #[cfg(feature = "tcp-migration")]
 impl TcpState {
-    const SERIALISED_SIZED_SECTION_SIZE: usize = 62;
-
     pub fn new(
         local: SocketAddrV4,
         remote: SocketAddrV4,
@@ -1159,7 +1179,17 @@ impl TcpState {
 
             out_of_order_queue,
             out_of_order_fin,
+
+            user_data: None,
         }
+    }
+
+    fn set_user_data(&mut self, data: &[u8]) {
+        self.user_data = Some(Buffer::Heap(data.into()));
+    }
+
+    pub fn take_user_data(&mut self) -> Option<Buffer> {
+        std::mem::take(&mut self.user_data)
     }
 
     pub fn serialize(&self) -> Arc<[u8]> {
@@ -1242,7 +1272,7 @@ mod test {
     }
 
     #[inline(always)]
-    fn create_segment2(payload: Arc<[u8]>) -> TcpMigSegment {
+    fn create_segment(payload: Arc<[u8]>) -> TcpMigSegment {
         let len = payload.len();
         TcpMigSegment::new(
             Ethernet2Header::new(MacAddress::broadcast(), MacAddress::broadcast(), crate::inetstack::protocols::ethernet2::EtherType2::Ipv4),
@@ -1265,7 +1295,7 @@ mod test {
         };
         let segment = {
             capy_profile!("segment creation");
-            create_segment2(state)
+            create_segment(state)
         };
 
         let seg_clone = segment.clone();

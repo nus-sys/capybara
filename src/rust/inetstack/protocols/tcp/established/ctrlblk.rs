@@ -326,7 +326,7 @@ impl ControlBlock {
     ) -> Result<(), Fail> {
         #[cfg(feature = "tcp-migration")]
         #[cfg(not(feature = "mig-per-n-req"))]
-        if let Some(mut tcpmig) = tcpmig {
+        if let Some(tcpmig) = tcpmig {
             tcpmig.stats_recv_queue_pop(
                 (self.local, self.remote),
                 self.receiver.stats_recv_queue_len.borrow().get(),

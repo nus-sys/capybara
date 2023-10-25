@@ -131,10 +131,12 @@ extern "C"
      *
      * @param was_migration_done Store location for whether migration was initiated (1 if yes, 0 if no).
      * @param qd                 Target I/O queue descriptor.
+     * @param data               Data to send with migration. If no data, pass `NULL`.
+     * @param data_len           Length of `data` in bytes.
      *
      * @return On successful completion, zero is returned. On failure, a positive error code is returned instead.
      */
-    extern int demi_notify_migration_safety(int *was_migration_done, int qd);
+    extern int demi_notify_migration_safety(int *was_migration_done, int qd, const void *data, size_t data_len);
 
     /**
      * @brief Initiates migration of the TCP connection represented by `qd`.

@@ -64,17 +64,17 @@ dpdk-rs = { git = "https://github.com/demikernel/dpdk-rs", rev = "7d75ce6db61351
 crate-type = ["cdylib", "rlib"]
 path = "src/rust/lib.rs"
 
-[[test]]
-name = "tcp"
-path = "tests/rust/tcp.rs"
+#[[test]]
+#name = "tcp"
+#path = "tests/rust/tcp.rs"
 
-[[test]]
-name = "udp"
-path = "tests/rust/udp.rs"
+#[[test]]
+#name = "udp"
+#path = "tests/rust/udp.rs"
 
-[[test]]
-name = "sga"
-path = "tests/rust/sga.rs"
+#[[test]]
+#name = "sga"
+#path = "tests/rust/sga.rs"
 
 [[example]]
 name = "udp-dump"

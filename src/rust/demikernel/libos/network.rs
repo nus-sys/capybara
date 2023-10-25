@@ -373,7 +373,7 @@ impl NetworkLibOS {
 
 #[cfg(feature = "tcp-migration")]
 impl NetworkLibOS {
-    pub fn notify_migration_safety(&mut self, _qd: QDesc) -> Result<bool, Fail> {
+    pub fn notify_migration_safety(&mut self, _qd: QDesc, _data: Option<&[u8]>) -> Result<bool, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
@@ -382,9 +382,23 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.notify_migration_safety(_qd),
+            NetworkLibOS::Catnip(libos) => libos.notify_migration_safety(_qd, _data),
         }
     }
+
+    pub fn take_migrated_data(&mut self, _qd: QDesc) -> Result<Option<crate::runtime::memory::Buffer>, Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.take_migrated_data(_qd),
+        }
+    }
+
     #[cfg(feature = "mig-per-n-req")]
     pub fn initiate_migration(&mut self, _qd: QDesc) -> Result<(), Fail> {
         match self {
@@ -398,6 +412,7 @@ impl NetworkLibOS {
             NetworkLibOS::Catnip(libos) => libos.initiate_migration(_qd),
         }
     }
+
     pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]

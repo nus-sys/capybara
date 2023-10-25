@@ -722,26 +722,35 @@ impl InetStack {
 
 #[cfg(feature = "tcp-migration")]
 impl InetStack {
-    pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
-        let result = self.ipv4.tcp.notify_migration_safety(qd);
+    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>) -> Result<bool, Fail> {
+        let result = self.ipv4.tcp.notify_migration_safety(qd, data);
         if let Ok(true) = result {
             self.file_table.free(qd);
         }
         result
     }
+
+    pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<Buffer>, Fail> {
+        self.ipv4.tcp.take_migrated_data(qd)
+    }
+
     #[cfg(feature = "mig-per-n-req")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         self.ipv4.tcp.initiate_migration(qd)
     }
+
     pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
         self.ipv4.tcp.get_migration_prepared_qds()
     }
+
     pub fn global_recv_queue_length(&mut self) -> usize {
         self.ipv4.tcp.global_recv_queue_length()
     }
+
     pub fn print_queue_length(&mut self) {
         self.ipv4.tcp.print_queue_length()
     }
+
     pub fn pushed_response(&mut self) {
         self.ipv4.tcp.pushed_response()
     }

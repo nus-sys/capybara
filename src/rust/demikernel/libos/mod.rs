@@ -254,32 +254,44 @@ impl LibOS {
 #[cfg(feature = "tcp-migration")]
 impl LibOS {
     /// Returns true if migration was done.
-    pub fn notify_migration_safety(&mut self, qd: QDesc) -> Result<bool, Fail> {
+    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>) -> Result<bool, Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.notify_migration_safety(qd),
+            LibOS::NetworkLibOS(libos) => libos.notify_migration_safety(qd, data),
         }
     }
+
+    /// Returns the data received if `qd` is a migrated connection and data was sent with it.
+    pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<crate::runtime::memory::Buffer>, Fail> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.take_migrated_data(qd),
+        }
+    }
+
     #[cfg(feature = "mig-per-n-req")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.initiate_migration(qd),
         }
     }
+
     pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.get_migration_prepared_qds(),
         }
     }
+
     pub fn global_recv_queue_length(&mut self) -> usize {
         match self {
             LibOS::NetworkLibOS(libos) => libos.global_recv_queue_length(),
         }
     }
+
     pub fn print_queue_length(&mut self) {
         match self {
             LibOS::NetworkLibOS(libos) => libos.print_queue_length(),
         }
     }
+
     pub fn pushed_response(&mut self) {
         match self {
             LibOS::NetworkLibOS(libos) => libos.pushed_response(),

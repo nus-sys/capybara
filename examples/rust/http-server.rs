@@ -298,22 +298,37 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 match result {
                     OperationResult::Accept(new_qd) => {
                         server_log!("ACCEPT complete ==> request POP and ACCEPT");
+
+                        let buffer = {
+                            let mut buffer = Buffer::new();
+
+                            #[cfg(feature = "tcp-migration")]
+                            if let Some(data) = libos.take_migrated_data(new_qd).expect("take_migrated_data failed") {
+                                server_log!("Received migrated data ({} bytes)", data.len());
+
+                                buffer.get_empty_buf()[..data.len()].copy_from_slice(&data);
+                                buffer.push_data(data.len());
+                            }
+
+                            buffer
+                        };
+
+                        connstate.insert(new_qd, ConnectionState {
+                            pushing: 0,
+                            buffer,
+                        });
+
                         // Pop from new_qd
                         match libos.pop(new_qd) {
-                            Ok(pop_qt) => {
-                        qts.push(pop_qt);
-                            },
+                            Ok(pop_qt) => qts.push(pop_qt),
                             Err(e) if e.errno == demikernel::ETCPMIG => (),
                             Err(e) => panic!("pop qt: {}", e),
                         }
-                        connstate.insert(new_qd, ConnectionState {
-                            pushing: 0,
-                            buffer: Buffer::new(),
-                        });
     
                         // Re-arm accept
                         qts.push(libos.accept(qd).expect("accept qtoken"));
                     },
+
                     OperationResult::Push => {
                         connstate.get_mut(&qd).unwrap().pushing -= 1;
                         
@@ -328,6 +343,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             qds_to_migrate.insert(qd);
                         }
                     },
+
                     OperationResult::Pop(_, recvbuf) => {
                         pop_count -= 1;
                         server_log!("POP complete ==> request PUSH and POP");
@@ -365,6 +381,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             }
                         }
                     },
+
                     _ => {
                         panic!("Unexpected op: RESULT: {:?}", result);
                     },
@@ -388,15 +405,23 @@ fn server(local: SocketAddrV4) -> Result<()> {
             }
             #[cfg(not(feature = "mig-per-n-req"))] {
                 let mut qds_to_remove = Vec::new();
-                for (qd, state) in connstate.iter() {
+                for (&qd, state) in connstate.iter() {
                     // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
                     if state.pushing > 0 || state.buffer.data_size() > 0 {
                         continue;
                     }
-                    match libos.notify_migration_safety(*qd) {
-                        Ok(true) => {
-                            qds_to_remove.push(*qd);
-                        },
+
+                    let data = {
+                        let data = state.buffer.get_data();
+                        if data.is_empty() {
+                            None
+                        } else {
+                            Some(data)
+                        }
+                    };
+
+                    match libos.notify_migration_safety(qd, data) {
+                        Ok(true) => qds_to_remove.push(qd),
                         Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
                         _ => (),
                     };
