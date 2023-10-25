@@ -407,7 +407,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 let mut qds_to_remove = Vec::new();
                 for (&qd, state) in connstate.iter() {
                     // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
-                    if state.pushing > 0 || state.buffer.data_size() > 0 {
+                    if state.pushing > 0 {
                         continue;
                     }
 
