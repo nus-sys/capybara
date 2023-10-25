@@ -95,6 +95,8 @@ struct Inner {
     /// key = (local, client).
     incoming_connections: HashSet<(SocketAddrV4, SocketAddrV4)>,
 
+    incoming_user_data: HashMap<(SocketAddrV4, SocketAddrV4), Buffer>,
+
     stats: TcpMigStats,
 
     /// Marks which QD is ready to migrate out.
@@ -253,15 +255,23 @@ impl TcpMigPeer {
                     inner.migrations_prepared_qds.insert(qd);
                 } */
             },
-            MigrationRequestStatus::StateReceived(state) => {
+            MigrationRequestStatus::StateReceived(mut state) => {
                 capy_profile_merge_previous!("migrate_ack");
 
-                let (local, client) = (state.local, state.remote);
-                // println!("migrating in connection local: {}, client: {}", local, client);
+                let conn = (state.local, state.remote);
+                // capy_log_mig!("migrating in connection local: {}, client: {}", local, client);
+
+                let user_data = state.take_user_data();
                 
                 tcp_peer.notify_passive(state)?;
-                inner.incoming_connections.insert((local, client));
-                capy_log_mig!("======= MIGRATING IN STATE ({}, {}) =======", local, client);
+
+                // Push user data into queue.
+                if let Some(data) = user_data {
+                    assert!(inner.incoming_user_data.insert(conn, data).is_none());
+                }
+
+                inner.incoming_connections.insert(conn);
+                capy_log_mig!("======= MIGRATING IN STATE ({}, {}) =======", conn.0, conn.1);
                 // inner.active_migrations.remove(&(hdr.origin, hdr.client)).expect("active migration should exist"); 
                 // Shouldn't be removed yet. Should be after processing migration queue.
             },
@@ -348,13 +358,15 @@ impl TcpMigPeer {
     }
 
     pub fn migrate_out(&mut self, handle: MigrationHandle, state: TcpState) {
-        let key = handle.0;
-        let qd = handle.1;
+        let MigrationHandle(conn, qd) = handle;
         let mut inner = self.inner.borrow_mut();
 
         inner.ready_to_migrate_out.set(qd.into(), false);
 
-        let active = inner.active_migrations.get_mut(&key).unwrap();
+        // Remove migrated user data if present.
+        inner.incoming_user_data.remove(&conn);
+
+        let active = inner.active_migrations.get_mut(&conn).unwrap();
         active.send_connection_state(state);
         #[cfg(not(feature = "mig-per-n-req"))] {
             let qd = active.qd().unwrap();
@@ -362,7 +374,7 @@ impl TcpMigPeer {
             //     panic!("this qd is not migration-prepared");
             // }
         }
-        if !inner.migrated_out_connections.insert(key.1) {
+        if !inner.migrated_out_connections.insert(conn.1) {
             panic!("Duplicate migrated_out_connections set insertion");
         }
     }
@@ -414,6 +426,10 @@ impl TcpMigPeer {
         inner.active_migrations.remove(&(origin, client)).expect("active migration should exist");
         inner.migrated_out_connections.remove(&client);
         // eprintln!("migrated_out_connections: {:?}", inner.migrated_out_connections);
+    }
+
+    pub fn take_incoming_user_data(&mut self, conn: &(SocketAddrV4, SocketAddrV4)) -> Option<Buffer> {
+        self.inner.borrow_mut().incoming_user_data.remove(conn)
     }
 
     /* pub fn update_incoming_stats(&mut self, local: SocketAddrV4, client: SocketAddrV4, recv_queue_len: usize) {
@@ -641,6 +657,7 @@ impl Inner {
             // migrations_prepared_qds: HashSet::new(),
             origins: HashMap::new(),
             incoming_connections: HashSet::new(),
+            incoming_user_data: HashMap::new(),
             stats: TcpMigStats::new(recv_queue_length_threshold),
             ready_to_migrate_out: BitVec::from_elem(64, false),
             //is_currently_migrating: false,
