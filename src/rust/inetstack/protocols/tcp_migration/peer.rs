@@ -30,7 +30,7 @@ use crate::{
         },
     },
     QDesc,
-    capy_profile, capy_profile_merge_previous,
+    capy_profile, capy_profile_merge_previous, capy_time_log,
 };
 
 use std::cell::Cell;
@@ -191,6 +191,7 @@ impl TcpMigPeer {
 
         // First packet that target receives.
         if hdr.stage == MigrationStage::PrepareMigration {
+            capy_time_log!("RECV_PREPARE_MIG {:?}", key);
             capy_profile!("prepare_ack");
 
             capy_log_mig!("******* MIGRATION REQUESTED *******");
@@ -290,7 +291,6 @@ impl TcpMigPeer {
     }
 
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4), qd: QDesc) {
-        capy_log_mig!("INIT MIG");
         let mut inner = self.inner.borrow_mut();
         
         {

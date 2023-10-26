@@ -61,6 +61,7 @@ use crate::{
         QDesc,
     },
     scheduler::scheduler::Scheduler,
+    capy_time_log,
 };
 
 use ::futures::channel::mpsc;
@@ -864,7 +865,7 @@ impl TcpPeer {
     #[cfg(feature = "mig-per-n-req")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         capy_profile!("prepare");
-        
+        capy_log_mig!("INIT MIG");
         let mut inner = self.inner.borrow_mut();
         let conn = match inner.sockets.get(&qd) {
             None => {
@@ -878,6 +879,7 @@ impl TcpPeer {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
         };
+        capy_time_log!("INIT_MIG ({}, {})", conn.0, conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
         Ok(())
     }

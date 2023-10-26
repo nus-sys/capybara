@@ -148,6 +148,7 @@ impl ActiveMigration {
                         hdr.flag_load = true;
                         self.last_sent_stage = MigrationStage::PrepareMigrationAck;
                         capy_log_mig!("[TX] PREPARE_MIG_ACK ({}, {})", hdr.origin, hdr.client);
+                        capy_time_log!("SEND_PREPARE_MIG_ACK ({}, {})", hdr.origin, hdr.client);
                         self.send(hdr, empty_buffer());
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected PREPARE_MIGRATION"))
@@ -158,6 +159,7 @@ impl ActiveMigration {
             MigrationStage::PrepareMigration => {
                 match hdr.stage {
                     MigrationStage::PrepareMigrationAck => {
+                        capy_time_log!("RECV_PREPARE_MIG_ACK ({}, {})", hdr.origin, hdr.client);
                         // Change target address to actual target address.
                         /*  self.remote_ipv4_addr = ipv4_hdr.get_src_addr(); */
                         // Currently, we are running all backends on a single machine, 
@@ -183,6 +185,7 @@ impl ActiveMigration {
             MigrationStage::PrepareMigrationAck => {
                 match hdr.stage {
                     MigrationStage::ConnectionState => {
+                        capy_time_log!("RECV_STATE ({}, {})", self.origin, self.client);
                         capy_profile!("migrate_ack");
 
                         // Handle fragmentation.
@@ -208,6 +211,7 @@ impl ActiveMigration {
                         let hdr = next_header(hdr, MigrationStage::ConnectionStateAck);
                         self.last_sent_stage = MigrationStage::ConnectionStateAck;
                         capy_log_mig!("[TX] CONN_STATE_ACK ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port);
+                        capy_time_log!("SEND_STATE_ACK ({}, {})", self.origin, self.client);
                         self.send(hdr, empty_buffer());
                         
                         return Ok(MigrationRequestStatus::StateReceived(state));
@@ -220,7 +224,7 @@ impl ActiveMigration {
             MigrationStage::ConnectionState => {
                 match hdr.stage {
                     MigrationStage::ConnectionStateAck => {
-                        // eprintln!("*** Migration completed ***");
+                        capy_time_log!("RECV_STATE_ACK ({}, {})", self.origin, self.client);
                         capy_log_mig!("CONN_STATE_ACK for ({}, {})", self.origin, self.client);
                         // TODO: Start closing the active migration.
                         return Ok(MigrationRequestStatus::MigrationCompleted);
@@ -241,7 +245,6 @@ impl ActiveMigration {
     }
 
     pub fn initiate_migration(&mut self) {
-        capy_time_log!("PREPARE");
         assert_eq!(self.last_sent_stage, MigrationStage::None);
 
         let tcpmig_hdr = TcpMigHeader::new(self.origin, self.client, 
@@ -251,10 +254,12 @@ impl ActiveMigration {
                                                         if self.self_udp_port == 10001 { 10000 } else { 10001 });
         self.last_sent_stage = MigrationStage::PrepareMigration;
         capy_log_mig!("\n\n******* START MIGRATION *******\n[TX] PREPARE_MIG ({}, {})", self.origin, self.client);
+        capy_time_log!("SEND_PREPARE_MIG ({}, {})", self.origin, self.client);
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::empty()));
     }
 
     pub fn send_connection_state(&mut self, state: TcpState) {
+        capy_time_log!("SERIALIZE_STATE ({}, {})", self.origin, self.client);
         assert_eq!(self.last_sent_stage, MigrationStage::PrepareMigration);
 
         capy_log_mig!("[TX] CONNECTION_STATE: ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port);
@@ -270,6 +275,7 @@ impl ActiveMigration {
                                                         self.dest_udp_port); // PORT should be the sender of PREPARE_MIGRATION_ACK
         self.last_sent_stage = MigrationStage::ConnectionState;
         let data_buffer = DataBuffer::from_raw_parts(Arc::into_raw(buf) as *mut u8, buf_len).unwrap(); 
+        capy_time_log!("SEND_STATE ({}, {})", self.origin, self.client);
         self.send(tcpmig_hdr, Buffer::Heap(data_buffer));
     }
 
