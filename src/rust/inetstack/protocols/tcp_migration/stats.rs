@@ -101,6 +101,10 @@ impl TcpMigStats {
             self.global_recv_queue_length += 1;
         } else {
             // Pop is always only called after at least one push.
+            #[cfg(feature = "capybara-log")]
+            {
+                tcpmig_log(format!("global_recv_queue_length: {}", self.global_recv_queue_length));
+            }
             assert!(self.global_recv_queue_length > 0);
             self.global_recv_queue_length -= 1;
         }

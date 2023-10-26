@@ -181,13 +181,8 @@ impl TcpMigPeer {
 
     /// Consumes the payload from a buffer.
     pub fn receive(&mut self, tcp_peer: &mut TcpPeer, ipv4_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
-        #[cfg(feature = "profiler")]
-        timer!("tcpmig::receive");
-
         // Parse header.
         let (hdr, buf) = TcpMigHeader::parse(ipv4_hdr, buf)?;
-        debug!("TCPMig received {:?}", hdr);
-        // eprintln!("TCPMig received {:#?}", hdr);
         capy_log_mig!("\n\n[RX] TCPMig");
 
         let key = (hdr.origin, hdr.client);
@@ -239,6 +234,7 @@ impl TcpMigPeer {
         match active.process_packet(ipv4_hdr, hdr, buf)? {
             MigrationRequestStatus::Rejected => unimplemented!("migration rejection"),
             MigrationRequestStatus::PrepareMigrationAcked(qd) => {
+                #[cfg(not(feature = "mig-per-n-req"))]
                 inner.set_as_ready_to_migrate_out(qd);
                 
                 #[cfg(feature = "mig-per-n-req")]{
@@ -294,7 +290,7 @@ impl TcpMigPeer {
     }
 
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4), qd: QDesc) {
-        capy_log_mig!("initiate_migration");
+        capy_log_mig!("INIT MIG");
         let mut inner = self.inner.borrow_mut();
         
         {
@@ -390,6 +386,10 @@ impl TcpMigPeer {
 
         match inner.active_migrations.get_mut(&(origin, client)) {
             Some(active) => {
+                #[cfg(feature = "capybara-log")]
+                {
+                    tcp_log(format!("mig_ prepared ==> buffer"));
+                }
                 active.buffer_packet(tcp_hdr, data);
                 Ok(())
             },
@@ -484,11 +484,11 @@ impl TcpMigPeer {
         }
         unsafe{
             
-            // if inner.stats.num_of_connections() <= 1 
-            //     || inner.active_migrations.len() >= 3 
-            //     || NUM_MIG >= inner.migration_variable {
-            //     return None;
-            // }
+            if inner.stats.num_of_connections() <= 1 
+                // || inner.active_migrations.len() >= 3 
+                || NUM_MIG >= inner.migration_variable {
+                return None;
+            }
 
             FLAG += 1;
             
@@ -500,8 +500,8 @@ impl TcpMigPeer {
             }
             let recv_queue_len = inner.stats.avg_global_recv_queue_length();
 
-            log_len(recv_queue_len);
-            return None;
+            // log_len(recv_queue_len);
+            // return None;
             // println!("check recv_queue_len {}, inner.recv_queue_length_threshold {}", recv_queue_len, inner.recv_queue_length_threshold);
             if recv_queue_len > inner.recv_queue_length_threshold {
                 match inner.stats.get_connection_to_migrate_out() {

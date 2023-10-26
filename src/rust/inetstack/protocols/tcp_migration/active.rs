@@ -27,7 +27,7 @@ use crate::{
         },
     },
     QDesc,
-    capy_profile, capy_profile_merge_previous,
+    capy_profile, capy_profile_merge_previous, capy_time_log,
 };
 
 use crate::{capy_log, capy_log_mig};
@@ -241,6 +241,7 @@ impl ActiveMigration {
     }
 
     pub fn initiate_migration(&mut self) {
+        capy_time_log!("PREPARE");
         assert_eq!(self.last_sent_stage, MigrationStage::None);
 
         let tcpmig_hdr = TcpMigHeader::new(self.origin, self.client, 

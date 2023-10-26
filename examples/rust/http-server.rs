@@ -29,12 +29,17 @@ use demikernel::demikernel::bindings::demi_print_queue_length_log;
 #[cfg(feature = "profiler")]
 use ::demikernel::perftools::profiler;
 
+use colored::Colorize;
 //=====================================================================================
 
 macro_rules! server_log {
     ($($arg:tt)*) => {
         #[cfg(feature = "capy-log")]
-        eprintln!("{}", format_args!($($arg)*));
+        if let Ok(val) = std::env::var("CAPY_LOG") {
+            if val == "all" {
+                eprintln!("{}", format!($($arg)*).green());
+            }
+        }
     };
 }
 
@@ -145,10 +150,13 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[u8], qts: &mut Vec<QToken>) -> usize {
-
+    #[cfg(feature = "capybara-log")]
+    tcp_log(format!("buffer.data_size() {}", buffer.data_size()));
     // fast path: no previous data in the stream and this request contains exactly one HTTP request
     if buffer.data_size() == 0 {
         if find_subsequence(data, b"\r\n\r\n").unwrap_or(data.len()) == data.len() - 4 {
+            #[cfg(feature = "capybara-log")]
+            tcp_log(format!("responding 1"));
             let resp_qt = respond_to_request(libos, qd, data);
             qts.push(resp_qt);
             return 1;
@@ -158,13 +166,16 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
     // Copy new data into buffer
     buffer.get_empty_buf()[..data.len()].copy_from_slice(data);
     buffer.push_data(data.len());
-
+    #[cfg(feature = "capybara-log")]
+    tcp_log(format!("buffer.data_size() {}", buffer.data_size()));
     let mut sent = 0;
 
     loop {
         let dbuf = buffer.get_data();
         match find_subsequence(dbuf, b"\r\n\r\n") {
             Some(idx) => {
+                #[cfg(feature = "capybara-log")]
+                tcp_log(format!("responding 2"));
                 let resp_qt = respond_to_request(libos, qd, &dbuf[..idx + 4]);
                 qts.push(resp_qt);
                 buffer.pull_data(idx + 4);
@@ -297,7 +308,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     
                 match result {
                     OperationResult::Accept(new_qd) => {
-                        server_log!("ACCEPT complete ==> request POP and ACCEPT");
+                        server_log!("ACCEPT complete ==> issue POP and ACCEPT");
 
                         let buffer = {
                             let mut buffer = Buffer::new();
@@ -346,11 +357,13 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                     OperationResult::Pop(_, recvbuf) => {
                         pop_count -= 1;
-                        server_log!("POP complete ==> request PUSH and POP");
+                        server_log!("POP complete");
 
                         let mut state = connstate.get_mut(&qd).unwrap();
                         let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
                         state.pushing += sent;
+
+                        server_log!("Issued PUSH => {} pushes pending", state.pushing);
                         
                         
                         #[cfg(feature = "mig-per-n-req")] {
@@ -361,11 +374,13 @@ fn server(local: SocketAddrV4) -> Result<()> {
                                 match libos.pop(qd) {
                                     Ok(qt) => {
                                         qts.push(qt);
+                                        server_log!("Issued POP");
                                     },
                                     Err(e) if e.errno == demikernel::ETCPMIG => (),
                                     Err(e) => panic!("pop qt: {}", e),
                                 }
                             } else{
+                                server_log!("Should be migrated (no POP requested)");
                                 requests_remaining.remove(&qd).unwrap();
                             }
                         }
@@ -374,7 +389,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             match libos.pop(qd) {
                                 Ok(qt) => {
                                     qts.push(qt);
-                                    //state.pop_qt = qt;
+                                    server_log!("Issued POP");
                                 },
                                 Err(e) if e.errno == demikernel::ETCPMIG => (),
                                 Err(e) => panic!("pop qt: {}", e),
