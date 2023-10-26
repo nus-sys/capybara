@@ -1,3 +1,4 @@
+use arrayvec::ArrayVec;
 use chrono::NaiveTime;
 
 //==============================================================================
@@ -14,7 +15,7 @@ pub(crate) const CLEAR: &'static str = "\x1B[0m";
 //==============================================================================
 
 #[allow(unused)]
-static mut DATA: Option<Vec<(NaiveTime, &'static str)>> = None;
+static mut DATA: Option<Vec<(NaiveTime, ArrayVec<u8, 128>)>> = None;
 
 //==============================================================================
 // Macros
@@ -22,7 +23,7 @@ static mut DATA: Option<Vec<(NaiveTime, &'static str)>> = None;
 
 macro_rules! __capy_time_log {
     ($($arg:tt)*) => {
-        $crate::capylog::time_log::__push_time_log($($arg)*);
+        $crate::capylog::time_log::__push_time_log(format_args!($($arg)*));
     };
 }
 
@@ -64,22 +65,26 @@ pub(crate) fn __write_time_log_data<W: std::io::Write>(w: &mut W) -> std::io::Re
     eprintln!("\n[CAPYLOG] dumping time log data");
     let data = data();
     for (time, msg) in data.iter() {
-        write!(w, "{}: {}\n", time, msg)?;
+        write!(w, "{}: {}\n", time, std::str::from_utf8(&msg).unwrap())?;
     }
     Ok(())
 }
 
 #[allow(unused)]
-pub(crate) fn __push_time_log(msg: &'static str) {
+pub(crate) fn __push_time_log(args: std::fmt::Arguments) {
     let data = data();
     if data.len() == data.capacity() {
         eprintln!("[CAPYLOG-WARN] Time log allocation");
     }
-    data.push((chrono::Local::now().time(), msg));
+    let mut buf = ArrayVec::new();
+    if let Err(e) = std::io::Write::write_fmt(&mut buf, args) {
+        panic!("capy_time_log failed: {}", e);
+    }
+    data.push((chrono::Local::now().time(), buf));
 }
 
 #[allow(unused)]
-fn data() -> &'static mut Vec<(NaiveTime, &'static str)> {
+fn data() -> &'static mut Vec<(NaiveTime, ArrayVec<u8, 128>)> {
     unsafe { DATA.as_mut().expect("capy-time-log not initialised") }
 }
 
