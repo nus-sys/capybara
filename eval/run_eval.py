@@ -165,15 +165,15 @@ def parse_mig_latency(experiment_id):
     
 
     steps = ['',
-            'INIT_MIG', 
-            'SEND_PREPARE_MIG', 
-            'RECV_PREPARE_MIG', 
-            'SEND_PREPARE_MIG_ACK', 
-            'RECV_PREPARE_MIG_ACK', 
-            'SERIALIZE_STATE', 
-            'SEND_STATE',
-            'RECV_STATE',
-            'SEND_STATE_ACK',
+            'INIT_MIG',  #1
+            'SEND_PREPARE_MIG', #2 
+            'RECV_PREPARE_MIG',  #3
+            'SEND_PREPARE_MIG_ACK', #4 
+            'RECV_PREPARE_MIG_ACK', #5
+            'SERIALIZE_STATE', #6
+            'SEND_STATE', #7 (including fragmentation)
+            'RECV_STATE', #8 (once receiving all fragments)
+            'SEND_STATE_ACK', #9
             'RECV_STATE_ACK']
     prev_step = 0
     prev_ns = 0

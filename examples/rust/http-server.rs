@@ -408,20 +408,43 @@ fn server(local: SocketAddrV4) -> Result<()> {
         #[cfg(feature = "tcp-migration")]
         {
             #[cfg(feature = "mig-per-n-req")] {
-                if migration_per_n > 0 {
-                    for qd in qds_to_migrate.iter() {
-                        // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
-                        if connstate.get_mut(&qd).unwrap().pushing == 0 && connstate.get_mut(&qd).unwrap().buffer.data_size() == 0 {
-                            libos.initiate_migration(*qd);
-                            connstate.remove(&qd);
-                        }
+                for qd in qds_to_migrate.iter() {
+                    // Can't migrate a connection with outstanding TX
+                    if connstate.get_mut(&qd).unwrap().pushing > 0 {
+                        continue;
                     }
+                    libos.initiate_migration(*qd);
                 }
+                let mut qds_to_remove = Vec::new();
+                for (&qd, state) in connstate.iter() {
+                    // Can't migrate a connection with outstanding TX
+                    if state.pushing > 0 {
+                        continue;
+                    }
+                    let data = {
+                        let data = state.buffer.get_data();
+                        if data.is_empty() {
+                            None
+                        } else {
+                            Some(data)
+                        }
+                    };
+
+                    match libos.notify_migration_safety(qd, data) {
+                        Ok(true) => qds_to_remove.push(qd),
+                        Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
+                        _ => (),
+                    };
+                }
+                for qd in qds_to_remove {
+                    connstate.remove(&qd);
+                }
+            
             }
             #[cfg(not(feature = "mig-per-n-req"))] {
                 let mut qds_to_remove = Vec::new();
                 for (&qd, state) in connstate.iter() {
-                    // Can't migrate a connection with outstanding TX or partially processed HTTP requests in the TCP stream
+                    // Can't migrate a connection with outstanding TX
                     if state.pushing > 0 {
                         continue;
                     }

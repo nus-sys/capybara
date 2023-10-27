@@ -239,13 +239,14 @@ impl TcpMigPeer {
                 inner.set_as_ready_to_migrate_out(qd);
                 
                 #[cfg(feature = "mig-per-n-req")]{
-                    capy_profile!("migrate");
+                    inner.set_as_ready_to_migrate_out(qd);
+                    // capy_profile!("migrate");
 
-                    capy_log_mig!("\n\nMigrate Out ({}, {})", hdr.origin, hdr.client);
-                    let state = tcp_peer.migrate_out_tcp_connection(active.qd().unwrap())?;
-                    let remote = state.remote;
-                    active.send_connection_state(state);
-                    assert!(inner.migrated_out_connections.insert(remote), "Duplicate migrated_out_connections set insertion");
+                    // capy_log_mig!("\n\nMigrate Out ({}, {})", hdr.origin, hdr.client);
+                    // let state = tcp_peer.migrate_out_tcp_connection(active.qd().unwrap())?;
+                    // let remote = state.remote;
+                    // active.send_connection_state(state);
+                    // assert!(inner.migrated_out_connections.insert(remote), "Duplicate migrated_out_connections set insertion");
                 }
                 /* #[cfg(not(feature = "mig-per-n-req"))] {
                     let qd = active.qd().unwrap();
