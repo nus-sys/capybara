@@ -879,7 +879,7 @@ impl TcpPeer {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
         };
-        capy_time_log!("INIT_MIG ({}, {})", conn.0, conn.1);
+        capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
         Ok(())
     }

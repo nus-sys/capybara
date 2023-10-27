@@ -191,7 +191,7 @@ impl TcpMigPeer {
 
         // First packet that target receives.
         if hdr.stage == MigrationStage::PrepareMigration {
-            capy_time_log!("RECV_PREPARE_MIG {:?}", key);
+            capy_time_log!("RECV_PREPARE_MIG,({}-{})", key.0, key.1);
             capy_profile!("prepare_ack");
 
             capy_log_mig!("******* MIGRATION REQUESTED *******");

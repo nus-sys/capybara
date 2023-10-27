@@ -380,7 +380,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                                     Err(e) => panic!("pop qt: {}", e),
                                 }
                             } else{
-                                server_log!("Should be migrated (no POP requested)");
+                                server_log!("Should be migrated (no POP issued)");
                                 requests_remaining.remove(&qd).unwrap();
                             }
                         }
