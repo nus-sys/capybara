@@ -23,7 +23,7 @@ use crate::{
 // Exports
 //==============================================================================
 
-pub use self::header::TCPMIG_HEADER_SIZE;
+pub use self::header::{TCPMIG_HEADER_SIZE, MAGIC_NUMBER};
 pub use header::TcpMigHeader;
 pub use defragmenter::TcpMigDefragmenter;
 
