@@ -44,13 +44,10 @@ log = "0.4.17"
 nix = "0.25.0"
 num-derive = "0.3.3"
 num-traits = "0.2.15"
-postcard = { version = "1.0.4", features = ["alloc"] }
 rand = { version = "0.8.5", features = ["small_rng"] }
-serde = { version = "1.0", features = ["derive", "rc"] }
 slab = "0.4.7"
 yaml-rust = "0.4.5"
 x86 = "0.51.0"
-colored = "2.0.0"
 
 # Demikernel Organization
 liburing = { git = "https://github.com/demikernel/liburing-rs", rev = "780827ee3f805d94f9909bd47cd925ee8476a64b", optional = true}

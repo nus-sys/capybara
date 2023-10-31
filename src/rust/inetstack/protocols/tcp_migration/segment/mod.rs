@@ -139,16 +139,17 @@ impl Iterator for TcpMigFragmenter {
             let ipv4_hdr = self.segment.ipv4_hdr.clone();
             let mut tcpmig_hdr = self.segment.tcpmig_hdr.clone();
 
-            let size = if self.segment.data.len() <= self.max_fragment_size {
+            let data = if self.segment.data.len() <= self.max_fragment_size {
                 tcpmig_hdr.flag_next_fragment = false;
-                self.segment.data.len()
+                // Take the remaining data so memory is released.
+                std::mem::replace(&mut self.segment.data, Buffer::Heap(DataBuffer::empty()))
             } else {
                 tcpmig_hdr.flag_next_fragment = true;
-                self.max_fragment_size
+                let mut data = self.segment.data.clone();
+                data.trim(data.len() - self.max_fragment_size);
+                self.segment.data.adjust(self.max_fragment_size);
+                data
             };
-
-            let data = Buffer::Heap(DataBuffer::from_slice(&self.segment.data[0..size]));
-            self.segment.data.adjust(size);
 
             tcpmig_hdr.fragment_offset = self.current_fragment;
             self.current_fragment += 1;

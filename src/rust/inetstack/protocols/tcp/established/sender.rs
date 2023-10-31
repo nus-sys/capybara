@@ -40,11 +40,10 @@ use crate::capy_log;
 // ToDo: We currently allocate these on the fly when we add a buffer to the queue.  Would be more efficient to have a
 // buffer structure that held everything we need directly, thus avoiding this extra wrapper.
 //
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct UnackedSegment {
     pub bytes: Buffer,
     // Set to `None` on retransmission to implement Karn's algorithm.
-    #[serde(skip)] // [Instant]s can't be serialized/deserialized
     pub initial_tx: Option<Instant>,
 }
 

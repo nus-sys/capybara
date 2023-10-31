@@ -21,7 +21,7 @@ use std::{
 //==============================================================================
 
 /// Data Buffer
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug)]
 pub struct DataBuffer {
     /// Underlying data.
     data: Option<Arc<[u8]>>,

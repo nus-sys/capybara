@@ -21,7 +21,7 @@ use std::{
 // We allow our sequence numbers to be cloned, copied, created, and checked for equality the same as for u32.  We
 // restrict all other behaviors to those we explicitly define below.
 //
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SeqNumber {
     value: u32,
 }

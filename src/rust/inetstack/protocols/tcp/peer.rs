@@ -80,7 +80,6 @@ use ::rand::{
     Rng,
     SeedableRng,
 };
-use std::sync::Arc;
 use ::std::{
     cell::{
         RefCell,
@@ -166,34 +165,36 @@ pub struct TcpPeer {
 
 #[cfg(feature = "tcp-migration")]
 /// State needed for TCP Migration.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcpState {
-    pub local: SocketAddrV4,
-    pub remote: SocketAddrV4,
+    pub local: SocketAddrV4, // 0..6
+    pub remote: SocketAddrV4, // 6..12
 
-    pub reader_next: SeqNumber,
-    pub receive_next: SeqNumber,
+    pub reader_next: SeqNumber, // 12..16
+    pub receive_next: SeqNumber, // 16..20
 
-    pub unsent_seq_no: SeqNumber,
-    pub send_unacked: SeqNumber,
-    pub send_next: SeqNumber,
-    pub send_window: u32,
-    pub send_window_last_update_seq: SeqNumber,
-    pub send_window_last_update_ack: SeqNumber,
-    pub mss: usize,
+    pub unsent_seq_no: SeqNumber, // 20..24
+    pub send_unacked: SeqNumber, // 24..28
+    pub send_next: SeqNumber, // 28..32
+    pub send_window: u32, // 32..36
+    pub send_window_last_update_seq: SeqNumber, // 36..40
+    pub send_window_last_update_ack: SeqNumber, // 40..44
+    pub mss: usize, // 44..48 (Assume < 4GB)
 
-    pub receiver_window_size: u32,
-    pub receiver_window_scale: u32,
+    pub receiver_window_size: u32, // 48..52
+    pub receiver_window_scale: u32, // 52..56
 
-    pub window_scale: u8,
-    out_of_order_fin: Option<SeqNumber>,
+    pub window_scale: u8, // 56..57
+    out_of_order_fin: Option<SeqNumber>, // 57..58 - Option, 58..62 - number if Some
 
+    // Queue: First 4 bytes - len (Assume < 4B elements), then elements.
+    // Buffer: First 4 bytes - len (Assume < 4GB), then data.
     out_of_order_queue: VecDeque<(SeqNumber, Buffer)>,
     pub recv_queue: VecDeque<Buffer>,
     pub unacked_queue: VecDeque<UnackedSegment>,
     pub unsent_queue: VecDeque<Buffer>,
 
-    user_data: Option<Buffer>,
+    user_data: Option<Buffer>, // First byte - Option, next data if present.
 }
 
 //==============================================================================
@@ -1196,29 +1197,240 @@ impl TcpState {
         std::mem::take(&mut self.user_data)
     }
 
-    pub fn serialize(&self) -> Arc<[u8]> {
-        let size = postcard::serialize_with_flavor(self, postcard::ser_flavors::Size::default())
-            .expect("serialised size calculation failed");
-
-        let mut arc = unsafe { Arc::<[u8]>::new_zeroed_slice(size).assume_init() };
-        let buf = Arc::get_mut(&mut arc).unwrap_or_else(|| unreachable!());
-        postcard::to_slice(self, buf).expect("TcpState serialisation failed");
-        arc
+    pub fn serialize(&self) -> Buffer {
+        let mut buf = Buffer::Heap(crate::runtime::memory::DataBuffer::new(self.serialized_size()).unwrap());
+        assert!(self.serialize_into(&mut buf).is_empty());
+        buf
     }
 
-    pub fn deserialize(serialized: &[u8]) -> Result<Self, postcard::Error> {
-        // TODO: Check if having all `UnackedSegment` timestamps as `None` affects anything.
-        postcard::from_bytes(serialized)
+    fn serialized_size(&self) -> usize {
+        57 // fixed
+        + 1 + if self.out_of_order_fin.is_some() { 4 } else { 0 } // out_of_order_fin
+        + 4 + self.out_of_order_queue.iter().fold(0, |acc, (_seq, buf)| acc + 4 + 4 + buf.len()) // out_of_order_queue
+        + 4 + self.recv_queue.iter().fold(0, |acc, e| acc + 4 + e.len()) // recv_queue
+        + 4 + self.unacked_queue.iter().fold(0, |acc, e| acc + 4 + e.bytes.len()) // unacked_queue
+        + 4 + self.unsent_queue.iter().fold(0, |acc, e| acc + 4 + e.len()) // unsent_queue
+        + 1 + if let Some(ref data) = self.user_data { 4 + data.len() } else { 0 }
     }
 
-    pub fn deserialize2(serialized: &[u8]) -> Result<Self, postcard::Error> {
-        todo!()
+    pub fn deserialize(buffer: Buffer) -> Self {
+        use byteorder::{ByteOrder, BigEndian};
+
+        let buffer = Rc::new(buffer);
+        let buf = &buffer[..];
+
+        let local = SocketAddrV4::new(Ipv4Addr::new(buf[0], buf[1], buf[2], buf[3]), BigEndian::read_u16(&buf[4..6]));
+        let remote = SocketAddrV4::new(Ipv4Addr::new(buf[6], buf[7], buf[8], buf[9]), BigEndian::read_u16(&buf[10..12]));
+
+        let reader_next = SeqNumber::from(BigEndian::read_u32(&buf[12..16]));
+        let receive_next = SeqNumber::from(BigEndian::read_u32(&buf[16..20]));
+        
+        let unsent_seq_no = SeqNumber::from(BigEndian::read_u32(&buf[20..24]));
+        let send_unacked = SeqNumber::from(BigEndian::read_u32(&buf[24..28]));
+        let send_next = SeqNumber::from(BigEndian::read_u32(&buf[28..32]));
+        let send_window = BigEndian::read_u32(&buf[32..36]);
+        let send_window_last_update_seq = SeqNumber::from(BigEndian::read_u32(&buf[36..40]));
+        let send_window_last_update_ack = SeqNumber::from(BigEndian::read_u32(&buf[40..44]));
+        let mss = usize::try_from(BigEndian::read_u32(&buf[44..48])).unwrap();
+        
+        let receiver_window_size = BigEndian::read_u32(&buf[48..52]);
+        let receiver_window_scale = BigEndian::read_u32(&buf[52..56]);
+
+        let window_scale = buf[56];
+
+        let (out_of_order_fin, buf) = match buf[57] {
+            0 => (None, &buf[58..]),
+            1 => (Some(SeqNumber::from(BigEndian::read_u32(&buf[58..62]))), &buf[62..]),
+            _ => panic!("invalid Option discriminant"),
+        };
+
+        let (out_of_order_queue, buf) = VecDeque::<(SeqNumber, Buffer)>::deserialize_from(buf, buffer.clone());
+        let (recv_queue, buf) = VecDeque::<Buffer>::deserialize_from(buf, buffer.clone());
+        let (unacked_queue, buf) = VecDeque::<UnackedSegment>::deserialize_from(buf, buffer.clone());
+        let (unsent_queue, buf) = VecDeque::<Buffer>::deserialize_from(buf, buffer.clone());
+
+        let (user_data, buf) = match buf[0] {
+            0 => (None, &buf[1..]),
+            1 => {
+                let (data, buf) = Buffer::deserialize_from(&buf[1..], buffer.clone());
+                (Some(data), buf)
+            },
+            _ => panic!("invalid Option discriminant"),
+        };
+
+        TcpState {
+            local,
+            remote,
+            reader_next,
+            receive_next,
+            unsent_seq_no,
+            send_unacked,
+            send_next,
+            send_window,
+            send_window_last_update_seq,
+            send_window_last_update_ack,
+            mss,
+            receiver_window_size,
+            receiver_window_scale,
+            window_scale,
+            out_of_order_fin,
+            out_of_order_queue,
+            recv_queue,
+            unacked_queue,
+            unsent_queue,
+            user_data
+        }
+    }
+}
+
+//==============================================================================
+// TCP State Serialization
+//==============================================================================
+
+trait Serialize {
+    /// Serializes into the buffer and returns its unused part.
+    fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8];
+}
+
+trait Deserialize: Sized {
+    /// Deserializes from the buffer and returns its unused part.
+    fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]);
+}
+
+impl Serialize for TcpState {
+    fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
+        buf[0..4].copy_from_slice(&self.local.ip().octets());
+        buf[4..6].copy_from_slice(&self.local.port().to_be_bytes());
+        buf[6..10].copy_from_slice(&self.remote.ip().octets());
+        buf[10..12].copy_from_slice(&self.remote.port().to_be_bytes());
+
+        buf[12..16].copy_from_slice(&u32::from(self.reader_next).to_be_bytes());
+        buf[16..20].copy_from_slice(&u32::from(self.receive_next).to_be_bytes());
+        
+        buf[20..24].copy_from_slice(&u32::from(self.unsent_seq_no).to_be_bytes());
+        buf[24..28].copy_from_slice(&u32::from(self.send_unacked).to_be_bytes());
+        buf[28..32].copy_from_slice(&u32::from(self.send_next).to_be_bytes());
+        buf[32..36].copy_from_slice(&self.send_window.to_be_bytes());
+        buf[36..40].copy_from_slice(&u32::from(self.send_window_last_update_seq).to_be_bytes());
+        buf[40..44].copy_from_slice(&u32::from(self.send_window_last_update_ack).to_be_bytes());
+        buf[44..48].copy_from_slice(&u32::try_from(self.mss).expect("mss too big").to_be_bytes());
+        
+        buf[48..52].copy_from_slice(&self.receiver_window_size.to_be_bytes());
+        buf[52..56].copy_from_slice(&self.receiver_window_scale.to_be_bytes());
+
+        buf[56] = self.window_scale;
+
+        // out_of_order_fin
+        let buf = if let Some(seq) = self.out_of_order_fin {
+            buf[57] = 1;
+            buf[58..62].copy_from_slice(&u32::from(seq).to_be_bytes());
+            &mut buf[62..]
+        } else {
+            buf[57] = 0;
+            &mut buf[58..]
+        };
+
+        let buf = self.out_of_order_queue.serialize_into(buf);
+        let buf = self.recv_queue.serialize_into(buf);
+        let buf = self.unacked_queue.serialize_into(buf);
+        let buf = self.unsent_queue.serialize_into(buf);
+
+        let buf = if let Some(ref data) = self.user_data {
+            buf[0] = 1;
+            data.serialize_into(&mut buf[1..])
+        } else {
+            buf[0] = 0;
+            &mut buf[1..]
+        };
+
+        buf
+    }
+}
+
+impl<T: Serialize> Serialize for VecDeque<T> {
+    fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
+        buf[0..4].copy_from_slice(&u32::try_from(self.len()).expect("deque len too big").to_be_bytes());
+        let mut buf = &mut buf[4..];
+        for e in self {
+            buf = e.serialize_into(buf);
+        }
+        buf
+    }
+}
+
+impl Serialize for Buffer {
+    fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
+        buf[0..4].copy_from_slice(&u32::try_from(self.len()).expect("buffer len too big").to_be_bytes());
+        buf[4..4 + self.len()].copy_from_slice(&self);
+        &mut buf[4 + self.len()..]
+    }
+}
+
+impl Serialize for UnackedSegment {
+    fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
+        self.bytes.serialize_into(buf)
+    }
+}
+
+impl Serialize for (SeqNumber, Buffer) {
+    fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
+        buf[0..4].copy_from_slice(&u32::from(self.0).to_be_bytes());
+        self.1.serialize_into(&mut buf[4..])
+    }
+}
+
+impl<T: Deserialize> Deserialize for VecDeque<T> {
+    fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
+        use byteorder::{ByteOrder, BigEndian};
+
+        let size = usize::try_from(BigEndian::read_u32(&buf[0..4])).unwrap();
+        let mut deque = VecDeque::<T>::with_capacity(size);
+        let mut buf = &buf[4..];
+
+        for _ in 0..size {
+            let deserialized = T::deserialize_from(buf, buffer.clone());
+            deque.push_back(deserialized.0);
+            buf = deserialized.1;
+        }
+        (deque, buf)
+    }
+}
+
+impl Deserialize for Buffer {
+    fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
+        use byteorder::{ByteOrder, BigEndian};
+
+        let len = usize::try_from(BigEndian::read_u32(&buf[0..4])).unwrap();
+        let offset = usize::try_from(unsafe { buf[4..].as_ptr().offset_from(buffer.as_ptr()) }).unwrap();
+
+        let mut buffer = buffer.as_ref().clone();
+        buffer.adjust(offset);
+        buffer.trim(buffer.len() - len);
+
+        (buffer, &buf[4 + len..])
+    }
+}
+
+impl Deserialize for UnackedSegment {
+    fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
+        let (bytes, buf) = Buffer::deserialize_from(buf, buffer);
+        (Self { bytes, initial_tx: None }, buf)
+    }
+}
+
+impl Deserialize for (SeqNumber, Buffer) {
+    fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
+        use byteorder::{ByteOrder, BigEndian};
+
+        let seq = SeqNumber::from(BigEndian::read_u32(&buf[0..4]));
+        let (buffer, buf) = Buffer::deserialize_from(&buf[4..], buffer);
+        ((seq, buffer), buf)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::{net::{SocketAddrV4, Ipv4Addr}, collections::VecDeque, sync::Arc};
+    use std::{net::{SocketAddrV4, Ipv4Addr}, collections::VecDeque};
 
     use crate::{
         runtime::memory::{Buffer, DataBuffer},
@@ -1276,13 +1488,13 @@ mod test {
     }
 
     #[inline(always)]
-    fn create_segment(payload: Arc<[u8]>) -> TcpMigSegment {
+    fn create_segment(payload: Buffer) -> TcpMigSegment {
         let len = payload.len();
         TcpMigSegment::new(
             Ethernet2Header::new(MacAddress::broadcast(), MacAddress::broadcast(), crate::inetstack::protocols::ethernet2::EtherType2::Ipv4),
             Ipv4Header::new(Ipv4Addr::LOCALHOST, Ipv4Addr::LOCALHOST, crate::inetstack::protocols::ip::IpProtocol::UDP),
             get_header(),
-            Buffer::Heap(DataBuffer::from_raw_parts(Arc::into_raw(payload) as *mut u8, len).unwrap()),
+            payload,
         )
     }
 
@@ -1297,6 +1509,7 @@ mod test {
             capy_profile!("serialise");
             state.serialize()
         };
+
         let segment = {
             capy_profile!("segment creation");
             create_segment(state)
@@ -1334,7 +1547,7 @@ mod test {
         let (hdr, buf) = segment.unwrap();
         let state = {
             capy_profile!("deserialise");
-            TcpState::deserialize(&buf).unwrap()
+            TcpState::deserialize(buf)
         };
         assert_eq!(state, get_state());
 
@@ -1344,35 +1557,7 @@ mod test {
 }
 
 /*
- * TODO:
- * - Manually write serialisation to allocate an Arc.
- * - Fragmentation copies: Use single Arc buf in fragmenter.
- * - Preallocate Arc buf for defragmentation using length field.
+ * Optimisations:
+ * - Implement deserialisation on fragments to prevent defragmentation.
  * - Use hashmap crate for faster lookups.
  */
-
-/*
-OLD:
-
-serialise: 26392 ns
-empty segment creation: 177 ns
-segment creation: 8916 ns
-total fragment: 6811 ns
-defragment: 317 ns
-defragment: 52 ns
-defragment: 38 ns
-defragment: 38 ns
-defragment: 215 ns
-defragment: 38 ns
-defragment: 42 ns
-defragment: 38 ns
-defragment: 77 ns
-defragment: 38 ns
-defragment: 38 ns
-defragment: 39 ns
-defragment: 38 ns
-defragment: 38 ns
-defragment: 6557 ns
-total defragment: 11900 ns
-deserialise: 62189 ns
-*/

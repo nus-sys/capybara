@@ -32,7 +32,6 @@ use crate::{
 
 use crate::{capy_log, capy_log_mig};
 
-use std::sync::Arc;
 use ::std::{
     net::{
         Ipv4Addr,
@@ -197,10 +196,7 @@ impl ActiveMigration {
                         };
                         capy_time_log!("RECV_STATE,({}-{})", self.origin, self.client);
                         
-                        let mut state = match TcpState::deserialize(&buf) {
-                            Ok(state) => state,
-                            Err(..) => return Err(Fail::new(libc::EBADMSG, "invalid TCP state")),
-                        };
+                        let mut state = TcpState::deserialize(buf);
 
                         // Overwrite local address.
                         state.local = SocketAddrV4::new(self.local_ipv4_addr, self.self_udp_port);
@@ -267,16 +263,14 @@ impl ActiveMigration {
         capy_log_mig!("Length of recv_queue: {}", state.recv_queue.len());
         
         let buf = state.serialize();
-        let buf_len = buf.len();
         let tcpmig_hdr = TcpMigHeader::new(self.origin, self.client, 
                                                         0, 
                                                         MigrationStage::ConnectionState, 
                                                         self.self_udp_port, 
                                                         self.dest_udp_port); // PORT should be the sender of PREPARE_MIGRATION_ACK
         self.last_sent_stage = MigrationStage::ConnectionState;
-        let data_buffer = DataBuffer::from_raw_parts(Arc::into_raw(buf) as *mut u8, buf_len).unwrap(); 
         capy_time_log!("SEND_STATE,({}-{})", self.origin, self.client);
-        self.send(tcpmig_hdr, Buffer::Heap(data_buffer));
+        self.send(tcpmig_hdr, buf);
     }
 
     pub fn buffer_packet(&mut self, tcp_hdr: TcpHeader, data: Buffer) {
