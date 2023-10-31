@@ -24,6 +24,8 @@ use ::std::{
 use std::sync::atomic::{AtomicBool, Ordering};
 use ctrlc;
 use std::sync::Arc;
+
+#[cfg(feature = "tcp-migration")]
 use demikernel::demikernel::bindings::demi_print_queue_length_log;
 
 #[cfg(feature = "profiler")]
@@ -332,6 +334,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         // Pop from new_qd
                         match libos.pop(new_qd) {
                             Ok(pop_qt) => qts.push(pop_qt),
+                            #[cfg(feature = "tcp-migration")]
                             Err(e) if e.errno == demikernel::ETCPMIG => (),
                             Err(e) => panic!("pop qt: {}", e),
                         }
@@ -391,6 +394,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                                     qts.push(qt);
                                     server_log!("Issued POP");
                                 },
+                                #[cfg(feature = "tcp-migration")]
                                 Err(e) if e.errno == demikernel::ETCPMIG => (),
                                 Err(e) => panic!("pop qt: {}", e),
                             }
@@ -496,6 +500,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
         println!("{},{}", cnt, qlen);
         cnt+=1;
     } */
+    #[cfg(feature = "tcp-migration")]
     demi_print_queue_length_log();
 
     LibOS::capylog_dump(&mut std::io::stderr().lock());
