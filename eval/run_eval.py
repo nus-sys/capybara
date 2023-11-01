@@ -195,7 +195,7 @@ def parse_mig_latency(experiment_id):
             
             step_idx = steps.index(step)
             if step_idx != prev_step+1:
-                print("[PANIC] migration step is wrong!")
+                print("[PANIC] migration step is wrong!: prev {}, current {}", prev_step, step_idx)
                 exit()
             prev_step = step_idx
 
@@ -208,8 +208,8 @@ def parse_mig_latency(experiment_id):
                 result = result + str(ns - init_ns) + "\n"
                 prev_step = 0
             prev_ns = ns
-        print(result)
-        final_result = final_result + '\n'.join(result.split('\n')[100:])
+        # print(result)
+        final_result = final_result + '\n'.join(result.split('\n')[20:])
     
     print(len(final_result.split('\n')))
     
@@ -220,6 +220,54 @@ def parse_mig_latency(experiment_id):
         file.write('\n'.join(final_result.split('\n')[-10001:]))
 
   
+
+def parse_poll_interval(experiment_id):
+    print(f'PARSING {experiment_id} poll_interval') 
+    
+    # host = pyrem.host.RemoteHost(TCPDUMP_NODE)
+    start_printing = False
+    
+    clusters = {}
+    prev_ns = 0
+    final_result = ''
+    for i in [0, 1]:
+        file_path = f'{DATA_PATH}/{experiment_id}.be{i}'
+        with open(file_path, "r") as file:
+            # Iterate through each line in the file
+            for line in file:
+                # Check if the line contains the target string
+                if "[CAPYLOG] dumping time log data" in line:
+                    # Set the flag to start printing lines
+                    start_printing = True
+                    continue  # Skip this line
+                
+                if "poll_dpdk_interval" not in line:
+                    continue
+
+                # Check if we should print the line
+                if start_printing:
+                    columns = line.strip().split(",")
+                    if len(columns) != 4:
+                        continue
+
+                    time_str = columns[2]
+                    time_components = time_str.split(':')
+                    hours, minutes = map(int, time_components[:2])
+                    seconds = float(time_components[2])  # Convert sub-second part to a float
+                    nanosecond_timestamp_1 = int((hours * 3600 + minutes * 60 + seconds) * 1_000_000_000)
+                    
+                    time_str = columns[3]
+                    time_components = time_str.split(':')
+                    hours, minutes = map(int, time_components[:2])
+                    seconds = float(time_components[2])  # Convert sub-second part to a float
+                    nanosecond_timestamp_2 = int((hours * 3600 + minutes * 60 + seconds) * 1_000_000_000)
+
+                    poll_interval = nanosecond_timestamp_1 - nanosecond_timestamp_2
+                    final_result = final_result + str(poll_interval) + "\n"
+    print(len(final_result.split('\n')))
+    with open(f'{DATA_PATH}/{experiment_id}.poll_interval', 'w') as file:
+        # Write the content to the file
+        file.write(final_result)
 
 
 def run_eval():
@@ -332,8 +380,13 @@ def run_eval():
 
                             if EVAL_MIG_LATENCY == True:
                                 kill_procs()
-                                time.sleep(3)
+                                time.sleep(5)
                                 parse_mig_latency(experiment_id)
+
+                            if EVAL_POLL_INTERVAL == True:
+                                kill_procs()
+                                time.sleep(5)
+                                parse_poll_interval(experiment_id)
 
             # task = host.run(cmd, return_output=True, quiet=False)
             # task.start()
@@ -361,7 +414,7 @@ atexit.register(exiting)
 
 if __name__ == '__main__':
     # parse_result()
-    # parse_mig_latency("20231027-100855.950472")
+    # parse_mig_latency("20231031-091034.787136")
     # exit()
     
     # cleaning()
