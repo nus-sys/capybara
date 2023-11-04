@@ -23,4 +23,7 @@ pub trait SchedulerFuture: Any + Future<Output = ()> + Unpin {
 
     /// Gets the underlying future in the target [SchedulerFuture].
     fn get_future(&self) -> &dyn Future<Output = ()>;
+
+    #[cfg(feature = "tcp-migration")]
+    fn as_future_operation_ref(&self) -> Option<&crate::inetstack::futures::FutureOperation> { None }
 }

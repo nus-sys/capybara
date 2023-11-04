@@ -815,7 +815,7 @@ impl Inner {
 
 #[cfg(feature = "tcp-migration")]
 impl TcpPeer {
-    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>) -> Result<bool, Fail> {
+    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>, pops: Vec<Buffer>) -> Result<bool, Fail> {
         let mut inner = self.inner.borrow_mut();
         let conn = match inner.sockets.get(&qd) {
             None => {
@@ -837,6 +837,10 @@ impl TcpPeer {
                 let mut state = inner.migrate_out_tcp_connection(qd)?;
                 if let Some(data) = data {
                     state.set_user_data(data);
+                }
+
+                for pop in pops.into_iter().rev() {
+                    state.recv_queue.push_front(pop);
                 }
 
                 inner.tcpmig.migrate_out(handle, state);
@@ -1287,16 +1291,19 @@ impl TcpState {
 // TCP State Serialization
 //==============================================================================
 
+#[cfg(feature = "tcp-migration")]
 trait Serialize {
     /// Serializes into the buffer and returns its unused part.
     fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8];
 }
 
+#[cfg(feature = "tcp-migration")]
 trait Deserialize: Sized {
     /// Deserializes from the buffer and returns its unused part.
     fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]);
 }
 
+#[cfg(feature = "tcp-migration")]
 impl Serialize for TcpState {
     fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
         buf[0..4].copy_from_slice(&self.local.ip().octets());
@@ -1347,6 +1354,7 @@ impl Serialize for TcpState {
     }
 }
 
+#[cfg(feature = "tcp-migration")]
 impl<T: Serialize> Serialize for VecDeque<T> {
     fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
         buf[0..4].copy_from_slice(&u32::try_from(self.len()).expect("deque len too big").to_be_bytes());
@@ -1358,6 +1366,7 @@ impl<T: Serialize> Serialize for VecDeque<T> {
     }
 }
 
+#[cfg(feature = "tcp-migration")]
 impl Serialize for Buffer {
     fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
         buf[0..4].copy_from_slice(&u32::try_from(self.len()).expect("buffer len too big").to_be_bytes());
@@ -1366,12 +1375,14 @@ impl Serialize for Buffer {
     }
 }
 
+#[cfg(feature = "tcp-migration")]
 impl Serialize for UnackedSegment {
     fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
         self.bytes.serialize_into(buf)
     }
 }
 
+#[cfg(feature = "tcp-migration")]
 impl Serialize for (SeqNumber, Buffer) {
     fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
         buf[0..4].copy_from_slice(&u32::from(self.0).to_be_bytes());
@@ -1379,6 +1390,7 @@ impl Serialize for (SeqNumber, Buffer) {
     }
 }
 
+#[cfg(feature = "tcp-migration")]
 impl<T: Deserialize> Deserialize for VecDeque<T> {
     fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
         use byteorder::{ByteOrder, BigEndian};
@@ -1396,6 +1408,7 @@ impl<T: Deserialize> Deserialize for VecDeque<T> {
     }
 }
 
+#[cfg(feature = "tcp-migration")]
 impl Deserialize for Buffer {
     fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
         use byteorder::{ByteOrder, BigEndian};
@@ -1411,6 +1424,7 @@ impl Deserialize for Buffer {
     }
 }
 
+#[cfg(feature = "tcp-migration")]
 impl Deserialize for UnackedSegment {
     fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
         let (bytes, buf) = Buffer::deserialize_from(buf, buffer);
@@ -1418,6 +1432,7 @@ impl Deserialize for UnackedSegment {
     }
 }
 
+#[cfg(feature = "tcp-migration")]
 impl Deserialize for (SeqNumber, Buffer) {
     fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
         use byteorder::{ByteOrder, BigEndian};
@@ -1428,6 +1443,7 @@ impl Deserialize for (SeqNumber, Buffer) {
     }
 }
 
+#[cfg(feature = "tcp-migration")]
 #[cfg(test)]
 mod test {
     use std::{net::{SocketAddrV4, Ipv4Addr}, collections::VecDeque};

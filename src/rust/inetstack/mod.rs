@@ -767,12 +767,58 @@ impl InetStack {
 
 #[cfg(feature = "tcp-migration")]
 impl InetStack {
-    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>) -> Result<bool, Fail> {
-        let result = self.ipv4.tcp.notify_migration_safety(qd, data);
+    /// `to_remove` must be at least as large as `qts`.
+    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>, qts: &[QToken], to_remove: &mut [bool]) -> Result<bool, Fail> {
+        // Check for any completed QToken for this `qd`.
+        let mut pops = Vec::new();
+        let mut i = 0;
+        for (&qt, to_remove) in qts.iter().zip(to_remove.iter_mut()) {
+            if let Some(buf) = self.get_pop_result_for_qd(qd, qt)? {
+                capy_log!("Found ready pop for {:?}", qd);
+                pops.push(buf);
+                *to_remove = true;
+            } else {
+                *to_remove = false;
+            }
+        }
+
+        let result = self.ipv4.tcp.notify_migration_safety(qd, data, pops);
         if let Ok(true) = result {
             self.file_table.free(qd);
         }
         result
+    }
+
+    fn get_pop_result_for_qd(&mut self, qd: QDesc, qt: QToken) -> Result<Option<Buffer>, Fail> {
+        let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
+            Some(handle) => handle,
+            None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
+        };
+
+        if !handle.has_completed() {
+            handle.take_key();
+            return Ok(None)
+        }
+
+        if !self.scheduler.check_tcp_pop_qd(handle, qd) {
+            return Ok(None);
+        }
+
+        // Extract the buffer and return.
+        let handle = self.scheduler.from_raw_handle(qt.into()).unwrap();
+        let future = self.scheduler.take(handle).as_any();
+        let future = *future.downcast::<FutureOperation>().unwrap();
+
+        match future {
+            FutureOperation::Tcp(f) => {
+                let (_, _, qr) = f.expect_result();
+                match qr {
+                    OperationResult::Pop(_, buf) => Ok(Some(buf)),
+                    _ => unreachable!("must be pop operation"),
+                }
+            },
+            _ => unreachable!("must be tcp operation"),
+        }
     }
 
     pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<Buffer>, Fail> {

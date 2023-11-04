@@ -690,7 +690,7 @@ pub extern "C" fn demi_getsockopt(
 #[allow(unused)]
 #[no_mangle]
 pub extern "C" fn demi_notify_migration_safety(was_migration_done: *mut c_int, qd: c_int, data: *const c_void, data_len: libc::size_t) -> c_int {
-    let data = if data.is_null() {
+    /* let data = if data.is_null() {
         None
     } else {
         Some(unsafe { std::slice::from_raw_parts(data.cast::<u8>(), data_len) })
@@ -710,7 +710,8 @@ pub extern "C" fn demi_notify_migration_safety(was_migration_done: *mut c_int, q
     match ret {
         Ok(ret) => ret,
         Err(e) => e.errno,
-    }
+    } */
+    todo!()
 }
 
 //======================================================================================================================

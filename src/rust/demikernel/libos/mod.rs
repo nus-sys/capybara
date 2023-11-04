@@ -254,9 +254,10 @@ impl LibOS {
 #[cfg(feature = "tcp-migration")]
 impl LibOS {
     /// Returns true if migration was done.
-    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>) -> Result<bool, Fail> {
+    /// `to_remove` must be at least as large as `qts`.
+    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>, qts: &[QToken], to_remove: &mut [bool]) -> Result<bool, Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.notify_migration_safety(qd, data),
+            LibOS::NetworkLibOS(libos) => libos.notify_migration_safety(qd, data, qts, to_remove),
         }
     }
 

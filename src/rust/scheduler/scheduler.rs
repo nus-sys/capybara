@@ -103,6 +103,20 @@ impl Scheduler {
         inner.slab.remove_unpin(key as usize).unwrap()
     }
 
+    #[cfg(feature = "tcp-migration")]
+    pub fn check_tcp_pop_qd(&self, mut handle: SchedulerHandle, qd: crate::QDesc) -> bool {
+        let mut inner = self.inner.borrow();
+        let key: u64 = handle.take_key().unwrap();
+        let (page, subpage_ix): (&WakerPageRef, usize) = inner.get_page(key);
+        assert!(!page.was_dropped(subpage_ix));
+        let future = inner.slab.get(key as usize).unwrap().as_ref();
+        if let Some(future) = future.as_future_operation_ref() {
+            future.check_tcp_pop_qd(qd)
+        } else {
+            false
+        }
+    }
+
     /// Given the raw `key` representing this future return a proper handle.
     pub fn from_raw_handle(&self, key: u64) -> Option<SchedulerHandle> {
         let inner: Ref<Inner<Box<dyn SchedulerFuture>>> = self.inner.borrow();

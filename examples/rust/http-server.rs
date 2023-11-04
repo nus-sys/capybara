@@ -401,6 +401,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         }
                     },
 
+                    OperationResult::Failed(e) => {
+                        server_log!("operation failed: {}", e);
+                    }
+
                     _ => {
                         panic!("Unexpected op: RESULT: {:?}", result);
                     },
@@ -462,8 +466,16 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         }
                     };
 
-                    match libos.notify_migration_safety(qd, data) {
-                        Ok(true) => qds_to_remove.push(qd),
+                    let mut to_remove = vec![false; qts.len()];
+                    match libos.notify_migration_safety(qd, data, &qts, &mut to_remove) {
+                        Ok(true) => {
+                            to_remove.into_iter()
+                                .enumerate().rev()
+                                .filter(|(_, e)| *e)
+                                .for_each(|(i, _)| { qts.swap_remove(i); });
+
+                            qds_to_remove.push(qd)
+                        },
                         Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
                         _ => (),
                     };
