@@ -45,7 +45,7 @@ use crate::{
         FutureResult,
         Scheduler,
         SchedulerHandle,
-    },
+    }, capy_time_log,
 };
 use ::libc::{
     c_int,
@@ -72,6 +72,8 @@ use ::std::{
 use crate::timer;
 
 use crate::capy_log;
+
+use chrono::NaiveTime;
 
 //==============================================================================
 // Exports
@@ -106,6 +108,7 @@ pub struct InetStack {
     scheduler: Scheduler,
     clock: TimerRc,
     ts_iters: usize,
+    prev_time: NaiveTime,
 }
 
 impl InetStack {
@@ -150,6 +153,7 @@ impl InetStack {
             scheduler,
             clock,
             ts_iters: 0,
+            prev_time: chrono::Local::now().time(),
         })
     }
 
@@ -687,10 +691,10 @@ impl InetStack {
             timer!("inetstack::poll_bg_work::for");
 
             for _ in 0..MAX_RECV_ITERS {
+                let recv_time: NaiveTime = chrono::Local::now().time();
                 let batch = {
                     #[cfg(feature = "profiler")]
                     timer!("inetstack::poll_bg_work::for::receive");
-
                     self.rt.receive()
                 };
 
@@ -699,11 +703,19 @@ impl InetStack {
                     timer!("inetstack::poll_bg_work::for::for");
 
                     if batch.is_empty() {
+                        self.prev_time = recv_time;
                         break;
                     }
 
                     #[cfg(feature = "tcp-migration")]
                     {
+                        /* for pkt in batch {
+                            if let Err(e) = self.do_receive(pkt) {
+                                warn!("Dropped packet: {:?}", e);
+                            }
+                            // TODO: This is a workaround for https://github.com/demikernel/inetstack/issues/149.
+                            self.scheduler.poll();
+                        } */
                         use crate::runtime::network::consts::RECEIVE_BATCH_SIZE;
                         use byteorder::{NetworkEndian, ByteOrder};
                         use crate::inetstack::protocols::{
@@ -726,6 +738,7 @@ impl InetStack {
                             unsafe { is_tcpmig.push_unchecked(cond); }
 
                             if cond {
+                                capy_time_log!("poll_dpdk_interval,{},{}", recv_time, self.prev_time);
                                 let pkt = std::mem::replace(pkt, Buffer::Heap(DataBuffer::empty()));
                                 if let Err(e) = self.do_receive(pkt) {
                                     warn!("Dropped migration packet: {:?}", e);
@@ -755,6 +768,7 @@ impl InetStack {
                         self.scheduler.poll();
                     }
                 }
+                self.prev_time = recv_time;
             }
         }
 
