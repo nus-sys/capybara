@@ -104,7 +104,7 @@ use ::std::{
 };
 
 #[cfg(feature = "tcp-migration")]
-use crate::inetstack::protocols::tcp_migration::TcpMigPeer;
+use crate::inetstack::protocols::tcp_migration::{TcpMigPeer, MigrationHandle};
 
 #[cfg(feature = "profiler")]
 use crate::timer;
@@ -815,8 +815,8 @@ impl Inner {
 
 #[cfg(feature = "tcp-migration")]
 impl TcpPeer {
-    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>, pops: Vec<Buffer>) -> Result<bool, Fail> {
-        let mut inner = self.inner.borrow_mut();
+    pub fn try_get_migration_handle(&mut self, qd: QDesc) -> Result<Option<MigrationHandle>, Fail> {
+        let inner = self.inner.borrow();
         let conn = match inner.sockets.get(&qd) {
             None => {
                 debug!("No entry in `sockets` for fd: {:?}", qd);
@@ -830,25 +830,27 @@ impl TcpPeer {
             },
         };
 
-        if let Some(handle) = inner.tcpmig.get_migration_handle(conn, qd) {
-            capy_log_mig!("\n\nMigrate Out ({}, {})", conn.0, conn.1);
-            {
-                capy_profile!("migrate");
-                let mut state = inner.migrate_out_tcp_connection(qd)?;
-                if let Some(data) = data {
-                    state.set_user_data(data);
-                }
+        Ok(inner.tcpmig.get_migration_handle(conn, qd))
+    }
 
-                for pop in pops.into_iter().rev() {
-                    state.recv_queue.push_front(pop);
-                }
-
-                inner.tcpmig.migrate_out(handle, state);
-                return Ok(true)
+    pub fn do_migrate_out(&mut self, handle: MigrationHandle, data: Option<&[u8]>, pops: Vec<Buffer>) -> Result<(), Fail> {
+        let mut inner = self.inner.borrow_mut();
+        let (conn, qd) = handle.inner();
+        capy_log_mig!("\n\nMigrate Out ({}, {})", conn.0, conn.1);
+        {
+            capy_profile!("migrate");
+            let mut state = inner.migrate_out_tcp_connection(qd)?;
+            if let Some(data) = data {
+                state.set_user_data(data);
             }
-        }
 
-        Ok(false)
+            for pop in pops.into_iter().rev() {
+                state.recv_queue.push_front(pop);
+            }
+
+            inner.tcpmig.migrate_out(handle, state);
+            Ok(())
+        }
     }
 
     pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<Buffer>, Fail> {

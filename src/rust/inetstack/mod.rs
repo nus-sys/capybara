@@ -781,11 +781,17 @@ impl InetStack {
 
 #[cfg(feature = "tcp-migration")]
 impl InetStack {
-    /// `to_remove` must be at least as large as `qts`.
+    /// `to_remove` must be at least as large as `qts`, and must be initialised to all `false`.
     pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>, qts: &[QToken], to_remove: &mut [bool]) -> Result<bool, Fail> {
-        // Check for any completed QToken for this `qd`.
+        let handle = match self.ipv4.tcp.try_get_migration_handle(qd)? {
+            Some(handle) => handle,
+            None => return Ok(false),
+        };
+
         let mut pops = Vec::new();
         let mut i = 0;
+
+        // Check for any completed QToken for this `qd`.
         for (&qt, to_remove) in qts.iter().zip(to_remove.iter_mut()) {
             if let Some(buf) = self.get_pop_result_for_qd(qd, qt)? {
                 capy_log!("Found ready pop for {:?}", qd);
@@ -796,11 +802,9 @@ impl InetStack {
             }
         }
 
-        let result = self.ipv4.tcp.notify_migration_safety(qd, data, pops);
-        if let Ok(true) = result {
-            self.file_table.free(qd);
-        }
-        result
+        self.ipv4.tcp.do_migrate_out(handle, data, pops)?;
+        self.file_table.free(qd);
+        Ok(true)
     }
 
     fn get_pop_result_for_qd(&mut self, qd: QDesc, qt: QToken) -> Result<Option<Buffer>, Fail> {

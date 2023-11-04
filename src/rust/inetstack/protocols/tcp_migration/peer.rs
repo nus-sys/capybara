@@ -132,6 +132,13 @@ pub struct TcpMigPeer {
 
 pub struct MigrationHandle((SocketAddrV4, SocketAddrV4), QDesc);
 
+impl MigrationHandle {
+    pub fn inner(&self) -> ((SocketAddrV4, SocketAddrV4), QDesc) {
+        let Self(conn, qd) = self;
+        (*conn, *qd)
+    }
+}
+
 //======================================================================================================================
 // Associate Functions
 //======================================================================================================================
