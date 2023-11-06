@@ -239,52 +239,115 @@ fn server(local: SocketAddrV4) -> Result<()> {
             break;
         }
 
-        /* let result = libos.trywait_any_one2(&qts).expect("result");
+        let result = libos.trywait_any_one2(&qts).expect("result");
         #[cfg(feature = "mig-per-n-req")]
         let mut qds_to_migrate = HashSet::new();
         if let Some((index, qd, result)) = result {
+            server_log!("\n\n======= OS: one I/O operation have been completed, take result! =======");        
             qts.swap_remove(index);
             match result {
                 OperationResult::Accept(new_qd) => {
-                    // Pop from new_qd
-                    let pop_qt = libos.pop(new_qd).expect("pop qt");
-                    qts.push(pop_qt);
+                    server_log!("ACCEPT complete ==> issue POP and ACCEPT");
+
+                    let buffer = {
+                        let mut buffer = Buffer::new();
+
+                        #[cfg(feature = "tcp-migration")]
+                        if let Some(data) = libos.take_migrated_data(new_qd).expect("take_migrated_data failed") {
+                            server_log!("Received migrated data ({} bytes)", data.len());
+
+                            buffer.get_empty_buf()[..data.len()].copy_from_slice(&data);
+                            buffer.push_data(data.len());
+                        }
+
+                        buffer
+                    };
+
                     connstate.insert(new_qd, ConnectionState {
                         pushing: 0,
-                        pop_qt: pop_qt,
-                        buffer: Buffer::new(),
+                        buffer,
                     });
+
+                    // Pop from new_qd
+                    match libos.pop(new_qd) {
+                        Ok(pop_qt) => qts.push(pop_qt),
+                        #[cfg(feature = "tcp-migration")]
+                        Err(e) if e.errno == demikernel::ETCPMIG => (),
+                        Err(e) => panic!("pop qt: {}", e),
+                    }
 
                     // Re-arm accept
                     qts.push(libos.accept(qd).expect("accept qtoken"));
                 },
+
                 OperationResult::Push => {
-                    let mut state = connstate.get_mut(&qd).unwrap();
-                    state.pushing -= 1;
-                    // queue next pop
-                    let pop_qt = libos.pop(qd).expect("pop qt");
-                    qts.push(pop_qt);
-                    state.pop_qt = pop_qt;
+                    connstate.get_mut(&qd).unwrap().pushing -= 1;
+                    
+                    // #[cfg(feature = "tcp-migration")]
+                    // libos.pushed_response();
+
+                    server_log!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing);
+                    
+                    #[cfg(feature = "mig-per-n-req")]
+                    if migration_per_n > 0  && !requests_remaining.contains_key(&qd) {
+                        // Server has been processed N requests from this qd 
+                        qds_to_migrate.insert(qd);
+                    }
                 },
+
                 OperationResult::Pop(_, recvbuf) => {
+                    server_log!("POP complete");
+
                     let mut state = connstate.get_mut(&qd).unwrap();
                     let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
                     state.pushing += sent;
 
-                    #[cfg(feature = "tcp-migration")]{
-                        request_count += sent;
-                        if request_count % 100 == 0 {
-                            // eprintln!("request_counnt: {} {}", request_count, libos.global_recv_queue_length());
-                            queue_length_vec.push((request_count, libos.global_recv_queue_length()));
+                    server_log!("Issued PUSH => {} pushes pending", state.pushing);
+                    
+                    
+                    #[cfg(feature = "mig-per-n-req")] {
+                        let remaining = requests_remaining.entry(qd).or_insert(migration_per_n);
+                        *remaining -= 1;
+                        if *remaining > 0 {
+                            // queue next pop
+                            match libos.pop(qd) {
+                                Ok(qt) => {
+                                    qts.push(qt);
+                                    server_log!("Issued POP");
+                                },
+                                Err(e) if e.errno == demikernel::ETCPMIG => (),
+                                Err(e) => panic!("pop qt: {}", e),
+                            }
+                        } else{
+                            server_log!("Should be migrated (no POP issued)");
+                            requests_remaining.remove(&qd).unwrap();
+                        }
+                    }
+                    #[cfg(not(feature = "mig-per-n-req"))]{
+                        // queue next pop
+                        match libos.pop(qd) {
+                            Ok(qt) => {
+                                qts.push(qt);
+                                server_log!("Issued POP");
+                            },
+                            #[cfg(feature = "tcp-migration")]
+                            Err(e) if e.errno == demikernel::ETCPMIG => (),
+                            Err(e) => panic!("pop qt: {}", e),
                         }
                     }
                 },
+
+                OperationResult::Failed(e) => {
+                    server_log!("operation failed: {}", e);
+                }
+
                 _ => {
                     panic!("Unexpected op: RESULT: {:?}", result);
                 },
             }
-        } */
-        let result = libos.trywait_any2(&qts).expect("result");
+        }
+
+        /* let result = libos.trywait_any2(&qts).expect("result");
         
         #[cfg(feature = "mig-per-n-req")]
         let mut qds_to_migrate = HashSet::new();
@@ -411,7 +474,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 }
             }
             server_log!("******* APP: Okay, handled the results! *******");
-        }
+        } */
 
         #[cfg(feature = "tcp-migration")]
         {
@@ -438,8 +501,16 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         }
                     };
 
-                    match libos.notify_migration_safety(qd, data) {
-                        Ok(true) => qds_to_remove.push(qd),
+                    let mut to_remove = vec![false; qts.len()];
+                    match libos.notify_migration_safety(qd, data, &qts, &mut to_remove) {
+                        Ok(true) => {
+                            to_remove.into_iter()
+                                .enumerate().rev()
+                                .filter(|(_, e)| *e)
+                                .for_each(|(i, _)| { qts.swap_remove(i); });
+
+                            qds_to_remove.push(qd)
+                        },
                         Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
                         _ => (),
                     };
