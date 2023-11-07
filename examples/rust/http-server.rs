@@ -239,7 +239,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
             break;
         }
 
-        let result = libos.trywait_any_one2(&qts).expect("result");
+        /* let result = libos.trywait_any_one2(&qts).expect("result");
         #[cfg(feature = "mig-per-n-req")]
         let mut qds_to_migrate = HashSet::new();
         if let Some((index, qd, result)) = result {
@@ -345,9 +345,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     panic!("Unexpected op: RESULT: {:?}", result);
                 },
             }
-        }
+        } */
 
-        /* let result = libos.trywait_any2(&qts).expect("result");
+        let result = libos.trywait_any2(&qts).expect("result");
         
         #[cfg(feature = "mig-per-n-req")]
         let mut qds_to_migrate = HashSet::new();
@@ -474,7 +474,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 }
             }
             server_log!("******* APP: Okay, handled the results! *******");
-        } */
+        }
 
         #[cfg(feature = "tcp-migration")]
         {

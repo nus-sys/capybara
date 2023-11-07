@@ -160,7 +160,50 @@ impl NetworkRuntime for DPDKRuntime {
             #[cfg(feature = "profiler")]
             timer!("catnip_libos::receive::rte_eth_rx_burst");
 
-            rte_eth_rx_burst(self.port_id, self.queue_id, packets.as_mut_ptr(), RECEIVE_BATCH_SIZE as u16)
+            rte_eth_rx_burst(self.port_id, self.queue_id*2, packets.as_mut_ptr(), RECEIVE_BATCH_SIZE as u16)
+        };
+        assert!(nb_rx as usize <= RECEIVE_BATCH_SIZE);
+
+        {
+            #[cfg(feature = "profiler")]
+            timer!("catnip_libos:receive::for");
+            for &packet in &packets[..nb_rx as usize] {
+                let mbuf: DPDKBuffer = DPDKBuffer::new(packet);
+                let buf: Buffer = Buffer::DPDK(mbuf);
+
+                /* FOR DEBUGGING PACKETS */
+                /* 
+                use crate::inetstack::protocols::{ipv4::Ipv4Header, ethernet2::Ethernet2Header, tcp::segment::TcpHeader};
+                let mut tmpbuf = buf.clone();
+                let (eth, tmpbuf) = Ethernet2Header::parse(tmpbuf).unwrap();
+                let (ip, tmpbuf) = Ipv4Header::parse(tmpbuf).unwrap();
+                match TcpHeader::parse(&ip, tmpbuf, false) {
+                    Ok((tcp, buf)) => {
+                        eprintln!("===RX START===\nEth: {:#?}\nIP: {:#?}\nTCP: {:#?}\n===RX END===", eth, ip, tcp);
+                    },
+                    Err(e) => eprintln!("RECEIVED NON-TCP PACKET\n"),
+                };
+                */
+                
+                /* FOR DEBUGGING PACKETS */
+
+                out.push(buf);
+            }
+        }
+
+        out
+    }
+
+    #[cfg(feature = "tcp-migration")]
+    fn receive_tcpmig(&self) -> ArrayVec<Buffer, RECEIVE_BATCH_SIZE> {
+        let mut out = ArrayVec::new();
+
+        let mut packets: [*mut rte_mbuf; RECEIVE_BATCH_SIZE] = unsafe { mem::zeroed() };
+        let nb_rx = unsafe {
+            #[cfg(feature = "profiler")]
+            timer!("catnip_libos::receive::rte_eth_rx_burst");
+
+            rte_eth_rx_burst(self.port_id, self.queue_id*2 + 1, packets.as_mut_ptr(), RECEIVE_BATCH_SIZE as u16)
         };
         assert!(nb_rx as usize <= RECEIVE_BATCH_SIZE);
 

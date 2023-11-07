@@ -692,89 +692,32 @@ impl InetStack {
 
             for _ in 0..MAX_RECV_ITERS {
                 let recv_time: NaiveTime = chrono::Local::now().time();
+
+                #[cfg(feature = "tcp-migration")]{   
+                    let tcpmig_batch = {
+                        #[cfg(feature = "profiler")]
+                        timer!("inetstack::poll_bg_work::for::receive_tcpmig");
+                        self.rt.receive_tcpmig()
+                    };
+                    for pkt in tcpmig_batch {
+                        if let Err(e) = self.do_receive(pkt) {
+                            warn!("Dropped packet: {:?}", e);
+                        }
+                    }
+                }
+
                 let batch = {
                     #[cfg(feature = "profiler")]
                     timer!("inetstack::poll_bg_work::for::receive");
                     self.rt.receive()
                 };
-
-                {
-                    #[cfg(feature = "profiler")]
-                    timer!("inetstack::poll_bg_work::for::for");
-
-                    if batch.is_empty() {
-                        self.prev_time = recv_time;
-                        break;
+                for pkt in batch {
+                    if let Err(e) = self.do_receive(pkt) {
+                        warn!("Dropped packet: {:?}", e);
                     }
-
-                    #[cfg(feature = "tcp-migration")]
-                    {
-                        /* for pkt in batch {
-                            if let Err(e) = self.do_receive(pkt) {
-                                warn!("Dropped packet: {:?}", e);
-                            }
-                            // TODO: This is a workaround for https://github.com/demikernel/inetstack/issues/149.
-                            self.scheduler.poll();
-                        } */
-                        use crate::runtime::network::consts::RECEIVE_BATCH_SIZE;
-                        use byteorder::{NetworkEndian, ByteOrder};
-                        use crate::inetstack::protocols::{
-                            ethernet2::ETHERNET2_HEADER_SIZE,
-                            ip::IpProtocol,
-                            ipv4::IPV4_HEADER_DEFAULT_SIZE,
-                            tcp_migration::segment::MAGIC_NUMBER,
-                        };
-
-                        let mut is_tcpmig = arrayvec::ArrayVec::<bool, { RECEIVE_BATCH_SIZE }>::new_const();
-                        let mut batch = batch;
-
-                        let mut is_tcpmig_in_batch = false;
-                        // Receive TCPMIG packets first.
-                        for pkt in batch.iter_mut() {
-                            let cond = NetworkEndian::read_u16(&pkt[12..14]) == EtherType2::Ipv4 as u16 && // Check if IPV4 packet.
-                                pkt[ETHERNET2_HEADER_SIZE..][9] == IpProtocol::UDP as u8 && // Check if UDP packet.
-                                pkt[ETHERNET2_HEADER_SIZE + IPV4_HEADER_DEFAULT_SIZE..][8..12] == MAGIC_NUMBER.to_be_bytes(); // Check TCPMIG magic numeber.
-
-                            // Soundness: Capacity of `is_tcpmig` is equal to capacity of `batch`.
-                            unsafe { is_tcpmig.push_unchecked(cond); }
-
-                            if cond {
-                                let pkt = std::mem::replace(pkt, Buffer::Heap(DataBuffer::empty()));
-                                if let Err(e) = self.do_receive(pkt) {
-                                    warn!("Dropped migration packet: {:?}", e);
-                                }
-                                self.scheduler.poll();
-
-                                is_tcpmig_in_batch = true;
-
-                            }
-                        }
-                        if is_tcpmig_in_batch {
-                            capy_time_log!("poll_dpdk_interval,{},{}", recv_time, self.prev_time);
-                        }
-                        
-                        for (pkt, was_tcpmig) in batch.into_iter().zip(is_tcpmig) {
-                            if was_tcpmig {
-                                continue;
-                            }
-
-                            if let Err(e) = self.do_receive(pkt) {
-                                warn!("Dropped packet: {:?}", e);
-                            }
-                            self.scheduler.poll();
-                        }
-                    }
-
-                    #[cfg(not(feature = "tcp-migration"))]
-                    for pkt in batch {
-                        if let Err(e) = self.do_receive(pkt) {
-                            warn!("Dropped packet: {:?}", e);
-                        }
-                        // TODO: This is a workaround for https://github.com/demikernel/inetstack/issues/149.
-                        self.scheduler.poll();
-                    }
+                    // TODO: This is a workaround for https://github.com/demikernel/inetstack/issues/149.
+                    self.scheduler.poll();
                 }
-                self.prev_time = recv_time;
             }
         }
 

@@ -42,4 +42,8 @@ pub trait NetworkRuntime {
 
     /// Receives a batch of [PacketBuf].
     fn receive(&self) -> ArrayVec<Buffer, RECEIVE_BATCH_SIZE>;
+
+    #[cfg(feature = "tcp-migration")]
+    /// Receives a batch of TCPMIG [PacketBuf].
+    fn receive_tcpmig(&self) -> ArrayVec<Buffer, RECEIVE_BATCH_SIZE>;
 }
