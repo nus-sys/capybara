@@ -1219,11 +1219,10 @@ impl TcpState {
         + 1 + if let Some(ref data) = self.user_data { 4 + data.len() } else { 0 }
     }
 
-    pub fn deserialize(buffer: Buffer) -> Self {
+    pub fn deserialize(mut buf: Buffer) -> Self {
         use byteorder::{ByteOrder, BigEndian};
 
-        let buffer = Rc::new(buffer);
-        let buf = &buffer[..];
+        let buf = &mut buf;
 
         let local = SocketAddrV4::new(Ipv4Addr::new(buf[0], buf[1], buf[2], buf[3]), BigEndian::read_u16(&buf[4..6]));
         let remote = SocketAddrV4::new(Ipv4Addr::new(buf[6], buf[7], buf[8], buf[9]), BigEndian::read_u16(&buf[10..12]));
@@ -1241,25 +1240,29 @@ impl TcpState {
         
         let receiver_window_size = BigEndian::read_u32(&buf[48..52]);
         let receiver_window_scale = BigEndian::read_u32(&buf[52..56]);
-
         let window_scale = buf[56];
 
-        let (out_of_order_fin, buf) = match buf[57] {
-            0 => (None, &buf[58..]),
-            1 => (Some(SeqNumber::from(BigEndian::read_u32(&buf[58..62]))), &buf[62..]),
+        let out_of_order_fin = match buf[57] {
+            0 => None,
+            1 => {
+                let val = Some(SeqNumber::from(BigEndian::read_u32(&buf[58..62])));
+                buf.adjust(4); // Adjust for the 4 additional bytes of out_of_order_fin.
+                val
+            },
             _ => panic!("invalid Option discriminant"),
         };
+        buf.adjust(58); // Adjust for the fixed size.
 
-        let (out_of_order_queue, buf) = VecDeque::<(SeqNumber, Buffer)>::deserialize_from(buf, buffer.clone());
-        let (recv_queue, buf) = VecDeque::<Buffer>::deserialize_from(buf, buffer.clone());
-        let (unacked_queue, buf) = VecDeque::<UnackedSegment>::deserialize_from(buf, buffer.clone());
-        let (unsent_queue, buf) = VecDeque::<Buffer>::deserialize_from(buf, buffer.clone());
+        let out_of_order_queue = VecDeque::<(SeqNumber, Buffer)>::deserialize_from(buf);
+        let recv_queue = VecDeque::<Buffer>::deserialize_from(buf);
+        let unacked_queue = VecDeque::<UnackedSegment>::deserialize_from(buf);
+        let unsent_queue = VecDeque::<Buffer>::deserialize_from(buf);
 
-        let (user_data, buf) = match buf[0] {
-            0 => (None, &buf[1..]),
+        let user_data = match buf[0] {
+            0 => None,
             1 => {
-                let (data, buf) = Buffer::deserialize_from(&buf[1..], buffer.clone());
-                (Some(data), buf)
+                buf.adjust(1);
+                Some(Buffer::deserialize_from(buf))
             },
             _ => panic!("invalid Option discriminant"),
         };
@@ -1301,8 +1304,8 @@ trait Serialize {
 
 #[cfg(feature = "tcp-migration")]
 trait Deserialize: Sized {
-    /// Deserializes from the buffer and returns its unused part.
-    fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]);
+    /// Deserializes and removes the deserialised part from the buffer.
+    fn deserialize_from(buf: &mut Buffer) -> Self;
 }
 
 #[cfg(feature = "tcp-migration")]
@@ -1394,54 +1397,54 @@ impl Serialize for (SeqNumber, Buffer) {
 
 #[cfg(feature = "tcp-migration")]
 impl<T: Deserialize> Deserialize for VecDeque<T> {
-    fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
+    fn deserialize_from(buf: &mut Buffer) -> Self {
         use byteorder::{ByteOrder, BigEndian};
 
         let size = usize::try_from(BigEndian::read_u32(&buf[0..4])).unwrap();
         let mut deque = VecDeque::<T>::with_capacity(size);
-        let mut buf = &buf[4..];
+        buf.adjust(4);
 
         for _ in 0..size {
-            let deserialized = T::deserialize_from(buf, buffer.clone());
-            deque.push_back(deserialized.0);
-            buf = deserialized.1;
+            let deserialized = T::deserialize_from(buf);
+            deque.push_back(deserialized);
         }
-        (deque, buf)
+        deque
     }
 }
 
 #[cfg(feature = "tcp-migration")]
 impl Deserialize for Buffer {
-    fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
+    fn deserialize_from(buf: &mut Buffer) -> Self {
         use byteorder::{ByteOrder, BigEndian};
 
         let len = usize::try_from(BigEndian::read_u32(&buf[0..4])).unwrap();
-        let offset = usize::try_from(unsafe { buf[4..].as_ptr().offset_from(buffer.as_ptr()) }).unwrap();
+        buf.adjust(4);
 
-        let mut buffer = buffer.as_ref().clone();
-        buffer.adjust(offset);
-        buffer.trim(buffer.len() - len);
+        let mut buffer = buf.clone();
+        buffer.trim(buf.len() - len);
+        buf.adjust(len);
 
-        (buffer, &buf[4 + len..])
+        buffer
     }
 }
 
 #[cfg(feature = "tcp-migration")]
 impl Deserialize for UnackedSegment {
-    fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
-        let (bytes, buf) = Buffer::deserialize_from(buf, buffer);
-        (Self { bytes, initial_tx: None }, buf)
+    fn deserialize_from(buf: &mut Buffer) -> Self {
+        let bytes = Buffer::deserialize_from(buf);
+        Self { bytes, initial_tx: None }
     }
 }
 
 #[cfg(feature = "tcp-migration")]
 impl Deserialize for (SeqNumber, Buffer) {
-    fn deserialize_from(buf: &[u8], buffer: Rc<Buffer>) -> (Self, &[u8]) {
+    fn deserialize_from(buf: &mut Buffer) -> Self {
         use byteorder::{ByteOrder, BigEndian};
 
         let seq = SeqNumber::from(BigEndian::read_u32(&buf[0..4]));
-        let (buffer, buf) = Buffer::deserialize_from(&buf[4..], buffer);
-        ((seq, buffer), buf)
+        buf.adjust(4);
+        let buffer = Buffer::deserialize_from(buf);
+        (seq, buffer)
     }
 }
 
