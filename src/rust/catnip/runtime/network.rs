@@ -194,6 +194,7 @@ impl NetworkRuntime for DPDKRuntime {
         out
     }
 
+    #[cfg(feature = "tcp-migration")]
     fn as_dpdk_runtime(&self) -> Option<&crate::catnip::runtime::DPDKRuntime> {
         Some(self)
     }
