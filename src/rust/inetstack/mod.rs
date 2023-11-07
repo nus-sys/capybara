@@ -728,6 +728,7 @@ impl InetStack {
                         let mut is_tcpmig = arrayvec::ArrayVec::<bool, { RECEIVE_BATCH_SIZE }>::new_const();
                         let mut batch = batch;
 
+                        let mut is_tcpmig_in_batch = false;
                         // Receive TCPMIG packets first.
                         for pkt in batch.iter_mut() {
                             let cond = NetworkEndian::read_u16(&pkt[12..14]) == EtherType2::Ipv4 as u16 && // Check if IPV4 packet.
@@ -738,15 +739,20 @@ impl InetStack {
                             unsafe { is_tcpmig.push_unchecked(cond); }
 
                             if cond {
-                                capy_time_log!("poll_dpdk_interval,{},{}", recv_time, self.prev_time);
                                 let pkt = std::mem::replace(pkt, Buffer::Heap(DataBuffer::empty()));
                                 if let Err(e) = self.do_receive(pkt) {
                                     warn!("Dropped migration packet: {:?}", e);
                                 }
                                 self.scheduler.poll();
+
+                                is_tcpmig_in_batch = true;
+
                             }
                         }
-
+                        if is_tcpmig_in_batch {
+                            capy_time_log!("poll_dpdk_interval,{},{}", recv_time, self.prev_time);
+                        }
+                        
                         for (pkt, was_tcpmig) in batch.into_iter().zip(is_tcpmig) {
                             if was_tcpmig {
                                 continue;
