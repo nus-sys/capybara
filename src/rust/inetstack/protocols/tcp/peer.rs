@@ -1537,12 +1537,12 @@ mod test {
         };
 
         let seg_clone = segment.clone();
-        let count = seg_clone.fragments(1500).count();
+        let count = seg_clone.fragments().count();
 
         let mut fragments = Vec::with_capacity(count);
         {
             capy_profile!("total fragment");
-            for e in segment.fragments(1500) {
+            for e in segment.fragments() {
                 fragments.push((e.tcpmig_hdr, e.data));
             }
         }

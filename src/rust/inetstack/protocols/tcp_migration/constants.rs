@@ -1,19 +1,9 @@
 //======================================================================================================================
 // Constants
 //======================================================================================================================
-use std::{time::{Duration, Instant}};
-use ::std::{
-    net::{
-        Ipv4Addr,
-    },
-};
-use crate::{
-    runtime::{
-        network::{
-            types::MacAddress,
-        },
-    }, 
-};
+use std::time::Duration;
+use ::std::net::Ipv4Addr;
+use crate::runtime::network::types::MacAddress;
 
 //const BASE_RX_TX_THRESHOLD_RATIO: f64 = 2.0;
 pub const BASE_RECV_QUEUE_LENGTH_THRESHOLD: usize = 30;

@@ -11,7 +11,7 @@ mod defragmenter;
 use crate::{
     inetstack::protocols::{
         ethernet2::Ethernet2Header,
-        ipv4::Ipv4Header,
+        ipv4::{Ipv4Header, IPV4_HEADER_DEFAULT_SIZE},
     },
     runtime::{
         memory::{Buffer, DataBuffer},
@@ -26,6 +26,13 @@ use crate::{
 pub use self::header::{TCPMIG_HEADER_SIZE, MAGIC_NUMBER};
 pub use header::TcpMigHeader;
 pub use defragmenter::TcpMigDefragmenter;
+
+//==============================================================================
+// Constants
+//==============================================================================
+
+// TEMP
+pub const MAX_FRAGMENT_SIZE: usize = 1500 - IPV4_HEADER_DEFAULT_SIZE - TCPMIG_HEADER_SIZE;
 
 //==============================================================================
 // Structures
@@ -46,7 +53,6 @@ pub struct TcpMigSegment {
 /// A generator of fragments of a [TcpMigSegment].
 pub struct TcpMigFragmenter {
     segment: TcpMigSegment,
-    max_fragment_size: usize,
     current_fragment: u16,
 }
 
@@ -70,11 +76,9 @@ impl TcpMigSegment {
         }
     }
 
-    pub fn fragments(self, max_fragment_size: usize) -> TcpMigFragmenter {
-        assert_ne!(max_fragment_size, 0, "max_fragment_size is zero");
+    pub fn fragments(self) -> TcpMigFragmenter {
         TcpMigFragmenter {
             segment: self,
-            max_fragment_size,
             current_fragment: 0,
         }
     }
@@ -134,20 +138,20 @@ impl Iterator for TcpMigFragmenter {
     fn next(&mut self) -> Option<<Self as Iterator>::Item> {
         if self.segment.data.len() == 0 && self.current_fragment != 0 {
             None
-        } else {
+        } else {            
             let ethernet2_hdr = self.segment.ethernet2_hdr.clone();
             let ipv4_hdr = self.segment.ipv4_hdr.clone();
             let mut tcpmig_hdr = self.segment.tcpmig_hdr.clone();
 
-            let data = if self.segment.data.len() <= self.max_fragment_size {
+            let data = if self.segment.data.len() <= MAX_FRAGMENT_SIZE {
                 tcpmig_hdr.flag_next_fragment = false;
                 // Take the remaining data so memory is released.
                 std::mem::replace(&mut self.segment.data, Buffer::Heap(DataBuffer::empty()))
             } else {
                 tcpmig_hdr.flag_next_fragment = true;
                 let mut data = self.segment.data.clone();
-                data.trim(data.len() - self.max_fragment_size);
-                self.segment.data.adjust(self.max_fragment_size);
+                data.trim(data.len() - MAX_FRAGMENT_SIZE);
+                self.segment.data.adjust(MAX_FRAGMENT_SIZE);
                 data
             };
 

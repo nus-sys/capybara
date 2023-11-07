@@ -5,10 +5,7 @@
 // Imports
 //==============================================================================
 
-use std::{collections::BinaryHeap, cmp::Reverse};
-
 use crate::runtime::memory::{Buffer, DataBuffer};
-
 use super::TcpMigHeader;
 
 //==============================================================================
@@ -20,9 +17,10 @@ use super::TcpMigHeader;
 struct Fragment(TcpMigHeader, Buffer);
 
 pub struct TcpMigDefragmenter {
-    fragment_count: Option<usize>,
-    fragments: BinaryHeap<Reverse<Fragment>>,
-    data_len: usize,
+    fragments: Vec<Buffer>,
+    total_fragments: Option<usize>,
+    current_fragments: usize,
+    current_size: usize,
 }
 
 //==============================================================================
@@ -32,47 +30,59 @@ pub struct TcpMigDefragmenter {
 impl TcpMigDefragmenter {
     pub fn new() -> Self {
         Self {
-            fragment_count: None,
-            fragments: BinaryHeap::new(),
-            data_len: 0
+            fragments: Vec::new(),
+            total_fragments: None,
+            current_fragments: 0,
+            current_size: 0,
         }
     }
 
     /// Returns None if all the fragments have not been received.
     pub fn defragment(&mut self, hdr: TcpMigHeader, buf: Buffer) -> Option<(TcpMigHeader, Buffer)> {
-        if let None = self.fragment_count {
-            if !hdr.flag_next_fragment {
-                let count = hdr.fragment_offset as usize + 1;
-                self.fragment_count = Some(count);
-                self.fragments.reserve(count - self.fragments.len());
+        let offset = hdr.fragment_offset as usize;
+
+        // Last fragment received. Now we know the total number of fragments.
+        if !hdr.flag_next_fragment {
+            let count = offset + 1;
+            self.total_fragments = Some(count);
+            self.fragments.reserve(count - self.fragments.len());
+        }
+        
+        // Store buffer at the correct position.
+        if offset >= self.fragments.len() {
+            let additional = offset + 1 - self.fragments.len();
+            for _ in 0..additional {
+                self.fragments.push(Buffer::Heap(DataBuffer::empty()));
             }
         }
-        self.data_len += buf.len();
-        self.fragments.push(Reverse(Fragment(hdr, buf)));
+        self.current_size += buf.len();
+        self.current_fragments += 1;
+        self.fragments[offset] = buf;
 
-        let count = self.fragment_count?;
-        if count != self.fragments.len() {
-            None
-        } else {
-            let mut hdr = self.fragments.peek().unwrap().0.0.clone();
-            hdr.flag_next_fragment = false;
-            hdr.fragment_offset = 0;
-
-            let mut buf = Buffer::Heap(DataBuffer::new(self.data_len).unwrap());
-            let mut buf_index = 0;
-            while let Some(Reverse(fragment)) = self.fragments.pop() {
-                buf[buf_index..buf_index + fragment.1.len()].copy_from_slice(&fragment.1);
-                buf_index += fragment.1.len();
-            }
-            
-            self.reset();
-            Some((hdr, buf))
+        // Return if more fragments left.
+        let count = self.total_fragments?;
+        if count != self.current_fragments {
+            return None
         }
-    }
 
-    fn reset(&mut self) {
-        self.fragment_count = None;
+        let mut hdr = hdr;
+        hdr.flag_next_fragment = false;
+        hdr.fragment_offset = 0;
+
+        // Defragment.
+        let mut buffer = Buffer::Heap(DataBuffer::new(self.current_size).unwrap());
+        self.fragments.iter().fold(0, |start, f| {
+            let end = start + f.len();
+            buffer[start..end].copy_from_slice(&f);
+            end
+        });
+
+        // Reset the defragmenter and return the defragmented buffer.
         self.fragments.clear();
+        self.total_fragments = None;
+        self.current_fragments = 0;
+        
+        Some((hdr, buffer))
     }
 }
 

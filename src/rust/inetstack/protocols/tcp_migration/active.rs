@@ -16,7 +16,7 @@ use crate::{
                 Ethernet2Header,
             },
             ip::IpProtocol,
-            ipv4::Ipv4Header, tcp::{segment::TcpHeader, peer::TcpState},
+            ipv4::Ipv4Header, tcp::{segment::TcpHeader, peer::TcpState}, tcp_migration::segment::MAX_FRAGMENT_SIZE,
         },
     runtime::{
         fail::Fail,
@@ -30,7 +30,7 @@ use crate::{
     capy_profile, capy_profile_merge_previous, capy_time_log,
 };
 
-use crate::{capy_log, capy_log_mig};
+use crate::capy_log_mig;
 
 use ::std::{
     net::{
@@ -289,10 +289,8 @@ impl ActiveMigration {
         // Layer 4 protocol field marked as UDP because DPDK only supports standard Layer 4 protocols.
         let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::UDP);
 
-        const MTU: usize = 1500; // TEMP
-        let max_fragment_size =  MTU - ip_hdr.compute_size() - tcpmig_hdr.size();
-        if buf.len() / max_fragment_size > u16::MAX as usize {
-            todo!("Graceful rejection of migration");
+        if buf.len() / MAX_FRAGMENT_SIZE > u16::MAX as usize {
+            panic!("TcpState too large")
         }
         let segment = TcpMigSegment::new(
             Ethernet2Header::new(self.remote_link_addr, self.local_link_addr, EtherType2::Ipv4),
@@ -300,7 +298,7 @@ impl ActiveMigration {
             tcpmig_hdr,
             buf,
         );
-        for fragment in segment.fragments(max_fragment_size) {
+        for fragment in segment.fragments() {
             self.rt.transmit(Box::new(fragment));
         }
     }
