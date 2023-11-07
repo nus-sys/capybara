@@ -353,9 +353,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
         let mut qds_to_migrate = HashSet::new();
 
         if let Some(completed_results) = result {
-            let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
+            /* let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
                 matches!(result, OperationResult::Pop(_, _))
-            }).count();
+            }).count(); */
             /* #[cfg(feature = "tcp-migration")]{
                 request_count += 1;
                 if request_count % 1 == 0 {
@@ -364,13 +364,14 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 }
             } */
             server_log!("\n\n======= OS: I/O operations have been completed, take the results! =======");
-            let indices_to_remove: Vec<usize> = completed_results.iter().map(|(index, _, _)| *index).collect();
-            /* server_log!("\n\n1, indicies_to_remove: {:?}", indices_to_remove); */
+            /* let indices_to_remove: Vec<usize> = completed_results.iter().map(|(index, _, _)| *index).collect();
             let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
-            qts = new_qts;
-            for (index, qd, result) in completed_results {
-                // qts.swap_remove(index);
-    
+            qts = new_qts; */
+
+            for (index, qd, result) in completed_results.into_iter().rev() {
+                qts.swap_remove(index);
+                libos.poll_tcpmig();
+
                 match result {
                     OperationResult::Accept(new_qd) => {
                         server_log!("ACCEPT complete ==> issue POP and ACCEPT");
@@ -422,7 +423,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     },
 
                     OperationResult::Pop(_, recvbuf) => {
-                        pop_count -= 1;
+                        // pop_count -= 1;
                         server_log!("POP complete");
 
                         let mut state = connstate.get_mut(&qd).unwrap();
@@ -432,7 +433,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         server_log!("Issued PUSH => {} pushes pending", state.pushing);
                         
                         
-                        #[cfg(feature = "mig-per-n-req")] {
+                        #[cfg(feature = "mig-per-n-req")]
+                        {
                             let remaining = requests_remaining.entry(qd).or_insert(migration_per_n);
                             *remaining -= 1;
                             if *remaining > 0 {
@@ -450,7 +452,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                                 requests_remaining.remove(&qd).unwrap();
                             }
                         }
-                        #[cfg(not(feature = "mig-per-n-req"))]{
+                        #[cfg(not(feature = "mig-per-n-req"))]
+                        {
                             // queue next pop
                             match libos.pop(qd) {
                                 Ok(qt) => {
@@ -478,7 +481,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
         #[cfg(feature = "tcp-migration")]
         {
-            #[cfg(feature = "mig-per-n-req")] {
+            #[cfg(feature = "mig-per-n-req")]
+            {
                 for qd in qds_to_migrate.iter() {
                     // Can't migrate a connection with outstanding TX
                     if connstate.get_mut(&qd).unwrap().pushing > 0 {
@@ -486,75 +490,33 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     }
                     libos.initiate_migration(*qd);
                 }
-                let mut qds_to_remove = Vec::new();
-                for (&qd, state) in connstate.iter() {
-                    // Can't migrate a connection with outstanding TX
-                    if state.pushing > 0 {
-                        continue;
-                    }
-                    let data = {
-                        let data = state.buffer.get_data();
-                        if data.is_empty() {
-                            None
-                        } else {
-                            Some(data)
-                        }
-                    };
-
-                    let mut to_remove = vec![false; qts.len()];
-                    match libos.notify_migration_safety(qd, data, &qts, &mut to_remove) {
-                        Ok(true) => {
-                            to_remove.into_iter()
-                                .enumerate().rev()
-                                .filter(|(_, e)| *e)
-                                .for_each(|(i, _)| { qts.swap_remove(i); });
-
-                            qds_to_remove.push(qd)
-                        },
-                        Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
-                        _ => (),
-                    };
-                }
-                for qd in qds_to_remove {
-                    connstate.remove(&qd);
-                }
-            
             }
-            #[cfg(not(feature = "mig-per-n-req"))] {
-                let mut qds_to_remove = Vec::new();
-                for (&qd, state) in connstate.iter() {
-                    // Can't migrate a connection with outstanding TX
-                    if state.pushing > 0 {
-                        continue;
+
+            let mut qds_to_remove = Vec::new();
+            for (&qd, state) in connstate.iter() {
+                // Can't migrate a connection with outstanding TX
+                if state.pushing > 0 {
+                    continue;
+                }
+
+                let data = {
+                    let data = state.buffer.get_data();
+                    if data.is_empty() {
+                        None
+                    } else {
+                        Some(data)
                     }
+                };
 
-                    let data = {
-                        let data = state.buffer.get_data();
-                        if data.is_empty() {
-                            None
-                        } else {
-                            Some(data)
-                        }
-                    };
+                match libos.notify_migration_safety(qd, data) {
+                    Ok(true) => qds_to_remove.push(qd),
+                    Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
+                    _ => (),
+                };
+            }
 
-                    let mut to_remove = vec![false; qts.len()];
-                    match libos.notify_migration_safety(qd, data, &qts, &mut to_remove) {
-                        Ok(true) => {
-                            to_remove.into_iter()
-                                .enumerate().rev()
-                                .filter(|(_, e)| *e)
-                                .for_each(|(i, _)| { qts.swap_remove(i); });
-
-                            qds_to_remove.push(qd)
-                        },
-                        Err(e) => panic!("notify migration safety failed: {:?}", e.cause),
-                        _ => (),
-                    };
-                }
-    
-                for qd in qds_to_remove {
-                    connstate.remove(&qd);
-                }
+            for qd in qds_to_remove {
+                connstate.remove(&qd);
             }
         }
     }

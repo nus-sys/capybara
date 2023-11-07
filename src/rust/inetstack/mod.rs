@@ -45,7 +45,7 @@ use crate::{
         FutureResult,
         Scheduler,
         SchedulerHandle,
-    }, capy_time_log,
+    }, capy_time_log, capy_profile,
 };
 use ::libc::{
     c_int,
@@ -693,18 +693,8 @@ impl InetStack {
             for _ in 0..MAX_RECV_ITERS {
                 let recv_time: NaiveTime = chrono::Local::now().time();
 
-                #[cfg(feature = "tcp-migration")]{   
-                    let tcpmig_batch = {
-                        #[cfg(feature = "profiler")]
-                        timer!("inetstack::poll_bg_work::for::receive_tcpmig");
-                        self.rt.receive_tcpmig()
-                    };
-                    for pkt in tcpmig_batch {
-                        if let Err(e) = self.do_receive(pkt) {
-                            warn!("Dropped packet: {:?}", e);
-                        }
-                    }
-                }
+                #[cfg(feature = "tcp-migration")]
+                self.poll_tcpmig();
 
                 let batch = {
                     #[cfg(feature = "profiler")]
@@ -731,13 +721,13 @@ impl InetStack {
 #[cfg(feature = "tcp-migration")]
 impl InetStack {
     /// `to_remove` must be at least as large as `qts`, and must be initialised to all `false`.
-    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>, qts: &[QToken], to_remove: &mut [bool]) -> Result<bool, Fail> {
+    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>) -> Result<bool, Fail> {
         let handle = match self.ipv4.tcp.try_get_migration_handle(qd)? {
             Some(handle) => handle,
             None => return Ok(false),
         };
 
-        let mut pops = Vec::new();
+        /* let mut pops = Vec::new();
         let mut i = 0;
 
         // Check for any completed QToken for this `qd`.
@@ -749,9 +739,9 @@ impl InetStack {
             } else {
                 *to_remove = false;
             }
-        }
+        } */
 
-        self.ipv4.tcp.do_migrate_out(handle, data, pops)?;
+        self.ipv4.tcp.do_migrate_out(handle, data)?;
         self.file_table.free(qd);
         Ok(true)
     }
@@ -788,6 +778,27 @@ impl InetStack {
         }
     }
 
+    pub fn poll_tcpmig(&mut self) {
+        {
+            for _ in 0..MAX_RECV_ITERS {
+                let tcpmig_batch = {
+                    capy_profile!("receive_tcpmig");
+                    self.rt.as_dpdk_runtime().unwrap().receive_tcpmig()
+                };
+                for pkt in tcpmig_batch {
+                    if let Err(e) = self.do_receive(pkt) {
+                        warn!("Dropped packet: {:?}", e);
+                    }
+                }
+            }
+        }
+
+        if self.ts_iters == 0 {
+            self.clock.advance_clock(Instant::now());
+        }
+        self.ts_iters = (self.ts_iters + 1) % TIMER_RESOLUTION;
+    }
+
     pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<Buffer>, Fail> {
         self.ipv4.tcp.take_migrated_data(qd)
     }
@@ -811,9 +822,5 @@ impl InetStack {
 
     pub fn pushed_response(&mut self) {
         self.ipv4.tcp.pushed_response()
-    }
-
-    pub fn rt_receive(&mut self) {
-        self.rt.receive();
     }
 }

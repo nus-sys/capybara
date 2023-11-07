@@ -833,7 +833,7 @@ impl TcpPeer {
         Ok(inner.tcpmig.get_migration_handle(conn, qd))
     }
 
-    pub fn do_migrate_out(&mut self, handle: MigrationHandle, data: Option<&[u8]>, pops: Vec<Buffer>) -> Result<(), Fail> {
+    pub fn do_migrate_out(&mut self, handle: MigrationHandle, data: Option<&[u8]>) -> Result<(), Fail> {
         let mut inner = self.inner.borrow_mut();
         let (conn, qd) = handle.inner();
         capy_log_mig!("\n\nMigrate Out ({}, {})", conn.0, conn.1);
@@ -844,9 +844,9 @@ impl TcpPeer {
                 state.set_user_data(data);
             }
 
-            for pop in pops.into_iter().rev() {
+            /* for pop in pops.into_iter().rev() {
                 state.recv_queue.push_front(pop);
-            }
+            } */
 
             inner.tcpmig.migrate_out(handle, state);
             Ok(())

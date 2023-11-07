@@ -194,8 +194,14 @@ impl NetworkRuntime for DPDKRuntime {
         out
     }
 
+    fn as_dpdk_runtime(&self) -> Option<&crate::catnip::runtime::DPDKRuntime> {
+        Some(self)
+    }
+}
+
+impl DPDKRuntime {
     #[cfg(feature = "tcp-migration")]
-    fn receive_tcpmig(&self) -> ArrayVec<Buffer, RECEIVE_BATCH_SIZE> {
+    pub fn receive_tcpmig(&self) -> ArrayVec<Buffer, RECEIVE_BATCH_SIZE> {
         let mut out = ArrayVec::new();
 
         let mut packets: [*mut rte_mbuf; RECEIVE_BATCH_SIZE] = unsafe { mem::zeroed() };

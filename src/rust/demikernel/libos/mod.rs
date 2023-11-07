@@ -255,9 +255,9 @@ impl LibOS {
 impl LibOS {
     /// Returns true if migration was done.
     /// `to_remove` must be at least as large as `qts`.
-    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>, qts: &[QToken], to_remove: &mut [bool]) -> Result<bool, Fail> {
+    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>) -> Result<bool, Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.notify_migration_safety(qd, data, qts, to_remove),
+            LibOS::NetworkLibOS(libos) => libos.notify_migration_safety(qd, data),
         }
     }
 
@@ -299,9 +299,9 @@ impl LibOS {
         }
     }
 
-    pub fn rt_receive(&mut self) {
+    pub fn poll_tcpmig(&mut self) {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.rt_receive(),
+            LibOS::NetworkLibOS(libos) => libos.poll_tcpmig(),
         }
     }
 }

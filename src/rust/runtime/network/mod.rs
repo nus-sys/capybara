@@ -44,6 +44,6 @@ pub trait NetworkRuntime {
     fn receive(&self) -> ArrayVec<Buffer, RECEIVE_BATCH_SIZE>;
 
     #[cfg(feature = "tcp-migration")]
-    /// Receives a batch of TCPMIG [PacketBuf].
-    fn receive_tcpmig(&self) -> ArrayVec<Buffer, RECEIVE_BATCH_SIZE>;
+    /// Returns self as [DPDKRuntime] if catnip.
+    fn as_dpdk_runtime(&self) -> Option<&crate::catnip::runtime::DPDKRuntime> { None }
 }
