@@ -722,6 +722,8 @@ impl InetStack {
 impl InetStack {
     /// `to_remove` must be at least as large as `qts`, and must be initialised to all `false`.
     pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>) -> Result<bool, Fail> {
+        self.poll_tcpmig();
+        
         let handle = match self.ipv4.tcp.try_get_migration_handle(qd)? {
             Some(handle) => handle,
             None => return Ok(false),
