@@ -43,6 +43,12 @@ impl TcpMigDefragmenter {
 
         // Last fragment received. Now we know the total number of fragments.
         if !hdr.flag_next_fragment {
+            // Optimisation for single-fragment buffers.
+            if offset == 0 {
+                self.reset();
+                return Some((hdr, buf));
+            }
+
             let count = offset + 1;
             self.total_fragments = Some(count);
             self.fragments.reserve(count - self.fragments.len());
@@ -78,11 +84,15 @@ impl TcpMigDefragmenter {
         });
 
         // Reset the defragmenter and return the defragmented buffer.
+        self.reset();
+        
+        Some((hdr, buffer))
+    }
+
+    fn reset(&mut self) {
         self.fragments.clear();
         self.total_fragments = None;
         self.current_fragments = 0;
-        
-        Some((hdr, buffer))
     }
 }
 
