@@ -748,7 +748,7 @@ impl InetStack {
         Ok(true)
     }
 
-    fn get_pop_result_for_qd(&mut self, qd: QDesc, qt: QToken) -> Result<Option<Buffer>, Fail> {
+    /* fn get_pop_result_for_qd(&mut self, qd: QDesc, qt: QToken) -> Result<Option<Buffer>, Fail> {
         let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
             Some(handle) => handle,
             None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
@@ -778,7 +778,7 @@ impl InetStack {
             },
             _ => unreachable!("must be tcp operation"),
         }
-    }
+    } */
 
     pub fn poll_tcpmig(&mut self) {
         {
