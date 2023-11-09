@@ -691,16 +691,19 @@ impl InetStack {
             timer!("inetstack::poll_bg_work::for");
 
             for _ in 0..MAX_RECV_ITERS {
-                let recv_time: NaiveTime = chrono::Local::now().time();
-
+                
                 #[cfg(feature = "tcp-migration")]
                 self.poll_tcpmig();
 
+                self.prev_time = chrono::Local::now().time();
                 let batch = {
                     #[cfg(feature = "profiler")]
                     timer!("inetstack::poll_bg_work::for::receive");
                     self.rt.receive()
                 };
+                if batch.is_empty() {
+                    break;
+                }
                 for pkt in batch {
                     if let Err(e) = self.do_receive(pkt) {
                         warn!("Dropped packet: {:?}", e);
@@ -783,15 +786,24 @@ impl InetStack {
     pub fn poll_tcpmig(&mut self) {
         {
             for _ in 0..MAX_RECV_ITERS {
+                let recv_time: NaiveTime = chrono::Local::now().time();
                 let tcpmig_batch = {
                     capy_profile!("receive_tcpmig");
                     self.rt.as_dpdk_runtime().unwrap().receive_tcpmig()
                 };
+                if tcpmig_batch.is_empty() {
+                    self.prev_time = recv_time;
+                    break;
+                }
+                
+                capy_time_log!("poll_dpdk_interval,{},{}", recv_time, self.prev_time);
+                
                 for pkt in tcpmig_batch {
                     if let Err(e) = self.do_receive(pkt) {
                         warn!("Dropped packet: {:?}", e);
                     }
                 }
+                self.prev_time = recv_time;
             }
         }
 
