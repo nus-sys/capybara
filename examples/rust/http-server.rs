@@ -197,7 +197,7 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
 struct ConnectionState {
     pushing: usize,
     buffer: Buffer,
-
+    is_popping: bool,
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
@@ -357,7 +357,12 @@ fn server(local: SocketAddrV4) -> Result<()> {
         };
 
         for qd in qds_without_results {
-            let data = connstate.get(&qd).unwrap().buffer.get_data();
+            let state = connstate.get(&qd).unwrap();
+            if state.is_popping {
+                continue;
+            }
+
+            let data = state.buffer.get_data();
             let data = if data.is_empty() { None } else { Some(data) };
             match libos.notify_migration_safety(qd, data) {
                 Ok(true) => { connstate.remove(&qd); },
@@ -406,18 +411,24 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             buffer
                         };
 
-                        connstate.insert(new_qd, ConnectionState {
+                        let mut state = ConnectionState {
                             pushing: 0,
                             buffer,
-                        });
+                            is_popping: false,
+                        };
 
                         // Pop from new_qd
                         match libos.pop(new_qd) {
-                            Ok(pop_qt) => qts.push(pop_qt),
+                            Ok(pop_qt) => {
+                                state.is_popping = true;
+                                qts.push(pop_qt)
+                            },
                             #[cfg(feature = "tcp-migration")]
                             Err(e) if e.errno == demikernel::ETCPMIG => (),
                             Err(e) => panic!("pop qt: {}", e),
                         }
+
+                        connstate.insert(new_qd, state);
     
                         // Re-arm accept
                         qts.push(libos.accept(qd).expect("accept qtoken"));
@@ -445,6 +456,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         server_log!("POP complete");
 
                         let mut state = connstate.get_mut(&qd).unwrap();
+                        state.is_popping = false;
                         let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
                         state.pushing += sent;
 
@@ -460,6 +472,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                                 match libos.pop(qd) {
                                     Ok(qt) => {
                                         qts.push(qt);
+                                        state.is_popping = true;
                                         server_log!("Issued POP");
                                     },
                                     Err(e) if e.errno == demikernel::ETCPMIG => (),
@@ -476,6 +489,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             match libos.pop(qd) {
                                 Ok(qt) => {
                                     qts.push(qt);
+                                    state.is_popping = true;
                                     server_log!("Issued POP");
                                 },
                                 #[cfg(feature = "tcp-migration")]
@@ -499,7 +513,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 {
                     let state = connstate.get(&qd).unwrap();
                     // Can't migrate a connection with outstanding TX.
-                    if state.pushing > 0 {
+                    if state.is_popping {
                         continue;
                     }
 
