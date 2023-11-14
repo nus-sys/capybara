@@ -382,7 +382,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
             let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
             qts = new_qts; */
 
-            for (index, qd, result) in completed_results.into_iter().rev() {
+            for (index, mut qd, result) in completed_results.into_iter().rev() {
                 qts.swap_remove(index);
 
                 #[cfg(feature = "mig-per-n-req")]
@@ -421,6 +421,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     
                         // Re-arm accept
                         qts.push(libos.accept(qd).expect("accept qtoken"));
+                        qd = new_qd
                     },
 
                     OperationResult::Push => {
