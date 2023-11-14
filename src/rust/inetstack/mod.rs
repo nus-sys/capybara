@@ -732,6 +732,8 @@ impl InetStack {
             None => return Ok(false),
         };
 
+        self.poll_bg_work();
+
         /* let mut pops = Vec::new();
         let mut i = 0;
 
