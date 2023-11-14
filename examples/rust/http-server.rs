@@ -358,7 +358,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
         for qd in qds_without_results {
             let state = connstate.get(&qd).unwrap();
-            if state.is_popping {
+            if state.is_popping || state.pushing > 0 {
                 continue;
             }
 
@@ -513,7 +513,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 {
                     let state = connstate.get(&qd).unwrap();
                     // Can't migrate a connection with outstanding TX.
-                    if state.is_popping {
+                    if state.is_popping || state.pushing > 0 {
                         continue;
                     }
 
