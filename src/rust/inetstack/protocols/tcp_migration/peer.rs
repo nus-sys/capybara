@@ -394,10 +394,8 @@ impl TcpMigPeer {
 
         match inner.active_migrations.get_mut(&(origin, client)) {
             Some(active) => {
-                #[cfg(feature = "capybara-log")]
-                {
-                    tcp_log(format!("mig_ prepared ==> buffer"));
-                }
+                #[cfg(feature = "capy-log")]
+                capy_log_mig!("mig_prepared ==> buffer");
                 active.buffer_packet(tcp_hdr, data);
                 Ok(())
             },

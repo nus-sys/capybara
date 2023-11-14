@@ -152,13 +152,12 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[u8], qts: &mut Vec<QToken>) -> usize {
-    #[cfg(feature = "capybara-log")]
-    tcp_log(format!("buffer.data_size() {}", buffer.data_size()));
+    
+    server_log!("buffer.data_size() {}", buffer.data_size());
     // fast path: no previous data in the stream and this request contains exactly one HTTP request
     if buffer.data_size() == 0 {
         if find_subsequence(data, b"\r\n\r\n").unwrap_or(data.len()) == data.len() - 4 {
-            #[cfg(feature = "capybara-log")]
-            tcp_log(format!("responding 1"));
+            server_log!("responding 1");
             let resp_qt = respond_to_request(libos, qd, data);
             qts.push(resp_qt);
             return 1;
@@ -168,16 +167,14 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
     // Copy new data into buffer
     buffer.get_empty_buf()[..data.len()].copy_from_slice(data);
     buffer.push_data(data.len());
-    #[cfg(feature = "capybara-log")]
-    tcp_log(format!("buffer.data_size() {}", buffer.data_size()));
+    server_log!("buffer.data_size() {}", buffer.data_size());
     let mut sent = 0;
 
     loop {
         let dbuf = buffer.get_data();
         match find_subsequence(dbuf, b"\r\n\r\n") {
             Some(idx) => {
-                #[cfg(feature = "capybara-log")]
-                tcp_log(format!("responding 2"));
+                server_log!("responding 2");
                 let resp_qt = respond_to_request(libos, qd, &dbuf[..idx + 4]);
                 qts.push(resp_qt);
                 buffer.pull_data(idx + 4);
