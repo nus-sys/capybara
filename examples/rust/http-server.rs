@@ -346,6 +346,26 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
         let result = libos.trywait_any2(&qts).expect("result");
 
+        let qds_without_results = {
+            let mut qds = connstate.keys().map(|e| *e).collect::<HashSet<_>>();
+            if let Some(result) = result.as_ref() {
+                for (_, qd, _) in result {
+                    qds.remove(qd);
+                }
+            }
+            qds
+        };
+
+        for qd in qds_without_results {
+            let data = connstate.get(&qd).unwrap().buffer.get_data();
+            let data = if data.is_empty() { None } else { Some(data) };
+            match libos.notify_migration_safety(qd, data) {
+                Ok(true) => { connstate.remove(&qd); },
+                Err(e) => panic!("notify_migration_safety() failed: {:?}", e.cause),
+                _ => (),
+            };
+        }
+
         if let Some(completed_results) = result {
             /* let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
                 matches!(result, OperationResult::Pop(_, _))
