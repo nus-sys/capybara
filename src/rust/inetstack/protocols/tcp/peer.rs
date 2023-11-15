@@ -701,6 +701,7 @@ impl Inner {
                 // Possible decision-making point.
                 if let Some(conn) = self.tcpmig.should_migrate() {
                     // eprintln!("{:?}", conn);
+                    capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
                     capy_log_mig!("should migrate");
                     {
                         capy_profile!("prepare");
