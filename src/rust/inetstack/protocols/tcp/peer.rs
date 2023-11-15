@@ -500,6 +500,12 @@ impl TcpPeer {
             Some(Socket::MigratedOut { .. }) => return Poll::Ready(Err(Fail::new(EBADF, "socket migrated out"))),
             None => return Poll::Ready(Err(Fail::new(EBADF, "bad queue descriptor"))),
         };
+
+        #[cfg(feature = "tcp-migration")]
+        if inner.tcpmig.is_ready_to_migrate_out(fd) {
+            return Poll::Ready(Err(Fail::new(crate::ETCPMIG, "socket ready to migrate out")));
+        }
+
         capy_log!("\n\npolling POP on {:?}", key);
         match inner.established.get(&key) {
             Some(ref s) 
@@ -521,10 +527,10 @@ impl TcpPeer {
     }
 
     pub fn pop(&self, fd: QDesc) -> Result<PopFuture, Fail> {
-        #[cfg(feature = "tcp-migration")]
+        /* #[cfg(feature = "tcp-migration")]
         if self.inner.borrow().tcpmig.is_ready_to_migrate_out(fd) {
             return Err(Fail::new(super::super::tcp_migration::ETCPMIG, "connection ready to be migrated"))
-        }
+        } */
 
         Ok(PopFuture {
             fd,
