@@ -788,7 +788,7 @@ impl InetStack {
             for _ in 0..MAX_RECV_ITERS {
                 let recv_time: NaiveTime = chrono::Local::now().time();
                 let tcpmig_batch = {
-                    capy_profile!("receive_tcpmig");
+                    // capy_profile!("receive_tcpmig");
                     self.rt.as_dpdk_runtime().unwrap().receive_tcpmig()
                 };
                 if tcpmig_batch.is_empty() {
