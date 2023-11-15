@@ -344,34 +344,38 @@ fn server(local: SocketAddrV4) -> Result<()> {
             }
         } */
 
-        let result = libos.trywait_any2(&qts).expect("result");
+        let (index, mut qd, result) = libos.wait_any2(&qts).expect("result");
 
-        let qds_without_results = {
-            let mut qds = connstate.keys().map(|e| *e).collect::<HashSet<_>>();
-            if let Some(result) = result.as_ref() {
-                for (_, qd, _) in result {
-                    qds.remove(qd);
+        #[cfg(feature = "tcp-migration")]
+        {
+            let qds_without_results = {
+                let mut qds = connstate.keys().map(|e| *e).collect::<HashSet<_>>();
+                if let Some(result) = result.as_ref() {
+                    for (_, qd, _) in result {
+                        qds.remove(qd);
+                    }
                 }
-            }
-            qds
-        };
-
-        for qd in qds_without_results {
-            let state = connstate.get(&qd).unwrap();
-            if state.is_popping || state.pushing > 0 {
-                continue;
-            }
-
-            let data = state.buffer.get_data();
-            let data = if data.is_empty() { None } else { Some(data) };
-            match libos.notify_migration_safety(qd, data) {
-                Ok(true) => { connstate.remove(&qd); },
-                Err(e) => panic!("notify_migration_safety() failed: {:?}", e.cause),
-                _ => (),
+                qds
             };
+    
+            for qd in qds_without_results {
+                let state = connstate.get(&qd).unwrap();
+                if state.is_popping || state.pushing > 0 {
+                    continue;
+                }
+    
+                let data = state.buffer.get_data();
+                let data = if data.is_empty() { None } else { Some(data) };
+                match libos.notify_migration_safety(qd, data) {
+                    Ok(true) => { connstate.remove(&qd); },
+                    Err(e) => panic!("notify_migration_safety() failed: {:?}", e.cause),
+                    _ => (),
+                };
+            }
         }
 
-        if let Some(completed_results) = result {
+
+        /* if let Some(completed_results) = result */ {
             /* let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
                 matches!(result, OperationResult::Pop(_, _))
             }).count(); */
@@ -387,7 +391,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
             let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
             qts = new_qts; */
 
-            for (index, mut qd, result) in completed_results.into_iter().rev() {
+            /* for (index, mut qd, result) in completed_results.into_iter().rev() */ {
                 qts.swap_remove(index);
 
                 #[cfg(feature = "mig-per-n-req")]
@@ -502,7 +506,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     OperationResult::Failed(e) => {
                         match e.errno {
                             #[cfg(feature = "tcp-migration")]
-                            demikernel::ETCPMIG => server_log!("migrated QD({}) polled", qd),
+                            demikernel::ETCPMIG => eprintln!("migrated QD({}) polled", qd),
                             _ => panic!("operation failed: {}", e),
                         }
                     }

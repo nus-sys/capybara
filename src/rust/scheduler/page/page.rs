@@ -71,6 +71,16 @@ impl WakerPage {
         notified
     }
 
+    /// Queries whether or not the notified and dropped flags (in that order) for the `ix` future in the target [WakerPage] is set.
+    pub fn take_notified_and_dropped_subpage(&self, ix: usize) -> (bool, bool) {
+        debug_assert!(ix < WAKER_BIT_LENGTH);
+        let was_dropped = self.dropped.load() & (1 << ix) != 0;
+        self.dropped.fetch_and(!(1 << ix));
+        let was_notified = !was_dropped && !self.completed.load() & self.notified.load() & (1 << ix) != 0;
+        self.notified.fetch_and(!(1 << ix));
+        (was_notified, was_dropped)
+    }
+
     /// Queries whether or not the completed flag for the `ix` future in the target [WakerPage] is set.
     pub fn has_completed(&self, ix: usize) -> bool {
         debug_assert!(ix < WAKER_BIT_LENGTH);

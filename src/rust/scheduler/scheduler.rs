@@ -216,6 +216,86 @@ impl Scheduler {
             }
         }
     }
+    
+    /// Returns the task if the task has completed.
+    pub fn poll_task(&mut self, mut handle: SchedulerHandle) -> Option<Box<dyn SchedulerFuture>> {
+        let mut inner: RefMut<Inner<Box<dyn SchedulerFuture>>> = self.inner.borrow_mut();
+
+        let (page_ix, subpage_ix) = {
+            let key: usize = handle.take_key().unwrap() as usize;
+            (key >> WAKER_BIT_LENGTH_SHIFT, key & (WAKER_BIT_LENGTH - 1))
+        };
+
+        let (was_notified, was_dropped) = {
+            let page: &mut WakerPageRef = &mut inner.pages[page_ix];
+            page.take_notified_and_dropped_subpage(subpage_ix)
+        };
+
+        if was_notified {
+            // capy_log!("Polling page_id: {}, {}", page_ix, subpage_ix);
+                    
+            // Get future using our page indices and poll it!
+            let ix: usize = (page_ix << WAKER_BIT_LENGTH_SHIFT) + subpage_ix;
+            let waker: Waker = unsafe {
+                let raw_waker: NonNull<u8> = inner.pages[page_ix].into_raw_waker_ref(subpage_ix);
+                Waker::from_raw(WakerRef::new(raw_waker).into())
+            };
+            let mut sub_ctx: Context = Context::from_waker(&waker);
+
+            let pinned_ref: Pin<&mut Box<dyn SchedulerFuture>> = inner.slab.get_pin_mut(ix).unwrap();
+            let pinned_ptr = unsafe { Pin::into_inner_unchecked(pinned_ref) as *mut _ };
+            
+            // if inner.pages[page_ix].has_completed(subpage_ix) {
+            //     panic!("Polling something completed");
+            // }
+
+            // Poll future.
+            drop(inner);
+            let pinned_ref = unsafe { Pin::new_unchecked(&mut *pinned_ptr) };
+            /*
+            {
+                capy_log!("Before Polling page_id: {}, {}, // pinned_ref: {:?}", 
+                                    page_ix, subpage_ix, ptr::addr_of!(*pinned_ref));
+
+                // let pinned_ptr = unsafe { Pin::into_inner_unchecked(pinned_ref) as *mut _ };
+                let value_ptr: *const Box<dyn SchedulerFuture<Output = ()>> = pinned_ptr as *const _;
+                let value_bytes: &[u8] = unsafe {
+                    std::slice::from_raw_parts(value_ptr as *const u8, std::mem::size_of::<Box<dyn SchedulerFuture<Output = ()>>>())
+                };
+                
+                let hex_string: String = value_bytes
+                    .iter()
+                    .map(|byte| format!("{:02X}", byte))
+                    .collect();
+                capy_log!("Value: {}", hex_string);
+            }
+            */
+            let poll_result: Poll<()> = Future::poll(pinned_ref, &mut sub_ctx);
+            /* 
+            capy_log!("After Polling page_id: {}, {}", page_ix, subpage_ix);
+            */
+
+            match poll_result {
+                Poll::Pending => return None,
+                Poll::Ready(()) => (),
+            };
+
+            inner = self.inner.borrow_mut();
+            let key = ix;
+            capy_log!("Take {} from Scheduler", key);
+            inner.pages[page_ix].clear(subpage_ix);
+            Some(inner.slab.remove_unpin(key as usize).unwrap())
+        }
+        else if was_dropped && subpage_ix != 0 {
+            let ix: usize = (page_ix << WAKER_BIT_LENGTH_SHIFT) + subpage_ix;
+            inner.slab.remove(ix);
+            inner.pages[page_ix].clear(subpage_ix);
+            None
+        }
+        else {
+            None
+        }
+    }
 }
 
 //==============================================================================

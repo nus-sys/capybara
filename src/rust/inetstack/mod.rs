@@ -487,8 +487,10 @@ impl InetStack {
         timer!("inetstack::wait2");
         trace!("wait2(): qt={:?}", qt);
 
+        unimplemented!("capybara")
+
         // Retrieve associated schedule handle.
-        let handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
+        /* let handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
             Some(handle) => handle,
             None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
         };
@@ -502,7 +504,7 @@ impl InetStack {
                 trace!("wait2() qt={:?} completed!", qt);
                 return Ok(self.take_operation(handle));
             }
-        }
+        } */
     }
 
     /// Waits for an I/O operation to complete or a timeout to expire.
@@ -511,8 +513,10 @@ impl InetStack {
         timer!("inetstack::timedwait2");
         trace!("timedwait2() qt={:?}, timeout={:?}", qt, abstime);
 
+        unimplemented!("capybara")
+
         // Retrieve associated schedule handle.
-        let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
+        /* let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
             Some(handle) => handle,
             None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
         };
@@ -532,9 +536,10 @@ impl InetStack {
                 handle.take_key();
                 return Err(Fail::new(libc::ETIMEDOUT, "timer expired"));
             }
-        }
+        } */
     }
 
+    /* #[cfg(not(feature = "tcp-migration"))]
     /// Waits for any operation to complete.
     pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<(usize, QDesc, OperationResult), Fail> {
         #[cfg(feature = "profiler")]
@@ -565,11 +570,41 @@ impl InetStack {
                 handle.take_key();
             }
         }
+    } */
+
+    /// Waits for any operation to complete.
+    pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<(usize, QDesc, OperationResult), Fail> {
+        #[cfg(feature = "profiler")]
+        timer!("inetstack::wait_any2");
+        trace!("wait_any2(): qts={:?}", qts);
+
+        loop {
+            // NOTE: Profile and check how bad it is to poll NIC and parse packets every wait().
+            // Poll first, so as to give pending operations a chance to complete.
+            self.poll_bg_work();
+
+            // Search for any operation that has completed.
+            for (i, &qt) in qts.iter().enumerate() {
+                // Retrieve associated schedule handle.
+                // TODO: move this out of the loop.
+                let handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
+                    Some(handle) => handle,
+                    None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
+                };
+
+                // Found one, so extract the result and return.
+                if let Some(task) = self.scheduler.poll_task(handle) {
+                    let (qd, r): (QDesc, OperationResult) = self.take_operation(task);
+                    return Ok((i, qd, r));
+                }
+            }
+        }
     }
 
     pub fn trywait_any_one2(&mut self, qts: &[QToken]) -> Result<Option<(usize, QDesc, OperationResult)>, Fail> {
         // Poll first, so as to give pending operations a chance to complete.
-        self.poll_bg_work();
+        unimplemented!("capybara")
+        /* self.poll_bg_work();
         // Search for any operation that has completed.
         for (i, &qt) in qts.iter().enumerate() {
             // Retrieve associated schedule handle.
@@ -588,12 +623,13 @@ impl InetStack {
             // (which would otherwise cause the operation to be freed).
             handle.take_key();
         } 
-        Ok(None)
+        Ok(None) */
     }
 
     pub fn trywait_any2(&mut self, qts: &[QToken]) -> Result<Option<Vec<(usize, QDesc, OperationResult)>>, Fail> {
         // Poll first, so as to give pending operations a chance to complete.
-        self.poll_bg_work();
+        unimplemented!("capybara")
+        /* self.poll_bg_work();
         let mut completed_handles = Vec::new(); // Create a vector to store completed handle results.
         // Search for any operation that has completed.
         for (i, &qt) in qts.iter().enumerate() {
@@ -618,15 +654,49 @@ impl InetStack {
             Ok(None) // No completed handles found, return None.
         } else {
             Ok(Some(completed_handles)) // Return the vector containing completed handle results.
-        }
+        } */
     }
 
+   /*  #[cfg(not(feature = "tcp-migration"))]
     /// Given a handle representing a task in our scheduler. Return the results of this future
     /// and the file descriptor for this connection.
     ///
     /// This function will panic if the specified future had not completed or is _background_ future.
     pub fn take_operation(&mut self, handle: SchedulerHandle) -> (QDesc, OperationResult) {
         let boxed_future: Box<dyn Any> = self.scheduler.take(handle).as_any();
+        let boxed_concrete_type: FutureOperation = *boxed_future.downcast::<FutureOperation>().expect("Wrong type!");
+
+        match boxed_concrete_type {
+            FutureOperation::Tcp(f) => {
+                let (qd, new_qd, qr): (QDesc, Option<QDesc>, OperationResult) = f.expect_result();
+
+                // Handle accept failures.
+                if let Some(new_qd) = new_qd {
+                    match qr {
+                        // Operation failed, so release queue descriptor.
+                        OperationResult::Failed(_) => {
+                            self.file_table.free(new_qd);
+                        },
+                        // Operation succeeded.
+                        _ => (),
+                    }
+                }
+
+                (qd, qr)
+            },
+            FutureOperation::Udp(f) => f.get_result(),
+            FutureOperation::Background(..) => {
+                panic!("`take_operation` attempted on background task!")
+            },
+        }
+    } */
+
+    /// Given a task in our scheduler. Return the results of this future
+    /// and the file descriptor for this connection.
+    ///
+    /// This function will panic if the specified future had not completed or is _background_ future.
+    pub fn take_operation(&mut self, task: Box<dyn crate::scheduler::SchedulerFuture>) -> (QDesc, OperationResult) {
+        let boxed_future: Box<dyn Any> = task.as_any();
         let boxed_concrete_type: FutureOperation = *boxed_future.downcast::<FutureOperation>().expect("Wrong type!");
 
         match boxed_concrete_type {
@@ -674,6 +744,7 @@ impl InetStack {
         }
     }
 
+    /* #[cfg(not(feature = "tcp-migration"))]
     /// Scheduler will poll all futures that are ready to make progress.
     /// Then ask the runtime to receive new data which we will forward to the engine to parse and
     /// route to the correct protocol.
@@ -711,6 +782,31 @@ impl InetStack {
                     // TODO: This is a workaround for https://github.com/demikernel/inetstack/issues/149.
                     self.scheduler.poll();
                 }
+            }
+        }
+
+        if self.ts_iters == 0 {
+            self.clock.advance_clock(Instant::now());
+        }
+        self.ts_iters = (self.ts_iters + 1) % TIMER_RESOLUTION;
+    } */
+
+    /// Scheduler will poll all futures that are ready to make progress.
+    /// Then ask the runtime to receive new data which we will forward to the engine to parse and
+    /// route to the correct protocol.
+    pub fn poll_bg_work(&mut self) {
+        #[cfg(feature = "profiler")]
+        timer!("inetstack::poll_bg_work");
+
+        #[cfg(feature = "tcp-migration")]
+        self.poll_tcpmig();
+
+        self.prev_time = chrono::Local::now().time();
+        let batch = self.rt.receive();
+        
+        for pkt in batch {
+            if let Err(e) = self.do_receive(pkt) {
+                warn!("Dropped packet: {:?}", e);
             }
         }
 
