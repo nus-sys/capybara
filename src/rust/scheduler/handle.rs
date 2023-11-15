@@ -10,7 +10,7 @@ use crate::scheduler::{
     waker64::WAKER_BIT_LENGTH,
 };
 
-use std::{fmt, rc::Rc, cell::RefCell, collections::HashSet};
+use std::fmt;
 
 //==============================================================================
 // Structures
@@ -24,8 +24,6 @@ pub struct SchedulerHandle {
     key: Option<u64>,
     /// Memory chunk in which the corresponding handle lives.
     chunk: WakerPageRef,
-    /// Background tasks list if this is a background task.
-    bg_tasks: Option<Rc<RefCell<HashSet<u64>>>>,
 }
 
 use crate::capy_log;
@@ -37,11 +35,10 @@ use crate::capy_log;
 /// Associate Functions for Scheduler Handlers
 impl SchedulerHandle {
     /// Creates a new Scheduler Handle.
-    pub fn new(key: u64, waker_page: WakerPageRef, bg_tasks: Option<Rc<RefCell<HashSet<u64>>>>) -> Self {
+    pub fn new(key: u64, waker_page: WakerPageRef) -> Self {
         Self {
             key: Some(key),
             chunk: waker_page,
-            bg_tasks,
         }
     }
 
@@ -74,9 +71,6 @@ impl Drop for SchedulerHandle {
             capy_log!("Drop {} from scheduler", key);
             let subpage_ix: usize = key as usize & (WAKER_BIT_LENGTH - 1);
             self.chunk.mark_dropped(subpage_ix);
-            if let Some(bg_tasks) = self.bg_tasks.as_ref() {
-                assert!(bg_tasks.borrow_mut().remove(&key));
-            }
         }
     }
 }

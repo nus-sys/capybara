@@ -56,7 +56,7 @@ struct Inner<F: Future<Output = ()> + Unpin> {
     /// Holds the status tasks.
     pages: Vec<WakerPageRef>,
     /// Background task keys.
-    bg_tasks: Rc<RefCell<HashSet<u64>>>,
+    bg_tasks: HashSet<u64>,
 }
 
 /// Future Scheduler
@@ -125,7 +125,7 @@ impl Scheduler {
         let inner: Ref<Inner<Box<dyn SchedulerFuture>>> = self.inner.borrow();
         inner.slab.get(key as usize)?;
         let (page, _): (&WakerPageRef, usize) = inner.get_page(key);
-        let handle: SchedulerHandle = SchedulerHandle::new(key, page.clone(), None);
+        let handle: SchedulerHandle = SchedulerHandle::new(key, page.clone());
         Some(handle)
     }
 
@@ -137,7 +137,7 @@ impl Scheduler {
         /* capy_log!("Insert {} to Scheduler", key); */
 
         let (page, _): (&WakerPageRef, usize) = inner.get_page(key);
-        Some(SchedulerHandle::new(key, page.clone(), None))
+        Some(SchedulerHandle::new(key, page.clone()))
     }
 
     /// Insert a new background task into our scheduler returning a handle corresponding to it.
@@ -148,10 +148,10 @@ impl Scheduler {
         let key: u64 = inner.insert(Box::new(future))?;
 
         capy_log!("Insert bg task {} to Scheduler", key);
-        assert!(inner.bg_tasks.borrow_mut().insert(key));
+        assert!(inner.bg_tasks.insert(key));
 
         let (page, _): (&WakerPageRef, usize) = inner.get_page(key);
-        Some(SchedulerHandle::new(key, page.clone(), Some(inner.bg_tasks.clone())))
+        Some(SchedulerHandle::new(key, page.clone()))
     }
 
     /// Poll all futures which are ready to run again. Tasks in our scheduler are notified when
@@ -235,12 +235,13 @@ impl Scheduler {
     }
 
     pub fn poll_bg_tasks(&mut self) {
-        let bg_tasks = self.inner.borrow_mut().bg_tasks.clone();
+        let bg_tasks = std::mem::take(&mut self.inner.borrow_mut().bg_tasks);
 
-        for &key in bg_tasks.borrow().iter() {
+        for &key in bg_tasks.iter() {
             // We ignore the result since all background futures have output type `()`.
             self._poll_task_internal(key);
         }
+        self.inner.borrow_mut().bg_tasks = bg_tasks;
     }
 
     /// Returns the task if the task has completed.
@@ -313,7 +314,6 @@ impl Scheduler {
             capy_log!("Poll success for task {}", ix);
 
             inner = self.inner.borrow_mut();
-            let key = ix;
             capy_log!("Take {} from Scheduler", key);
             inner.pages[page_ix].clear(subpage_ix);
             Some(inner.slab.remove_unpin(key as usize).unwrap())
@@ -322,6 +322,7 @@ impl Scheduler {
             let ix: usize = (page_ix << WAKER_BIT_LENGTH_SHIFT) + subpage_ix;
             inner.slab.remove(ix);
             inner.pages[page_ix].clear(subpage_ix);
+            assert!(inner.bg_tasks.remove(&key));
             None
         }
         else {
@@ -341,7 +342,7 @@ impl Default for Scheduler {
         let inner: Inner<Box<dyn SchedulerFuture>> = Inner {
             slab: PinSlab::new(),
             pages: vec![],
-            bg_tasks: Rc::new(RefCell::new(HashSet::new())),
+            bg_tasks: HashSet::new(),
         };
         Self {
             inner: Rc::new(RefCell::new(inner)),
