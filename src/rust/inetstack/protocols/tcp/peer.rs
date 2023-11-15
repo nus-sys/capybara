@@ -416,9 +416,13 @@ impl TcpPeer {
         capy_log!("CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
 
         // TODO: Reset the connection if the following following check fails, instead of panicking.
-        if inner.sockets.insert(new_qd, socket).is_some() {
-            panic!("duplicate queue descriptor in sockets table");
+        match inner.sockets.insert(new_qd, socket) {
+            None => (),
+            #[cfg(feature = "tcp-migration")]
+            Some(Socket::MigratedOut {..}) => (),
+            _ => panic!("duplicate queue descriptor in sockets table"),
         }
+        
         inner.qds.insert((local, remote), new_qd);
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         if inner.established.insert(key, established).is_some() {
@@ -992,6 +996,7 @@ impl Inner {
     fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> Result<TcpState, Fail> {
         let state = self.take_tcp_state(qd)?;
         
+        // 1) Mark socket as migrated out
         let socket = self.sockets.get_mut(&qd);
         let (local, remote) = match socket {
             None => {
@@ -1005,12 +1010,8 @@ impl Inner {
                 panic!("Unsupported Socket variant: {:?} for migrating out.", s)
             },
         };
-
-        // 1) remove this socket
-        match self.sockets.remove(&qd) {
-            Some(s) => {},
-            None => return Err(Fail::new(EBADF, "sockeet not exist")),
-        };
+        let socket = socket.unwrap();
+        *socket = Socket::MigratedOut { local, remote };
 
         // 2) check if this connection is established one
         let key = (local, remote);
@@ -1100,33 +1101,17 @@ impl Inner {
         }
 
         for (mut tcp_hdr, data) in self.tcpmig.take_buffer_queue(local, remote)? {
-            /* let tcp_hdr_size = tcp_hdr.compute_size();
-            let mut buf = vec![0u8; tcp_hdr_size + data.len()];
-            tcp_hdr.serialize(&mut buf, &ip_hdr, &data, inner.tcp_config.get_rx_checksum_offload());
-
-            // Find better way than cloning data.
-            buf[tcp_hdr_size..].copy_from_slice(&data);
-
-            let buf = Buffer::Heap(crate::runtime::memory::DataBuffer::from_slice(&buf)); */
             capy_log_mig!("take_buffer_queue");
             cb.receive(&mut tcp_hdr, data, &self.tcpmig);
         }
 
-        // Connection should either not exist or have been migrated out (and now we are migrating
-        // it back in).
+        // Connection should either not exist or have been migrated out.
         match self.sockets.entry(qd) {
             Entry::Occupied(mut e) => {
-                // match e.get_mut() {
-                //     e@Socket::MigratedOut { .. } => {
-                //         *e = Socket::Established { local, remote };
-                //     },
-                //     _ => {
-                panic!("Key already exists in sockets hashmap.");
-                            // return Err(Fail::new(EBADF, "bad file descriptor"));
-                //     }
-                // }
-                // inho: fn do_accept always allocate a new qd, so the qd of a connection migrated in 
-                // cannot exist in sockets 
+                match e.get_mut() {
+                    e@Socket::MigratedOut { .. } => *e = Socket::Established { local, remote },
+                    _ => panic!("Key already exists in sockets hashmap."),
+                }
             },
             Entry::Vacant(v) => {
                 let socket = Socket::Established { local, remote };

@@ -242,19 +242,20 @@ impl TcpMigPeer {
         match active.process_packet(ipv4_hdr, hdr, buf)? {
             MigrationRequestStatus::Rejected => unimplemented!("migration rejection"),
             MigrationRequestStatus::PrepareMigrationAcked(qd) => {
-                #[cfg(not(feature = "mig-per-n-req"))]
+                /* #[cfg(not(feature = "mig-per-n-req"))]
                 inner.set_as_ready_to_migrate_out(qd);
                 
                 #[cfg(feature = "mig-per-n-req")]{
                     inner.set_as_ready_to_migrate_out(qd);
-                    // capy_profile!("migrate");
+                    // capy_profile!("migrate");*/
 
-                    // capy_log_mig!("\n\nMigrate Out ({}, {})", hdr.origin, hdr.client);
-                    // let state = tcp_peer.migrate_out_tcp_connection(active.qd().unwrap())?;
-                    // let remote = state.remote;
-                    // active.send_connection_state(state);
-                    // assert!(inner.migrated_out_connections.insert(remote), "Duplicate migrated_out_connections set insertion");
-                }
+                capy_log_mig!("\n\nMigrating Out ({}, {})", hdr.origin, hdr.client);
+                let state = tcp_peer.migrate_out_tcp_connection(active.qd().unwrap())?;
+                let remote = state.remote;
+                active.send_connection_state(state);
+                assert!(inner.migrated_out_connections.insert(remote), "Duplicate migrated_out_connections set insertion");
+
+                /*} */
                 /* #[cfg(not(feature = "mig-per-n-req"))] {
                     let qd = active.qd().unwrap();
                     inner.migrations_prepared_qds.insert(qd);

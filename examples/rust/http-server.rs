@@ -209,10 +209,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
             .expect("MIG_PER_N must be a i32");
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
-    ctrlc::set_handler(move || {
+    /* ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
         // println!("Received Ctrl-C signal. Total requests processed: {}", request_count);
-    }).expect("Error setting Ctrl-C handler");
+    }).expect("Error setting Ctrl-C handler"); */
 
     // unsafe { START_TIME = Some(Instant::now()); }
 
@@ -506,7 +506,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     OperationResult::Failed(e) => {
                         match e.errno {
                             #[cfg(feature = "tcp-migration")]
-                            demikernel::ETCPMIG => eprintln!("qtoken for migrated {:?} polled", qd),
+                            demikernel::ETCPMIG => {
+                                eprintln!("qtoken for migrated {:?} polled", qd);
+                                connstate.remove(&qd);
+                            },
                             _ => panic!("operation failed: {}", e),
                         }
                     }
@@ -519,7 +522,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 // Notify for this QD if no responses pending.
                 #[cfg(feature = "tcp-migration")]
                 {
-                    let mut qds_to_remove = vec![];
+                    //let mut qds_to_remove = vec![];
                     for (&qd, state) in connstate.iter() {
                         let state = connstate.get(&qd).unwrap();
                         // Can't migrate a connection with outstanding TX.
@@ -532,7 +535,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             libos.initiate_migration(qd).unwrap();
                         }
 
-                        let data = {
+                        /* let data = {
                             let data = state.buffer.get_data();
                             if data.is_empty() {
                                 None
@@ -545,12 +548,12 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             Ok(true) => { qds_to_remove.push(qd); },
                             Err(e) => panic!("notify_migration_safety() failed: {:?}", e.cause),
                             _ => (),
-                        };
+                        }; */
                     }
 
-                    for qd in qds_to_remove {
+                    /* for qd in qds_to_remove {
                         connstate.remove(&qd);
-                    }
+                    } */
                 }
             }
             server_log!("******* APP: Okay, handled the results! *******");
