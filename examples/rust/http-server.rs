@@ -388,6 +388,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
             for (index, qd, result) in completed_results.into_iter().rev() {
                 qts.swap_remove(index);
+                #[cfg(feature = "tcp-migration")]
                 libos.poll_tcpmig();
 
                 match result {
