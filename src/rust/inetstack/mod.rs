@@ -810,6 +810,8 @@ impl InetStack {
             }
         }
 
+        self.scheduler.poll_bg_tasks();
+
         if self.ts_iters == 0 {
             self.clock.advance_clock(Instant::now());
         }

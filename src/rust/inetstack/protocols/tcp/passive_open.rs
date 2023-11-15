@@ -277,7 +277,7 @@ impl PassiveSocket {
             self.ready.clone(),
         );
         capy_log!("Scheduling PassiveSocket background");
-        let handle: SchedulerHandle = match self.scheduler.insert(FutureOperation::Background(future.boxed_local())) {
+        let handle: SchedulerHandle = match self.scheduler.insert_bg(FutureOperation::Background(future.boxed_local())) {
             Some(handle) => handle,
             None => panic!("failed to insert task in the scheduler"),
         };

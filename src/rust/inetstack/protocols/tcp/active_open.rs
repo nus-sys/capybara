@@ -114,7 +114,7 @@ impl ActiveOpenSocket {
             arp.clone(),
             result.clone(),
         );
-        let handle: SchedulerHandle = match scheduler.insert(FutureOperation::Background(future.boxed_local())) {
+        let handle: SchedulerHandle = match scheduler.insert_bg(FutureOperation::Background(future.boxed_local())) {
             Some(handle) => handle,
             None => panic!("failed to insert task in the scheduler"),
         };

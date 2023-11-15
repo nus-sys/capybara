@@ -11,7 +11,7 @@
 // Imports
 //==============================================================================
 
-use crate::scheduler::{
+use crate::{scheduler::{
     page::{
         WakerPageRef,
         WakerRef,
@@ -23,8 +23,9 @@ use crate::scheduler::{
     },
     SchedulerFuture,
     SchedulerHandle,
-};
+}, inetstack::futures::FutureOperation};
 use ::bit_iter::BitIter;
+use std::collections::HashSet;
 use ::std::{
     cell::{
         Ref,
@@ -54,6 +55,8 @@ struct Inner<F: Future<Output = ()> + Unpin> {
     slab: PinSlab<F>,
     /// Holds the status tasks.
     pages: Vec<WakerPageRef>,
+    /// Background task keys.
+    bg_tasks: Rc<RefCell<HashSet<u64>>>,
 }
 
 /// Future Scheduler
@@ -122,7 +125,7 @@ impl Scheduler {
         let inner: Ref<Inner<Box<dyn SchedulerFuture>>> = self.inner.borrow();
         inner.slab.get(key as usize)?;
         let (page, _): (&WakerPageRef, usize) = inner.get_page(key);
-        let handle: SchedulerHandle = SchedulerHandle::new(key, page.clone());
+        let handle: SchedulerHandle = SchedulerHandle::new(key, page.clone(), None);
         Some(handle)
     }
 
@@ -134,7 +137,21 @@ impl Scheduler {
         /* capy_log!("Insert {} to Scheduler", key); */
 
         let (page, _): (&WakerPageRef, usize) = inner.get_page(key);
-        Some(SchedulerHandle::new(key, page.clone()))
+        Some(SchedulerHandle::new(key, page.clone(), None))
+    }
+
+    /// Insert a new background task into our scheduler returning a handle corresponding to it.
+    pub fn insert_bg(&self, future: FutureOperation) -> Option<SchedulerHandle> {
+        assert!(matches!(future, FutureOperation::Background(..)));
+
+        let mut inner: RefMut<Inner<Box<dyn SchedulerFuture>>> = self.inner.borrow_mut();
+        let key: u64 = inner.insert(Box::new(future))?;
+
+        capy_log!("Insert bg task {} to Scheduler", key);
+        assert!(inner.bg_tasks.borrow_mut().insert(key));
+
+        let (page, _): (&WakerPageRef, usize) = inner.get_page(key);
+        Some(SchedulerHandle::new(key, page.clone(), Some(inner.bg_tasks.clone())))
     }
 
     /// Poll all futures which are ready to run again. Tasks in our scheduler are notified when
@@ -216,7 +233,18 @@ impl Scheduler {
             }
         }
     }
-    
+
+    pub fn poll_bg_tasks(&mut self) {
+        let bg_tasks = self.inner.borrow_mut().bg_tasks.clone();
+
+        for key in bg_tasks.borrow().iter() {
+            let handle = self.from_raw_handle(*key).unwrap();
+
+            // We ignore the result since all background futures have output type `()`.
+            self.poll_task(handle);
+        }
+    }
+
     /// Returns the task if the task has completed.
     pub fn poll_task(&mut self, mut handle: SchedulerHandle) -> Option<Box<dyn SchedulerFuture>> {
         let mut inner: RefMut<Inner<Box<dyn SchedulerFuture>>> = self.inner.borrow_mut();
@@ -231,11 +259,12 @@ impl Scheduler {
             page.take_notified_and_dropped_subpage(subpage_ix)
         };
 
-        if was_notified {
-            // capy_log!("Polling page_id: {}, {}", page_ix, subpage_ix);
-                    
+        if was_notified {                    
             // Get future using our page indices and poll it!
             let ix: usize = (page_ix << WAKER_BIT_LENGTH_SHIFT) + subpage_ix;
+
+            capy_log!("Polling task {}", ix);
+
             let waker: Waker = unsafe {
                 let raw_waker: NonNull<u8> = inner.pages[page_ix].into_raw_waker_ref(subpage_ix);
                 Waker::from_raw(WakerRef::new(raw_waker).into())
@@ -280,6 +309,8 @@ impl Scheduler {
                 Poll::Ready(()) => (),
             };
 
+            capy_log!("Returning result for task {}", ix);
+
             inner = self.inner.borrow_mut();
             let key = ix;
             capy_log!("Take {} from Scheduler", key);
@@ -309,6 +340,7 @@ impl Default for Scheduler {
         let inner: Inner<Box<dyn SchedulerFuture>> = Inner {
             slab: PinSlab::new(),
             pages: vec![],
+            bg_tasks: Rc::new(RefCell::new(HashSet::new())),
         };
         Self {
             inner: Rc::new(RefCell::new(inner)),

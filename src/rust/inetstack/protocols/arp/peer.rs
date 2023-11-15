@@ -108,7 +108,7 @@ impl ArpPeer {
 
         let future = Self::background(clock.clone(), cache.clone());
         /* capy_log!("Scheduling ARP background"); */
-        let handle: SchedulerHandle = match scheduler.insert(FutureOperation::Background(future.boxed_local())) {
+        let handle: SchedulerHandle = match scheduler.insert_bg(FutureOperation::Background(future.boxed_local())) {
             Some(handle) => handle,
             None => {
                 return Err(Fail::new(

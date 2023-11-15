@@ -346,11 +346,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
         let (index, mut qd, result) = libos.wait_any2(&qts).expect("result");
 
-        #[cfg(feature = "tcp-migration")]
+        /* #[cfg(feature = "tcp-migration")]
         {
             let qds_without_results = {
                 let mut qds = connstate.keys().map(|e| *e).collect::<HashSet<_>>();
-                if let Some(result) = result.as_ref() {
+                if let Some(result) = result {
                     for (_, qd, _) in result {
                         qds.remove(qd);
                     }
@@ -372,7 +372,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     _ => (),
                 };
             }
-        }
+        } */
 
 
         /* if let Some(completed_results) = result */ {
@@ -496,8 +496,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                                     state.is_popping = true;
                                     server_log!("Issued POP");
                                 },
-                                #[cfg(feature = "tcp-migration")]
-                                Err(e) if e.errno == demikernel::ETCPMIG => (),
+                                /* #[cfg(feature = "tcp-migration")]
+                                Err(e) if e.errno == demikernel::ETCPMIG => (), */
                                 Err(e) => panic!("pop qt: {}", e),
                             }
                         }
@@ -506,7 +506,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     OperationResult::Failed(e) => {
                         match e.errno {
                             #[cfg(feature = "tcp-migration")]
-                            demikernel::ETCPMIG => eprintln!("migrated QD({}) polled", qd),
+                            demikernel::ETCPMIG => eprintln!("qtoken for migrated {:?} polled", qd),
                             _ => panic!("operation failed: {}", e),
                         }
                     }
@@ -519,31 +519,38 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 // Notify for this QD if no responses pending.
                 #[cfg(feature = "tcp-migration")]
                 {
-                    let state = connstate.get(&qd).unwrap();
-                    // Can't migrate a connection with outstanding TX.
-                    if state.is_popping || state.pushing > 0 {
-                        continue;
-                    }
+                    let mut qds_to_remove = vec![];
+                    for (&qd, state) in connstate.iter() {
+                        let state = connstate.get(&qd).unwrap();
+                        // Can't migrate a connection with outstanding TX.
+                        /* if state.is_popping || state.pushing > 0 {
+                            continue;
+                        } */
 
-                    #[cfg(feature = "mig-per-n-req")]
-                    if should_migrate_this_qd {
-                        libos.initiate_migration(qd).unwrap();
-                    }
-
-                    let data = {
-                        let data = state.buffer.get_data();
-                        if data.is_empty() {
-                            None
-                        } else {
-                            Some(data)
+                        #[cfg(feature = "mig-per-n-req")]
+                        if should_migrate_this_qd {
+                            libos.initiate_migration(qd).unwrap();
                         }
-                    };
 
-                    match libos.notify_migration_safety(qd, data) {
-                        Ok(true) => { connstate.remove(&qd); },
-                        Err(e) => panic!("notify_migration_safety() failed: {:?}", e.cause),
-                        _ => (),
-                    };
+                        let data = {
+                            let data = state.buffer.get_data();
+                            if data.is_empty() {
+                                None
+                            } else {
+                                Some(data)
+                            }
+                        };
+
+                        match libos.notify_migration_safety(qd, data) {
+                            Ok(true) => { qds_to_remove.push(qd); },
+                            Err(e) => panic!("notify_migration_safety() failed: {:?}", e.cause),
+                            _ => (),
+                        };
+                    }
+
+                    for qd in qds_to_remove {
+                        connstate.remove(&qd);
+                    }
                 }
             }
             server_log!("******* APP: Okay, handled the results! *******");

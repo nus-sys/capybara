@@ -64,7 +64,7 @@ impl EstablishedSocket {
         let cb = Rc::new(cb);
         let future = background(cb.clone(), fd, dead_socket_tx);
         capy_log!("Create new EstablishedSocket, scheduling background task");
-        let handle: SchedulerHandle = match cb.scheduler.insert(FutureOperation::Background(future.boxed_local())) {
+        let handle: SchedulerHandle = match cb.scheduler.insert_bg(FutureOperation::Background(future.boxed_local())) {
             Some(handle) => handle,
             None => panic!("failed to insert task in the scheduler"),
         };

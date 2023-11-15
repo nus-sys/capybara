@@ -497,7 +497,7 @@ impl TcpPeer {
             Some(Socket::Inactive { .. }) => return Poll::Ready(Err(Fail::new(EBADF, "socket inactive"))),
             Some(Socket::Listening { .. }) => return Poll::Ready(Err(Fail::new(ENOTCONN, "socket listening"))),
             #[cfg(feature = "tcp-migration")]
-            Some(Socket::MigratedOut { .. }) => return Poll::Ready(Err(Fail::new(EBADF, "socket migrated out"))),
+            Some(Socket::MigratedOut { .. }) => return Poll::Ready(Err(Fail::new(crate::ETCPMIG, "socket migrated out"))),
             None => return Poll::Ready(Err(Fail::new(EBADF, "bad queue descriptor"))),
         };
 
@@ -848,7 +848,9 @@ impl TcpPeer {
             capy_profile!("migrate");
             let mut state = inner.migrate_out_tcp_connection(qd)?;
             if let Some(data) = data {
-                state.set_user_data(data);
+                if !data.is_empty() {
+                    state.set_user_data(data);
+                }
             }
 
             /* for pop in pops.into_iter().rev() {

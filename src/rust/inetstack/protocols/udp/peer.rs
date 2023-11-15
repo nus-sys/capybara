@@ -139,7 +139,7 @@ impl UdpPeer {
         );
 
         /* capy_log!("Scheduling UDP background"); */
-        let handle: SchedulerHandle = match scheduler.insert(FutureOperation::Background(future.boxed_local())) {
+        let handle: SchedulerHandle = match scheduler.insert_bg(FutureOperation::Background(future.boxed_local())) {
             Some(handle) => handle,
             None => {
                 return Err(Fail::new(
