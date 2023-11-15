@@ -57,6 +57,8 @@ struct Inner<F: Future<Output = ()> + Unpin> {
     pages: Vec<WakerPageRef>,
     /// Background task keys.
     bg_tasks: HashSet<u64>,
+
+    _bg_tasks_to_remove: Vec<u64>,
 }
 
 /// Future Scheduler
@@ -235,13 +237,19 @@ impl Scheduler {
     }
 
     pub fn poll_bg_tasks(&mut self) {
-        let bg_tasks = std::mem::take(&mut self.inner.borrow_mut().bg_tasks);
+        let mut bg_tasks = std::mem::take(&mut self.inner.borrow_mut().bg_tasks);
 
         for &key in bg_tasks.iter() {
             // We ignore the result since all background futures have output type `()`.
             self._poll_task_internal(key);
         }
-        self.inner.borrow_mut().bg_tasks = bg_tasks;
+
+        let mut inner = self.inner.borrow_mut();
+        for key in inner._bg_tasks_to_remove.iter() {
+            bg_tasks.remove(key);
+        }
+        inner._bg_tasks_to_remove.clear();
+        inner.bg_tasks = bg_tasks;
     }
 
     /// Returns the task if the task has completed.
@@ -322,7 +330,7 @@ impl Scheduler {
             let ix: usize = (page_ix << WAKER_BIT_LENGTH_SHIFT) + subpage_ix;
             inner.slab.remove(ix);
             inner.pages[page_ix].clear(subpage_ix);
-            assert!(inner.bg_tasks.remove(&key));
+            inner._bg_tasks_to_remove.push(key);
             None
         }
         else {
@@ -343,6 +351,7 @@ impl Default for Scheduler {
             slab: PinSlab::new(),
             pages: vec![],
             bg_tasks: HashSet::new(),
+            _bg_tasks_to_remove: Vec::new(),
         };
         Self {
             inner: Rc::new(RefCell::new(inner)),
