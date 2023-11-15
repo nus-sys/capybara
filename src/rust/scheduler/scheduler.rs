@@ -237,20 +237,23 @@ impl Scheduler {
     pub fn poll_bg_tasks(&mut self) {
         let bg_tasks = self.inner.borrow_mut().bg_tasks.clone();
 
-        for key in bg_tasks.borrow().iter() {
-            let handle = self.from_raw_handle(*key).unwrap();
-
+        for &key in bg_tasks.borrow().iter() {
             // We ignore the result since all background futures have output type `()`.
-            self.poll_task(handle);
+            self._poll_task_internal(key);
         }
     }
 
     /// Returns the task if the task has completed.
     pub fn poll_task(&mut self, mut handle: SchedulerHandle) -> Option<Box<dyn SchedulerFuture>> {
+        let key = handle.take_key().unwrap();
+        self._poll_task_internal(key)
+    }
+
+    fn _poll_task_internal(&mut self, key: u64) -> Option<Box<dyn SchedulerFuture>> {
         let mut inner: RefMut<Inner<Box<dyn SchedulerFuture>>> = self.inner.borrow_mut();
 
         let (page_ix, subpage_ix) = {
-            let key: usize = handle.take_key().unwrap() as usize;
+            let key: usize = key as usize;
             (key >> WAKER_BIT_LENGTH_SHIFT, key & (WAKER_BIT_LENGTH - 1))
         };
 
@@ -262,8 +265,6 @@ impl Scheduler {
         if was_notified {                    
             // Get future using our page indices and poll it!
             let ix: usize = (page_ix << WAKER_BIT_LENGTH_SHIFT) + subpage_ix;
-
-            capy_log!("Polling task {}", ix);
 
             let waker: Waker = unsafe {
                 let raw_waker: NonNull<u8> = inner.pages[page_ix].into_raw_waker_ref(subpage_ix);
@@ -309,7 +310,7 @@ impl Scheduler {
                 Poll::Ready(()) => (),
             };
 
-            capy_log!("Returning result for task {}", ix);
+            capy_log!("Poll success for task {}", ix);
 
             inner = self.inner.borrow_mut();
             let key = ix;
