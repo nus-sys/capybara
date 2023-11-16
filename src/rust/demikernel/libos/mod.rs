@@ -95,7 +95,7 @@ impl LibOS {
     }
 
     /// Waits on a pending operation in an I/O queue.
-    pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<(usize, QDesc, OperationResult), Fail> {
+    pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<Vec<(usize, QDesc, OperationResult)>, Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.wait_any2(qts),
         }

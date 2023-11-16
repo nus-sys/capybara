@@ -181,7 +181,7 @@ impl CatnipLibOS {
         timer!("catnip::wait_any");
         trace!("wait_any(): qts={:?}", qts);
 
-        let (i, qd, r): (usize, QDesc, OperationResult) = self.wait_any2(qts)?;
+        let (i, qd, r): (usize, QDesc, OperationResult) = todo!("C API for wait_any() vector"); //self.wait_any2(qts)?;
         Ok((i, pack_result(self.rt.clone(), r, qd, qts[i].into())))
     }
 

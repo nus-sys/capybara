@@ -1028,7 +1028,7 @@ impl Inner {
         // 3) Remove socket from Established hashmap.
         if let Some(socket) = self.established.remove(&key) {
             // 4) Remove the background for this connection
-            socket.abort();
+            // socket.abort();
         } else {
             // This panic is okay. This should never happen and represents an internal error
             // in our implementation.

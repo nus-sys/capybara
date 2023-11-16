@@ -535,7 +535,7 @@ impl InetStack {
         }
     }
 
-    /// Waits for any operation to complete.
+    /* /// Waits for any operation to complete.
     pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<(usize, QDesc, OperationResult), Fail> {
         #[cfg(feature = "profiler")]
         timer!("inetstack::wait_any2");
@@ -563,6 +563,40 @@ impl InetStack {
                 // Return this operation to the scheduling queue by removing the associated key
                 // (which would otherwise cause the operation to be freed).
                 handle.take_key();
+            }
+        }
+    } */
+
+    /// Waits for any operation to complete.
+    pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<Vec<(usize, QDesc, OperationResult)>, Fail> {
+        let mut completed = Vec::new();
+
+        loop {
+            // Poll first, so as to give pending operations a chance to complete.
+            self.poll_bg_work();
+
+            // Search for any operation that has completed.
+            for (i, &qt) in qts.iter().enumerate() {
+                // Retrieve associated schedule handle.
+                // TODO: move this out of the loop.
+                let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
+                    Some(handle) => handle,
+                    None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
+                };
+
+                // Found one, so extract the result and return.
+                if handle.has_completed() {
+                    let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
+                    completed.push((i, qd, r)); // Store the completed handle result.
+                } else {
+                    // Return this operation to the scheduling queue by removing the associated key
+                    // (which would otherwise cause the operation to be freed).
+                    handle.take_key();
+                }
+            }
+
+            if !completed.is_empty() {
+                return Ok(completed); // No completed handles found, return None.
             }
         }
     }
@@ -608,7 +642,7 @@ impl InetStack {
             if handle.has_completed() {
                 let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
                 completed_handles.push((i, qd, r)); // Store the completed handle result.
-            }else{
+            } else {
                 // Return this operation to the scheduling queue by removing the associated key
                 // (which would otherwise cause the operation to be freed).
                 handle.take_key();
@@ -786,28 +820,23 @@ impl InetStack {
     } */
 
     pub fn poll_tcpmig(&mut self) {
-        {
-            for _ in 0..MAX_RECV_ITERS {
-                let recv_time: NaiveTime = chrono::Local::now().time();
-                let tcpmig_batch = {
-                    // capy_profile!("receive_tcpmig");
-                    self.rt.as_dpdk_runtime().unwrap().receive_tcpmig()
-                };
-                if tcpmig_batch.is_empty() {
-                    self.prev_time = recv_time;
-                    break;
-                }
-                
-                capy_time_log!("poll_dpdk_interval,{},{}", recv_time, self.prev_time);
-                
-                for pkt in tcpmig_batch {
-                    if let Err(e) = self.do_receive(pkt) {
-                        warn!("Dropped packet: {:?}", e);
-                    }
-                }
-                self.prev_time = recv_time;
+        let recv_time: NaiveTime = chrono::Local::now().time();
+        let tcpmig_batch = {
+            // capy_profile!("receive_tcpmig");
+            unsafe { self.rt.as_dpdk_runtime().unwrap_unchecked() }.receive_tcpmig()
+        };
+        
+        //capy_time_log!("poll_dpdk_interval,{},{}", recv_time, self.prev_time);
+        
+        for pkt in tcpmig_batch {
+            if let Err(e) = self.do_receive(pkt) {
+                warn!("Dropped packet: {:?}", e);
+            }
+            if let Some(qd) = unsafe { self::protocols::tcp_migration::LAST_MIGRATED_OUT_QD.take() } {
+                self.file_table.free(qd);
             }
         }
+        self.prev_time = recv_time;
 
         if self.ts_iters == 0 {
             self.clock.advance_clock(Instant::now());

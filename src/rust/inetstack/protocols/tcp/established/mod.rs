@@ -121,8 +121,4 @@ impl EstablishedSocket {
     pub fn endpoints(&self) -> (SocketAddrV4, SocketAddrV4) {
         (self.cb.get_local(), self.cb.get_remote())
     }
-
-    pub fn abort(self) {
-        self.cb.scheduler.take(self.background);
-    }
 }

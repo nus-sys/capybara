@@ -14,7 +14,7 @@ use ::demikernel::{
     QToken,
 };
 
-use std::{collections::{HashMap, HashSet}, time::Instant};
+use std::{collections::{HashMap, HashSet, hash_map::Entry}, time::Instant};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -344,34 +344,37 @@ fn server(local: SocketAddrV4) -> Result<()> {
             }
         } */
 
-        let result = libos.trywait_any2(&qts).expect("result");
+        let results = libos.wait_any2(&qts).expect("result");
 
-        let qds_without_results = {
-            let mut qds = connstate.keys().map(|e| *e).collect::<HashSet<_>>();
-            if let Some(result) = result.as_ref() {
-                for (_, qd, _) in result {
-                    qds.remove(qd);
+        /* #[cfg(feature = "tcp-migration")]
+        {
+            let qds_without_results = {
+                let mut qds = connstate.keys().map(|e| *e).collect::<HashSet<_>>();
+                if let Some(result) = result.as_ref() {
+                    for (_, qd, _) in result {
+                        qds.remove(qd);
+                    }
                 }
-            }
-            qds
-        };
-
-        for qd in qds_without_results {
-            let state = connstate.get(&qd).unwrap();
-            if state.is_popping || state.pushing > 0 {
-                continue;
-            }
-
-            let data = state.buffer.get_data();
-            let data = if data.is_empty() { None } else { Some(data) };
-            match libos.notify_migration_safety(qd, data) {
-                Ok(true) => { connstate.remove(&qd); },
-                Err(e) => panic!("notify_migration_safety() failed: {:?}", e.cause),
-                _ => (),
+                qds
             };
-        }
+    
+            for qd in qds_without_results {
+                let state = connstate.get(&qd).unwrap();
+                if state.is_popping || state.pushing > 0 {
+                    continue;
+                }
+    
+                let data = state.buffer.get_data();
+                let data = if data.is_empty() { None } else { Some(data) };
+                match libos.notify_migration_safety(qd, data) {
+                    Ok(true) => { connstate.remove(&qd); },
+                    Err(e) => panic!("notify_migration_safety() failed: {:?}", e.cause),
+                    _ => (),
+                };
+            }
+        } */
 
-        if let Some(completed_results) = result {
+        /* if let Some(completed_results) = result */ {
             /* let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
                 matches!(result, OperationResult::Pop(_, _))
             }).count(); */
@@ -387,7 +390,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
             let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
             qts = new_qts; */
 
-            for (index, mut qd, result) in completed_results.into_iter().rev() {
+            for (index, mut qd, result) in results.into_iter().rev() {
                 qts.swap_remove(index);
 
                 #[cfg(feature = "mig-per-n-req")]
@@ -395,7 +398,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                 match result {
                     OperationResult::Accept(new_qd) => {
-                        server_log!("ACCEPT complete ==> issue POP and ACCEPT");
+                        server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
                         let buffer = {
                             let mut buffer = Buffer::new();
@@ -429,10 +432,13 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         }
 
                         connstate.insert(new_qd, state);
+                        
+                        #[cfg(feature = "mig-per-n-req")]
+                        assert!(requests_remaining.insert(new_qd, migration_per_n).is_none());
     
                         // Re-arm accept
                         qts.push(libos.accept(qd).expect("accept qtoken"));
-                        qd = new_qd
+                        qd = new_qd;
                     },
 
                     OperationResult::Push => {
@@ -444,11 +450,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                         server_log!("PUSH complete ==> {} pushes are pending", connstate.pushing);
                         
-                        #[cfg(feature = "mig-per-n-req")]
+                        /* #[cfg(feature = "mig-per-n-req")]
                         if migration_per_n > 0  && !requests_remaining.contains_key(&qd) {
                             // Server has been processed N requests from this qd 
                             should_migrate_this_qd = true;
-                        }
+                        } */
                     },
 
                     OperationResult::Pop(_, recvbuf) => {
@@ -464,8 +470,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         
                         
                         #[cfg(feature = "mig-per-n-req")]
-                        {
-                            let remaining = requests_remaining.entry(qd).or_insert(migration_per_n);
+                        if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {
+                            let remaining = entry.get_mut();
                             *remaining -= 1;
                             if *remaining > 0 {
                                 // queue next pop
@@ -478,9 +484,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
                                     Err(e) if e.errno == demikernel::ETCPMIG => (),
                                     Err(e) => panic!("pop qt: {}", e),
                                 }
-                            } else{
+                            } else {
                                 server_log!("Should be migrated (no POP issued)");
-                                requests_remaining.remove(&qd).unwrap();
+                                libos.initiate_migration(qd).unwrap();
+                                entry.remove();
                             }
                         }
                         #[cfg(not(feature = "mig-per-n-req"))]
@@ -502,7 +509,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     OperationResult::Failed(e) => {
                         match e.errno {
                             #[cfg(feature = "tcp-migration")]
-                            demikernel::ETCPMIG => server_log!("migrated QD({}) polled", qd),
+                            demikernel::ETCPMIG => eprintln!("migrated {:?} polled", qd),
                             _ => panic!("operation failed: {}", e),
                         }
                     }
@@ -513,7 +520,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 }
 
                 // Notify for this QD if no responses pending.
-                #[cfg(feature = "tcp-migration")]
+                /* #[cfg(feature = "tcp-migration")]
                 {
                     let state = connstate.get(&qd).unwrap();
                     // Can't migrate a connection with outstanding TX.
@@ -540,7 +547,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         Err(e) => panic!("notify_migration_safety() failed: {:?}", e.cause),
                         _ => (),
                     };
-                }
+                } */
             }
             server_log!("******* APP: Okay, handled the results! *******");
         }

@@ -60,12 +60,12 @@ pub enum NetworkLibOS {
 /// Associated functions for network LibOSes.
 impl NetworkLibOS {
     /// Waits on a pending operation in an I/O queue.
-    pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<(usize, QDesc, OperationResult), Fail> {
+    pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<Vec<(usize, QDesc, OperationResult)>, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(libos) => libos.wait_any2(qts),
             #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(libos) => libos.wait_any2(qts),
+            NetworkLibOS::Catnap(libos) => unimplemented!("changed wait_any() signature"),//libos.wait_any2(qts),
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(libos) => libos.wait_any2(qts),
             #[cfg(feature = "catnip-libos")]

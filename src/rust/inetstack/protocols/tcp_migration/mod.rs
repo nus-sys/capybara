@@ -4,7 +4,7 @@ mod peer;
 mod active;
 pub mod stats;
 
-pub use peer::{TcpMigPeer, log_print, MigrationHandle};
+pub use peer::{TcpMigPeer, log_print, MigrationHandle, LAST_MIGRATED_OUT_QD};
 
 //======================================================================================================================
 // Constants
