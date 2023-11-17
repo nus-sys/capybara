@@ -22,6 +22,13 @@ macro_rules! capy_profile_merge_previous {
 }
 
 #[macro_export]
+macro_rules! capy_profile_total {
+    ($name:expr) => {
+        $crate::invoke_if_feature!("capy-profile", crate::capylog::profile::__capy_profile_total, $name)
+    };
+}
+
+#[macro_export]
 macro_rules! capy_profile_dump {
     ($dump:expr) => {
         $crate::invoke_if_feature!("capy-profile", crate::capylog::profile::__capy_profile_dump, $dump)
