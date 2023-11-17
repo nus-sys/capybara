@@ -190,12 +190,14 @@ impl CatnipLibOS {
         timer!("catnip::try_wait_any");
         trace!("try_wait_any(): qts={:?}", qts);
 
-        match self.trywait_any2(qts)? {
+        todo!("C API for try_wait_any()");
+
+        /* match self.trywait_any2(qts)? {
             None => Ok(None),
             Some(results) => Ok(Some(results.into_iter()
                 .map(|(i, qd, r)| (i, pack_result(self.rt.clone(), r, qd, qts[i].into())))
                 .collect()))
-        }
+        } */
     }
 
     /// Allocates a scatter-gather array.

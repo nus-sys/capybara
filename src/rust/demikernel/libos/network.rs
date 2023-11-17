@@ -60,7 +60,7 @@ pub enum NetworkLibOS {
 /// Associated functions for network LibOSes.
 impl NetworkLibOS {
     /// Waits on a pending operation in an I/O queue.
-    pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<Vec<(usize, QDesc, OperationResult)>, Fail> {
+    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(usize, QDesc, OperationResult)]) -> Result<usize, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(libos) => libos.wait_any2(qts),
@@ -69,7 +69,7 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(libos) => libos.wait_any2(qts),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.wait_any2(qts),
+            NetworkLibOS::Catnip(libos) => libos.wait_any2(qts, qrs),
         }
     }
 
@@ -114,7 +114,7 @@ impl NetworkLibOS {
         }
     }
 
-    pub fn trywait_any2(&mut self, qts: &[QToken]) -> Result<Option<Vec<(usize, QDesc, OperationResult)>>, Fail> {
+    pub fn wait_any_nonblock2(&mut self, qts: &[QToken], qrs: &mut [(usize, QDesc, OperationResult)]) -> Result<usize, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(libos) => todo!("catpowder timedwait2()"),
@@ -123,7 +123,7 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(libos) => todo!("catcollar timedwait2()"),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.trywait_any2(qts),
+            NetworkLibOS::Catnip(libos) => libos.wait_any_nonblock2(qts, qrs),
         }
     }
 

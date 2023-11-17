@@ -210,8 +210,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
+        //r.store(false, Ordering::SeqCst);
         // println!("Received Ctrl-C signal. Total requests processed: {}", request_count);
+        LibOS::capylog_dump(&mut std::io::stderr().lock());
+        std::process::exit(0);
     }).expect("Error setting Ctrl-C handler");
 
     // unsafe { START_TIME = Some(Instant::now()); }
@@ -230,6 +232,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     #[cfg(feature = "mig-per-n-req")]
     let mut requests_remaining: HashMap<QDesc, i32> = HashMap::new();
+
+    // Create qrs filled with garbage.
+    let mut qrs: Vec<(usize, QDesc, OperationResult)> = Vec::with_capacity(2000);
+    qrs.resize_with(2000, || (0, 0.into(), OperationResult::Connect));
     
     loop {
         if !running.load(Ordering::SeqCst) {
@@ -344,7 +350,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
             }
         } */
 
-        let results = libos.wait_any2(&qts).expect("result");
+        let results = libos.wait_any2(&qts, &mut qrs).expect("result");
 
         /* #[cfg(feature = "tcp-migration")]
         {
@@ -390,7 +396,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
             let new_qts: Vec<QToken> = qts.iter().enumerate().filter(|(i, _)| !indices_to_remove.contains(i)).map(|(_, qt)| *qt).collect(); //HERE!
             qts = new_qts; */
 
-            for (index, mut qd, result) in results.into_iter().rev() {
+            let results = &qrs[..results];
+
+            for (index, qd, result) in results.iter().rev() {
+                let (index, qd) = (*index, *qd);
                 qts.swap_remove(index);
 
                 #[cfg(feature = "mig-per-n-req")]
@@ -398,6 +407,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                 match result {
                     OperationResult::Accept(new_qd) => {
+                        let new_qd = *new_qd;
                         server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
                         let buffer = {
@@ -438,17 +448,17 @@ fn server(local: SocketAddrV4) -> Result<()> {
     
                         // Re-arm accept
                         qts.push(libos.accept(qd).expect("accept qtoken"));
-                        qd = new_qd;
                     },
 
                     OperationResult::Push => {
-                        let connstate = connstate.get_mut(&qd).unwrap();
-                        connstate.pushing -= 1;
+                        /* let connstate = connstate.get_mut(&qd).unwrap();
+                        connstate.pushing -= 1; */
                         
                         // #[cfg(feature = "tcp-migration")]
                         // libos.pushed_response();
 
-                        server_log!("PUSH complete ==> {} pushes are pending", connstate.pushing);
+                        //server_log!("PUSH complete ==> {} pushes are pending", connstate.pushing);
+                        server_log!("PUSH complete");
                         
                         /* #[cfg(feature = "mig-per-n-req")]
                         if migration_per_n > 0  && !requests_remaining.contains_key(&qd) {
@@ -462,11 +472,12 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         server_log!("POP complete");
 
                         let mut state = connstate.get_mut(&qd).unwrap();
-                        state.is_popping = false;
+                        //state.is_popping = false;
                         let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
-                        state.pushing += sent;
+                        //state.pushing += sent;
 
-                        server_log!("Issued PUSH => {} pushes pending", state.pushing);
+                        //server_log!("Issued PUSH => {} pushes pending", state.pushing);
+                        server_log!("Issued PUSH");
                         
                         
                         #[cfg(feature = "mig-per-n-req")]
@@ -475,15 +486,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             *remaining -= 1;
                             if *remaining > 0 {
                                 // queue next pop
-                                match libos.pop(qd) {
-                                    Ok(qt) => {
-                                        qts.push(qt);
-                                        state.is_popping = true;
-                                        server_log!("Issued POP");
-                                    },
-                                    Err(e) if e.errno == demikernel::ETCPMIG => (),
-                                    Err(e) => panic!("pop qt: {}", e),
-                                }
+                                qts.push(libos.pop(qd).expect("pop qt"));
+                                server_log!("Issued POP");
                             } else {
                                 server_log!("Should be migrated (no POP issued)");
                                 libos.initiate_migration(qd).unwrap();
@@ -493,16 +497,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         #[cfg(not(feature = "mig-per-n-req"))]
                         {
                             // queue next pop
-                            match libos.pop(qd) {
-                                Ok(qt) => {
-                                    qts.push(qt);
-                                    state.is_popping = true;
-                                    server_log!("Issued POP");
-                                },
-                                #[cfg(feature = "tcp-migration")]
-                                Err(e) if e.errno == demikernel::ETCPMIG => (),
-                                Err(e) => panic!("pop qt: {}", e),
-                            }
+                            qts.push(libos.pop(qd).expect("pop qt"));
+                            server_log!("Issued POP");
                         }
                     },
 

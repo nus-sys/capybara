@@ -745,7 +745,7 @@ impl Inner {
 
         #[cfg(feature = "tcp-migration")]
         if self.tcpmig.is_migrated_out(remote) {
-            warn!("Dropped packet received on migrated out connection ({local}, {remote})");
+            capy_log!("Dropped packet received on migrated out connection ({local}, {remote})");
             return Ok(());
         }
 

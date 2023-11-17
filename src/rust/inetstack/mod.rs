@@ -460,6 +460,10 @@ impl InetStack {
 
         trace!("pop(): qd={:?}", qd);
 
+        // We poll here so that TCPMIG is polled every time the application wants a new request.
+        #[cfg(feature = "tcp-migration")]
+        self.poll_tcpmig();
+
         let future = match self.file_table.get(qd) {
             Some(qtype) => match QType::try_from(qtype) {
                 Ok(QType::TcpSocket) => Ok(FutureOperation::from(self.ipv4.tcp.pop(qd)?)),
@@ -568,15 +572,22 @@ impl InetStack {
     } */
 
     /// Waits for any operation to complete.
-    pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<Vec<(usize, QDesc, OperationResult)>, Fail> {
-        let mut completed = Vec::new();
-
+    /// 
+    /// The length of `qrs` needs to be at least as big as `qts`. If `qrs` is not big enough, all results are not written to it.
+    /// 
+    /// Returns the number of results written to `qrs`.
+    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(usize, QDesc, OperationResult)]) -> Result<usize, Fail> {
         loop {
             // Poll first, so as to give pending operations a chance to complete.
             self.poll_bg_work();
 
+            let mut completed = 0;
             // Search for any operation that has completed.
             for (i, &qt) in qts.iter().enumerate() {
+                if completed == qrs.len() {
+                    break;
+                }
+
                 // Retrieve associated schedule handle.
                 // TODO: move this out of the loop.
                 let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
@@ -587,7 +598,8 @@ impl InetStack {
                 // Found one, so extract the result and return.
                 if handle.has_completed() {
                     let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
-                    completed.push((i, qd, r)); // Store the completed handle result.
+                    qrs[completed] = (i, qd, r); // Store the completed handle result.
+                    completed += 1;
                 } else {
                     // Return this operation to the scheduling queue by removing the associated key
                     // (which would otherwise cause the operation to be freed).
@@ -595,8 +607,8 @@ impl InetStack {
                 }
             }
 
-            if !completed.is_empty() {
-                return Ok(completed); // No completed handles found, return None.
+            if completed > 0 {
+                return Ok(completed);
             }
         }
     }
@@ -625,10 +637,11 @@ impl InetStack {
         Ok(None)
     }
 
-    pub fn trywait_any2(&mut self, qts: &[QToken]) -> Result<Option<Vec<(usize, QDesc, OperationResult)>>, Fail> {
+    pub fn wait_any_nonblock2(&mut self, qts: &[QToken], qrs: &mut [(usize, QDesc, OperationResult)]) -> Result<usize, Fail> {
         // Poll first, so as to give pending operations a chance to complete.
         self.poll_bg_work();
-        let mut completed_handles = Vec::new(); // Create a vector to store completed handle results.
+
+        let mut completed = 0;
         // Search for any operation that has completed.
         for (i, &qt) in qts.iter().enumerate() {
             // Retrieve associated schedule handle.
@@ -641,18 +654,15 @@ impl InetStack {
             // Found one, so extract the result and return.
             if handle.has_completed() {
                 let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
-                completed_handles.push((i, qd, r)); // Store the completed handle result.
+                qrs[completed] = (i, qd, r); // Store the completed handle result.
+                completed += 1;
             } else {
                 // Return this operation to the scheduling queue by removing the associated key
                 // (which would otherwise cause the operation to be freed).
                 handle.take_key();
             }
         }
-        if completed_handles.is_empty() {
-            Ok(None) // No completed handles found, return None.
-        } else {
-            Ok(Some(completed_handles)) // Return the vector containing completed handle results.
-        }
+        Ok(completed)
     }
 
     /// Given a handle representing a task in our scheduler. Return the results of this future
