@@ -510,6 +510,22 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         continue;
                     }
                     libos.initiate_migration(*qd);
+                    
+                
+                    /* match libos.initiate_migration(*qd) {
+                        Ok(()) => {},
+                        Err(e) => {
+                            eprintln!("this conn is not for migration");
+                            match libos.pop(*qd) {
+                                Ok(qt) => {
+                                    qts.push(qt);
+                                    server_log!("Issued POP");
+                                },
+                                Err(e) if e.errno == demikernel::ETCPMIG => (),
+                                Err(e) => panic!("pop qt: {}", e),
+                            }
+                        },
+                    } */
                 }
             }
 
