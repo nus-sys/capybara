@@ -497,7 +497,7 @@ impl TcpPeer {
             Some(Socket::Inactive { .. }) => return Poll::Ready(Err(Fail::new(EBADF, "socket inactive"))),
             Some(Socket::Listening { .. }) => return Poll::Ready(Err(Fail::new(ENOTCONN, "socket listening"))),
             #[cfg(feature = "tcp-migration")]
-            Some(Socket::MigratedOut { .. }) => return Poll::Ready(Err(Fail::new(EBADF, "socket migrated out"))),
+            Some(Socket::MigratedOut { .. }) => return Poll::Ready(Err(Fail::new(crate::ETCPMIG, "socket migrated out"))),
             None => return Poll::Ready(Err(Fail::new(EBADF, "bad queue descriptor"))),
         };
 
