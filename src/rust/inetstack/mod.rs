@@ -830,7 +830,8 @@ impl InetStack {
     } */
 
     pub fn poll_tcpmig(&mut self) {
-        let recv_time: NaiveTime = chrono::Local::now().time();
+        capy_profile!("poll_tcpmig()");
+        // let recv_time: NaiveTime = chrono::Local::now().time();
         let tcpmig_batch = {
             // capy_profile!("receive_tcpmig");
             unsafe { self.rt.as_dpdk_runtime().unwrap_unchecked() }.receive_tcpmig()
@@ -846,7 +847,7 @@ impl InetStack {
                 self.file_table.free(qd);
             }
         }
-        self.prev_time = recv_time;
+        // self.prev_time = recv_time;
 
         if self.ts_iters == 0 {
             self.clock.advance_clock(Instant::now());
