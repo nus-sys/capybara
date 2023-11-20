@@ -413,7 +413,7 @@ impl TcpPeer {
 
         let socket: Socket = Socket::Established { local, remote };
 
-        capy_log!("CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
+        eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
 
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         if inner.sockets.insert(new_qd, socket).is_some() {
@@ -889,16 +889,19 @@ impl TcpPeer {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
         };
+
         capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
 
-        /* if(conn.1.port() == 202){
+        /* NON-CONCURRENT MIGRATION */
+        /* if(conn.1.port() == 303){
             capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1); //HERE: check port number and migrate only one port, and then distributed 50/50 connections + 1 more connection for migration
-        inner.tcpmig.initiate_migration(conn, qd);
-        Ok(())
+            inner.tcpmig.initiate_migration(conn, qd);
+            Ok(())
         }else{
             return Err(Fail::new(EBADF, "this connection is not for migration"));
         } */
+        /* NON-CONCURRENT MIGRATION */
     }
 
     pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
