@@ -898,6 +898,7 @@ impl TcpPeer {
 
         capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
+        Ok(())
 
         /* NON-CONCURRENT MIGRATION */
         /* if(conn.1.port() == 303){
