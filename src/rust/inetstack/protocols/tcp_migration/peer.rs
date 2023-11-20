@@ -122,10 +122,8 @@ struct Inner {
     /// for testing, number of requests remaining before next migration
     requests_remaining: HashMap<(SocketAddrV4, SocketAddrV4), i32>,
 
-    /* /// The background co-routine retransmits TCPMig packets.
-    /// We annotate it as unused because the compiler believes that it is never called which is not the case.
-    #[allow(unused)]
-    background: SchedulerHandle, */
+    /// For testing
+    is_core_id_1: bool,
 }
 
 #[derive(Clone)]
@@ -496,7 +494,7 @@ impl TcpMigPeer {
 
         let mut inner = self.inner.borrow_mut();
         
-        if std::env::var("CORE_ID") != Ok("1".to_string()) {
+        if !inner.is_core_id_1 {
             return None;
         }
         unsafe{
@@ -696,7 +694,7 @@ impl Inner {
             .parse()
             .expect("MIG_PER_N must be a i32"),
             requests_remaining: HashMap::new(),
-            //background: handle,
+            is_core_id_1: std::env::var("CORE_ID").map(|e| e.as_str()) == Ok("1"),
         }
     }
 
