@@ -32,6 +32,9 @@ use demikernel::demikernel::bindings::demi_print_queue_length_log;
 use ::demikernel::perftools::profiler;
 
 use colored::Colorize;
+
+#[macro_use]
+extern crate lazy_static;
 //=====================================================================================
 
 macro_rules! server_log {
@@ -115,8 +118,8 @@ impl Buffer {
 }
 
 fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
-    // let data_str = std::str::from_utf8(data).unwrap();
-    // let data_str = String::from_utf8_lossy(data);
+    /* let data_str = std::str::from_utf8(data).unwrap();
+    let data_str = String::from_utf8_lossy(data);
     let data_str = unsafe { std::str::from_utf8_unchecked(&data[..]) };
 
     let mut file_name = data_str
@@ -138,10 +141,27 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
             format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
         },
         Err(_) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n"),
-    };
-    server_log!("PUSH: {}", response.lines().next().unwrap_or(""));
+    }; 
 
-    libos.push2(qd, response.as_bytes()).expect("push success")
+    server_log!("PUSH: {}", response.lines().next().unwrap_or(""));
+    libos.push2(qd, response.as_bytes()).expect("push success") */
+
+
+    lazy_static! {
+        static ref RESPONSE: String = {
+            match std::fs::read_to_string("/var/www/demo/index.html") {
+                Ok(contents) => {
+                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
+                },
+                Err(_) => {
+                    format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
+                },
+            }
+        };
+    }
+    
+    server_log!("PUSH: {}", RESPONSE.lines().next().unwrap_or(""));
+    libos.push2(qd, RESPONSE.as_bytes()).expect("push success")
 }
 
 #[inline(always)]
