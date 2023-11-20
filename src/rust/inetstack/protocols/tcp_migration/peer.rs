@@ -694,7 +694,7 @@ impl Inner {
             .parse()
             .expect("MIG_PER_N must be a i32"),
             requests_remaining: HashMap::new(),
-            is_core_id_1: std::env::var("CORE_ID").map(|e| e.as_str()) == Ok("1"),
+            is_core_id_1: std::env::var("CORE_ID") == Ok("1".to_string()),
         }
     }
 
