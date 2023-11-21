@@ -509,13 +509,13 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     if connstate.get_mut(&qd).unwrap().pushing > 0 {
                         continue;
                     }
-                    libos.initiate_migration(*qd);
+                    // libos.initiate_migration(*qd);
                     
-                
-                    /* match libos.initiate_migration(*qd) {
+                    /* NON-CONCURRENT MIGRATION */
+                    match libos.initiate_migration(*qd) {
                         Ok(()) => {},
                         Err(e) => {
-                            eprintln!("this conn is not for migration");
+                            // eprintln!("this conn is not for migration");
                             match libos.pop(*qd) {
                                 Ok(qt) => {
                                     qts.push(qt);
@@ -525,7 +525,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                                 Err(e) => panic!("pop qt: {}", e),
                             }
                         },
-                    } */
+                    }
+                    /* NON-CONCURRENT MIGRATION */
                 }
             }
 

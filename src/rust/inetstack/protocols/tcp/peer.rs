@@ -890,17 +890,17 @@ impl TcpPeer {
             },
         };
 
-        capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
-        inner.tcpmig.initiate_migration(conn, qd);
+        // capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
+        // inner.tcpmig.initiate_migration(conn, qd);
 
         /* NON-CONCURRENT MIGRATION */
-        /* if(conn.1.port() == 303){
+        if(conn.1.port() == 303){
             capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1); //HERE: check port number and migrate only one port, and then distributed 50/50 connections + 1 more connection for migration
             inner.tcpmig.initiate_migration(conn, qd);
             Ok(())
         }else{
             return Err(Fail::new(EBADF, "this connection is not for migration"));
-        } */
+        }
         /* NON-CONCURRENT MIGRATION */
     }
 
