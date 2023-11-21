@@ -461,8 +461,8 @@ impl InetStack {
         trace!("pop(): qd={:?}", qd);
 
         // We poll here so that TCPMIG is polled every time the application wants a new request.
-        #[cfg(feature = "tcp-migration")]
-        self.poll_tcpmig();
+        /* #[cfg(feature = "tcp-migration")]
+        self.poll_tcpmig(); */
 
         let future = match self.file_table.get(qd) {
             Some(qtype) => match QType::try_from(qtype) {
