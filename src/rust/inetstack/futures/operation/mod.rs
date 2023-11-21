@@ -48,26 +48,6 @@ impl SchedulerFuture for FutureOperation {
     fn get_future(&self) -> &dyn Future<Output = ()> {
         todo!()
     }
-
-    #[cfg(feature = "tcp-migration")]
-    fn as_future_operation_ref(&self) -> Option<&crate::inetstack::futures::FutureOperation> {
-        Some(self)
-    }
-}
-
-#[cfg(feature = "tcp-migration")]
-impl FutureOperation {
-    pub fn check_tcp_pop_qd(&self, qd: crate::QDesc) -> bool {
-        use crate::scheduler::FutureResult;
-        if let Self::Tcp(TcpOperation::Pop(FutureResult {
-            future,
-            done: Some(Ok(..)),
-        })) = self {
-            future.fd == qd
-        } else {
-            false
-        }
-    }
 }
 
 //==============================================================================
