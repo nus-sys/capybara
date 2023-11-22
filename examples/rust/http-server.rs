@@ -512,6 +512,20 @@ fn server(local: SocketAddrV4) -> Result<()> {
                                 server_log!("Should be migrated (no POP issued)");
                                 libos.initiate_migration(qd).unwrap();
                                 entry.remove();
+
+
+                                /* NON-CONCURRENT MIGRATION */
+                                /* match libos.initiate_migration(qd) {
+                                    Ok(()) => {
+                                        entry.remove();
+                                    },
+                                    Err(e) => {
+                                        // eprintln!("this conn is not for migration");
+                                        qts.push(libos.pop(qd).expect("pop qt"));
+                                        server_log!("Issued POP");
+                                    },
+                                } */
+                                /* NON-CONCURRENT MIGRATION */
                             }
                         }
                         #[cfg(not(feature = "mig-per-n-req"))]
