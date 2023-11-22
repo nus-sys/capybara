@@ -135,8 +135,6 @@ impl Peer {
 
                 self.udp.do_receive(&header, payload)
             },
-            /* #[cfg(feature = "tcp-migration")]
-            IpProtocol::TCPMig => self.tcpmig.receive(&mut self.tcp, &header, payload), */
         }
     }
 

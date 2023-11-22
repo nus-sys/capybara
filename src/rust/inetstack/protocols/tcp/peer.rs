@@ -851,10 +851,6 @@ impl TcpPeer {
                 state.set_user_data(data);
             }
 
-            /* for pop in pops.into_iter().rev() {
-                state.recv_queue.push_front(pop);
-            } */
-
             inner.tcpmig.migrate_out(handle, state);
             Ok(())
         }

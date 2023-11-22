@@ -778,56 +778,10 @@ impl InetStack {
 
         self.poll_bg_work();
 
-        /* let mut pops = Vec::new();
-        let mut i = 0;
-
-        // Check for any completed QToken for this `qd`.
-        for (&qt, to_remove) in qts.iter().zip(to_remove.iter_mut()) {
-            if let Some(buf) = self.get_pop_result_for_qd(qd, qt)? {
-                capy_log!("Found ready pop for {:?}", qd);
-                pops.push(buf);
-                *to_remove = true;
-            } else {
-                *to_remove = false;
-            }
-        } */
-
         self.ipv4.tcp.do_migrate_out(handle, data)?;
         self.file_table.free(qd);
         Ok(true)
     }
-
-    /* fn get_pop_result_for_qd(&mut self, qd: QDesc, qt: QToken) -> Result<Option<Buffer>, Fail> {
-        let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
-            Some(handle) => handle,
-            None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
-        };
-
-        if !handle.has_completed() {
-            handle.take_key();
-            return Ok(None)
-        }
-
-        if !self.scheduler.check_tcp_pop_qd(handle, qd) {
-            return Ok(None);
-        }
-
-        // Extract the buffer and return.
-        let handle = self.scheduler.from_raw_handle(qt.into()).unwrap();
-        let future = self.scheduler.take(handle).as_any();
-        let future = *future.downcast::<FutureOperation>().unwrap();
-
-        match future {
-            FutureOperation::Tcp(f) => {
-                let (_, _, qr) = f.expect_result();
-                match qr {
-                    OperationResult::Pop(_, buf) => Ok(Some(buf)),
-                    _ => unreachable!("must be pop operation"),
-                }
-            },
-            _ => unreachable!("must be tcp operation"),
-        }
-    } */
 
     pub fn poll_tcpmig(&mut self) {
         capy_profile!("poll_tcpmig()");
