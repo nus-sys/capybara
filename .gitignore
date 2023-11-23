@@ -28,3 +28,6 @@ tags.*
 
 # rust
 Cargo.lock
+
+# eval
+eval/__pycache__/
