@@ -25,6 +25,8 @@ all: all-examples
 	cp -f $(BUILD_DIR)/examples/dpdk-ctrl $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
 	cp -f $(BUILD_DIR)/examples/http-server $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)
 
+export EXAMPLE_FEATURES ?= tcp-migration
+
 all-examples:
 #	@echo "$(CARGO) build --examples $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --examples $(CARGO_FEATURES) $(CARGO_FLAGS)
@@ -42,8 +44,8 @@ all-examples:
 #	@echo "$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,capy-profile,capy-log,capy-time-log
-#,mig-per-n-req
+	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) --features=$(EXAMPLE_FEATURES)
+#capy-profile,capy-time-log
 
 clean:
 # 	@rm -rf $(BINDIR)/examples/rust/udp-dump.$(EXEC_SUFFIX)
