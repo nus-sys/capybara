@@ -130,13 +130,6 @@ impl TcpMigStats {
         self.avg_global_recv_queue_length.get()
     }
 
-    pub fn print_queue_length(&self) {
-        /* for (idx, qlen) in &self.connections {
-            println!("{:?},{}", idx, qlen.get());
-        } */
-        unimplemented!("print_queue_length()")
-    }
-
     /// Needs global receive queue length to be greater than the threshold.
     pub fn get_connection_to_migrate_out(&mut self) -> Option<(SocketAddrV4, SocketAddrV4)> {
         /* self.recv_queue_lengths.iter()

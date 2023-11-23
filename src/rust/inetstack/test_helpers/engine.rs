@@ -80,6 +80,9 @@ impl Engine {
             tcp_config,
             arp.clone(),
             rng_seed,
+            
+            #[cfg(feature = "tcp-migration")]
+            Rc::new(crate::inetstack::protocols::tcpmig::TcpmigPollState::default()),
         )?;
         Ok(Engine {
             rt,

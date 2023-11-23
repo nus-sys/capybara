@@ -45,7 +45,7 @@ use crate::{
         FutureResult,
         Scheduler,
         SchedulerHandle,
-    }, capy_time_log, capy_profile,
+    }, capy_time_log, capy_profile, capy_log_mig,
 };
 use ::libc::{
     c_int,
@@ -53,6 +53,7 @@ use ::libc::{
     EINVAL,
     ENOTSUP,
 };
+
 use ::std::{
     any::Any,
     convert::TryFrom,
@@ -70,6 +71,9 @@ use ::std::{
 
 #[cfg(feature = "profiler")]
 use crate::timer;
+
+#[cfg(feature = "tcp-migration")]
+use protocols::tcpmig::TcpmigPollState;
 
 use crate::capy_log;
 
@@ -109,6 +113,9 @@ pub struct InetStack {
     clock: TimerRc,
     ts_iters: usize,
     prev_time: NaiveTime,
+
+    #[cfg(feature = "tcp-migration")]
+    tcpmig_poll_state: Rc<TcpmigPollState>,
 }
 
 impl InetStack {
@@ -124,6 +131,7 @@ impl InetStack {
         arp_config: ArpConfig,
     ) -> Result<Self, Fail> {
         let file_table: IoQueueTable = IoQueueTable::new();
+        let tcpmig_poll_state = Rc::new(TcpmigPollState::default());
 
         let arp: ArpPeer = ArpPeer::new(
             rt.clone(),
@@ -143,6 +151,9 @@ impl InetStack {
             tcp_config,
             arp.clone(),
             rng_seed,
+
+            #[cfg(feature = "tcp-migration")]
+            tcpmig_poll_state.clone()
         )?;
         Ok(Self {
             arp,
@@ -154,6 +165,9 @@ impl InetStack {
             clock,
             ts_iters: 0,
             prev_time: chrono::Local::now().time(),
+
+            #[cfg(feature = "tcp-migration")]
+            tcpmig_poll_state
         })
     }
 
@@ -460,10 +474,6 @@ impl InetStack {
 
         trace!("pop(): qd={:?}", qd);
 
-        // We poll here so that TCPMIG is polled every time the application wants a new request.
-        /* #[cfg(feature = "tcp-migration")]
-        self.poll_tcpmig(); */
-
         let future = match self.file_table.get(qd) {
             Some(qtype) => match QType::try_from(qtype) {
                 Ok(QType::TcpSocket) => Ok(FutureOperation::from(self.ipv4.tcp.pop(qd)?)),
@@ -573,10 +583,10 @@ impl InetStack {
 
     /// Waits for any operation to complete.
     /// 
-    /// The length of `qrs` needs to be at least as big as `qts`. If `qrs` is not big enough, all results are not written to it.
+    /// The length of `qrs` and `indices` needs to be at least as big as `qts`. If `qrs` is not big enough, all results are not written to it.
     /// 
     /// Returns the number of results written to `qrs`.
-    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(usize, QDesc, OperationResult)]) -> Result<usize, Fail> {
+    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
         loop {
             // Poll first, so as to give pending operations a chance to complete.
             self.poll_bg_work();
@@ -598,7 +608,8 @@ impl InetStack {
                 // Found one, so extract the result and return.
                 if handle.has_completed() {
                     let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
-                    qrs[completed] = (i, qd, r); // Store the completed handle result.
+                    qrs[completed] = (qd, r); // Store the completed handle result.
+                    indices[completed] = i; // Store the index of the result.
                     completed += 1;
                 } else {
                     // Return this operation to the scheduling queue by removing the associated key
@@ -613,7 +624,41 @@ impl InetStack {
         }
     }
 
-    pub fn trywait_any_one2(&mut self, qts: &[QToken]) -> Result<Option<(usize, QDesc, OperationResult)>, Fail> {
+    /// Checks if any operation is complete. If not, immediately returns.
+    /// 
+    /// The length of `qrs` and `indices` needs to be at least as big as `qts`. If `qrs` is not big enough, all results are not written to it.
+    /// 
+    /// Returns the number of results written to `qrs`.
+    pub fn wait_any_nonblocking2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
+        // Poll first, so as to give pending operations a chance to complete.
+        self.poll_bg_work();
+
+        let mut completed = 0;
+        // Search for any operation that has completed.
+        for (i, &qt) in qts.iter().enumerate() {
+            // Retrieve associated schedule handle.
+            // TODO: move this out of the loop.
+            let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
+                Some(handle) => handle,
+                None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
+            };
+
+            // Found one, so extract the result and return.
+            if handle.has_completed() {
+                let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
+                qrs[completed] = (qd, r); // Store the completed handle result.
+                indices[completed] = i; // Store the index of the result.
+                completed += 1;
+            } else {
+                // Return this operation to the scheduling queue by removing the associated key
+                // (which would otherwise cause the operation to be freed).
+                handle.take_key();
+            }
+        }
+        Ok(completed)
+    }
+
+    pub fn wait_any_nonblocking_one2(&mut self, qts: &[QToken]) -> Result<Option<(usize, QDesc, OperationResult)>, Fail> {
         // Poll first, so as to give pending operations a chance to complete.
         self.poll_bg_work();
         // Search for any operation that has completed.
@@ -635,34 +680,6 @@ impl InetStack {
             handle.take_key();
         } 
         Ok(None)
-    }
-
-    pub fn wait_any_nonblock2(&mut self, qts: &[QToken], qrs: &mut [(usize, QDesc, OperationResult)]) -> Result<usize, Fail> {
-        // Poll first, so as to give pending operations a chance to complete.
-        self.poll_bg_work();
-
-        let mut completed = 0;
-        // Search for any operation that has completed.
-        for (i, &qt) in qts.iter().enumerate() {
-            // Retrieve associated schedule handle.
-            // TODO: move this out of the loop.
-            let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
-                Some(handle) => handle,
-                None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
-            };
-
-            // Found one, so extract the result and return.
-            if handle.has_completed() {
-                let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
-                qrs[completed] = (i, qd, r); // Store the completed handle result.
-                completed += 1;
-            } else {
-                // Return this operation to the scheduling queue by removing the associated key
-                // (which would otherwise cause the operation to be freed).
-                handle.take_key();
-            }
-        }
-        Ok(completed)
     }
 
     /// Given a handle representing a task in our scheduler. Return the results of this future
@@ -724,89 +741,133 @@ impl InetStack {
     pub fn poll_bg_work(&mut self) {
         #[cfg(feature = "profiler")]
         timer!("inetstack::poll_bg_work");
+
+        #[cfg(feature = "tcp-migration")]
+        let was_runtime_polled = self.poll_runtime_tcpmig();
+        //self.prev_time = chrono::Local::now().time();
+
         {
             #[cfg(feature = "profiler")]
             timer!("inetstack::poll_bg_work::poll");
             self.scheduler.poll();
         }
 
+        #[cfg(feature = "tcp-migration")]
+        if !was_runtime_polled {
+            self.poll_runtime();
+        }
+        #[cfg(not(feature = "tcp-migration"))]
+        self.poll_runtime();
+
+        #[cfg(not(feature = "mig-per-n-req"))]
         {
-            #[cfg(feature = "profiler")]
-            timer!("inetstack::poll_bg_work::for");
-
-            for _ in 0..MAX_RECV_ITERS {
-                
-                #[cfg(feature = "tcp-migration")]
-                self.poll_tcpmig();
-
-                self.prev_time = chrono::Local::now().time();
-                let batch = {
-                    #[cfg(feature = "profiler")]
-                    timer!("inetstack::poll_bg_work::for::receive");
-                    self.rt.receive()
-                };
-                if batch.is_empty() {
-                    break;
-                }
-                for pkt in batch {
-                    if let Err(e) = self.do_receive(pkt) {
-                        warn!("Dropped packet: {:?}", e);
-                    }
-                    // TODO: This is a workaround for https://github.com/demikernel/inetstack/issues/149.
-                    self.scheduler.poll();
-                }
-            }
+            // TODO: Update stats here.
+        
+            // TODO: If overloaded, start migrations.
         }
 
         if self.ts_iters == 0 {
             self.clock.advance_clock(Instant::now());
         }
         self.ts_iters = (self.ts_iters + 1) % TIMER_RESOLUTION;
+    }
+
+    fn poll_runtime(&mut self) {
+        #[cfg(feature = "profiler")]
+        timer!("inetstack::poll_bg_work::for");
+        
+        for _ in 0..MAX_RECV_ITERS {
+            let batch = {
+                #[cfg(feature = "profiler")]
+                timer!("inetstack::poll_bg_work::for::receive");
+                self.rt.receive()
+            };
+            if batch.is_empty() {
+                break;
+            }
+            for pkt in batch {
+                if let Err(e) = self.do_receive(pkt) {
+                    warn!("Dropped packet: {:?}", e);
+                }
+                // TODO: This is a workaround for https://github.com/demikernel/inetstack/issues/149.
+                self.scheduler.poll();
+            }
+        }
     }
 }
 
 #[cfg(feature = "tcp-migration")]
 impl InetStack {
-    /// `to_remove` must be at least as large as `qts`, and must be initialised to all `false`.
-    pub fn notify_migration_safety(&mut self, qd: QDesc, data: Option<&[u8]>) -> Result<bool, Fail> {
-        self.poll_tcpmig();
-        
-        let handle = match self.ipv4.tcp.try_get_migration_handle(qd)? {
-            Some(handle) => handle,
-            None => return Ok(false),
-        };
-
-        self.poll_bg_work();
-
-        self.ipv4.tcp.do_migrate_out(handle, data)?;
-        self.file_table.free(qd);
-        Ok(true)
-    }
-
-    pub fn poll_tcpmig(&mut self) {
+    /// Returns if TCP DPDK queue was also polled.
+    pub fn poll_runtime_tcpmig(&mut self) -> bool {
         capy_profile!("poll_tcpmig()");
         // let recv_time: NaiveTime = chrono::Local::now().time();
+
+        // Get TCPMIG packets.
         let tcpmig_batch = {
             // capy_profile!("receive_tcpmig");
+
+            // Soundness: Inetstack runtime is always DPDKRuntime.
             unsafe { self.rt.as_dpdk_runtime().unwrap_unchecked() }.receive_tcpmig()
         };
         
         //capy_time_log!("poll_dpdk_interval,{},{}", recv_time, self.prev_time);
+
+        // Reset poll state, and disallow fast migrations initially since TCP DPDK queue might have unpolled packets.
+        self.tcpmig_poll_state.reset();
         
         for pkt in tcpmig_batch {
+            // Parse the packet. If it is a PREPARE_MIG_ACK, 
             if let Err(e) = self.do_receive(pkt) {
                 warn!("Dropped packet: {:?}", e);
             }
-            if let Some(qd) = unsafe { self::protocols::tcp_migration::LAST_MIGRATED_OUT_QD.take() } {
-                self.file_table.free(qd);
+            // Get qd to free if a connection was/will be migrated out.
+            let qd_to_remove = match self.tcpmig_poll_state.take_qd() {
+                None => continue,
+                Some(qd) => qd,
+            };
+
+            // Control only enters here if a PREPARE_ACK was received.
+
+            // Fast migration is disabled, so TCP queue hasn't been polled yet. Poll it.
+            if !self.tcpmig_poll_state.is_fast_migrate_enabled() {
+                // Poll the TCP DPDK queue.
+                capy_log_mig!("PREPARE_MIG_ACK slow path entered");
+                self.poll_runtime_no_scheduler_poll();
+
+                // Migrate out the pending connection.
+                self.ipv4.tcp.migrate_out_and_send(qd_to_remove);
+
+                // Enable fast migration now that TCP queue has been flushed.
+                self.tcpmig_poll_state.enable_fast_migrate();
             }
+            
+            // Free the QD.
+            self.file_table.free(qd_to_remove);
         }
         // self.prev_time = recv_time;
 
-        if self.ts_iters == 0 {
-            self.clock.advance_clock(Instant::now());
+        // The state of fast migrate also indicates if any migration occured.
+        self.tcpmig_poll_state.is_fast_migrate_enabled()
+    }
+
+    /// Exactly the same as `poll_runtime()` but does not poll the scheduler after every packet.
+    fn poll_runtime_no_scheduler_poll(&mut self) {
+        for _ in 0..MAX_RECV_ITERS {
+            let batch = {
+                #[cfg(feature = "profiler")]
+                timer!("inetstack::poll_bg_work::for::receive");
+                self.rt.receive()
+            };
+            if batch.is_empty() {
+                break;
+            }
+            for pkt in batch {
+                if let Err(e) = self.do_receive(pkt) {
+                    warn!("Dropped packet: {:?}", e);
+                }
+            }
         }
-        self.ts_iters = (self.ts_iters + 1) % TIMER_RESOLUTION;
     }
 
     pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<Buffer>, Fail> {
@@ -818,19 +879,7 @@ impl InetStack {
         self.ipv4.tcp.initiate_migration(qd)
     }
 
-    pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
-        self.ipv4.tcp.get_migration_prepared_qds()
-    }
-
     pub fn global_recv_queue_length(&mut self) -> usize {
         self.ipv4.tcp.global_recv_queue_length()
-    }
-
-    pub fn print_queue_length(&mut self) {
-        self.ipv4.tcp.print_queue_length()
-    }
-
-    pub fn pushed_response(&mut self) {
-        self.ipv4.tcp.pushed_response()
     }
 }

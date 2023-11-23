@@ -524,14 +524,14 @@ pub extern "C" fn demi_wait_any(
 //======================================================================================================================
 
 #[no_mangle]
-pub extern "C" fn demi_try_wait_any(
+pub extern "C" fn demi_wait_any_nonblocking(
     qrs_out: *mut demi_qresult_t,
     ready_offsets: *mut c_int,
     num_out: *mut c_int,
     qts: *mut demi_qtoken_t,
     num_qts: c_int,
 ) -> c_int {
-    trace!("demi_try_wait_any()");
+    trace!("demi_wait_any_nonblocking()");
 
     // Check arguments.
     if num_qts < 0 {
@@ -690,28 +690,7 @@ pub extern "C" fn demi_getsockopt(
 #[allow(unused)]
 #[no_mangle]
 pub extern "C" fn demi_notify_migration_safety(was_migration_done: *mut c_int, qd: c_int, data: *const c_void, data_len: libc::size_t) -> c_int {
-    /* let data = if data.is_null() {
-        None
-    } else {
-        Some(unsafe { std::slice::from_raw_parts(data.cast::<u8>(), data_len) })
-    };
-
-    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.notify_migration_safety(qd.into(), data) {
-        Ok(result) => {
-            unsafe { *was_migration_done = result.into(); }
-            0
-        },
-        Err(e) => {
-            warn!("notify_migration_safety() failed: {:?}", e);
-            e.errno
-        },
-    });
-
-    match ret {
-        Ok(ret) => ret,
-        Err(e) => e.errno,
-    } */
-    todo!()
+    unimplemented!("demi_notify_migration_safety() is deprecated")
 }
 
 //======================================================================================================================
@@ -722,7 +701,7 @@ pub extern "C" fn demi_notify_migration_safety(was_migration_done: *mut c_int, q
 #[allow(unused)]
 #[no_mangle]
 pub extern "C" fn demi_print_queue_length_log() {
-    crate::inetstack::protocols::tcp_migration::log_print();
+    crate::inetstack::protocols::tcpmig::log_print();
 }
 
 //======================================================================================================================

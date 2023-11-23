@@ -4,7 +4,11 @@ mod peer;
 mod active;
 pub mod stats;
 
-pub use peer::{TcpMigPeer, log_print, MigrationHandle, LAST_MIGRATED_OUT_QD};
+use std::cell::Cell;
+
+pub use peer::{TcpMigPeer, log_print, TcpmigReceiveStatus};
+
+use crate::QDesc;
 
 //======================================================================================================================
 // Constants
@@ -25,6 +29,12 @@ pub enum MigrationStage {
     PrepareMigrationAck,
     ConnectionState,
     ConnectionStateAck,
+}
+
+#[derive(Default)]
+pub struct TcpmigPollState {
+    migrated_qd: Cell<Option<QDesc>>,
+    fast_migrate: Cell<bool>
 }
 
 //======================================================================================================================
@@ -51,5 +61,37 @@ impl TryFrom<u8> for MigrationStage {
             5 => Ok(ConnectionStateAck),
             e => Err(e),
         }
+    }
+}
+
+//======================================================================================================================
+// Standard Library Trait Implementations
+//======================================================================================================================
+
+impl TcpmigPollState {
+    #[inline]
+    pub fn reset(&self) {
+        self.migrated_qd.take();
+        self.fast_migrate.take();
+    }
+
+    #[inline]
+    pub fn take_qd(&self) -> Option<QDesc> {
+        self.migrated_qd.take()
+    }
+
+    #[inline]
+    pub fn set_qd(&self, qd: QDesc) {
+        self.migrated_qd.set(Some(qd));
+    }
+
+    #[inline]
+    pub fn is_fast_migrate_enabled(&self) -> bool {
+        self.fast_migrate.get()
+    }
+
+    #[inline]
+    pub fn enable_fast_migrate(&self) {
+        self.fast_migrate.set(true);
     }
 }
