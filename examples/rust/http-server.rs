@@ -451,6 +451,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         };
 
                         // Pop from new_qd
+                        /* comment out this for recv_queue_len vs mig_lat eval */
                         match libos.pop(new_qd) {
                             Ok(pop_qt) => {
                                 state.is_popping = true;
@@ -460,6 +461,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             Err(e) if e.errno == demikernel::ETCPMIG => (),
                             Err(e) => panic!("pop qt: {}", e),
                         }
+                        /* comment out this for recv_queue_len vs mig_lat eval */
 
                         connstate.insert(new_qd, state);
                         

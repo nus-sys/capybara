@@ -186,6 +186,10 @@ impl TcpMigPeer {
         let mut inner = self.inner.borrow_mut();
         inner.self_udp_port = port;
     }
+    
+    pub fn get_port(&mut self) -> u16 {
+        self.inner.borrow_mut().self_udp_port
+    }
 
     /// Consumes the payload from a buffer.
     pub fn receive(&mut self, tcp_peer: &mut TcpPeer, ipv4_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {

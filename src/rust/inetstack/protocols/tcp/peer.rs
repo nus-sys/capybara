@@ -398,7 +398,25 @@ impl TcpPeer {
                     inner.tcpmig.start_tracking_connection_stats(local, remote, recv_queue_len);
 
                     capy_log_mig!("MIG-CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
-                    
+            
+                    /* activate this for recv_queue_len vs mig_lat eval */
+                    /* let mig_key = (
+                        SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), inner.tcpmig.get_port()),
+                        SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 7), 201));
+                    let qd = inner.qds.get(&mig_key).ok_or_else(|| Fail::new(EBADF, "socket not exist"))?;
+                    if let Some(mig_socket) = inner.established.get(&mig_key) {
+                        if mig_socket.cb.receiver.recv_queue_len() == 100 {
+                            // The key exists in the hashmap, and mig_socket now contains the value.
+                            // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
+                            inner.tcpmig.stop_tracking_connection_stats(mig_key.0, mig_key.1, mig_socket.cb.receiver.recv_queue_len());
+                            inner.tcpmig.initiate_migration(mig_key, *qd);
+                        }
+                    } else {
+                        // The key does not exist in the esablished hashmap, panic.
+                        panic!("Key not found in established HashMap: {:?}", mig_key);
+                    } */
+                    /* activate this for recv_queue_len vs mig_lat eval */
+
                     return Poll::Ready(Ok(new_qd));
                 },
                 Err(e) => {
@@ -489,7 +507,7 @@ impl TcpPeer {
         })
     }
 
-    pub fn poll_recv(&self, fd: QDesc, ctx: &mut Context) -> Poll<Result<Buffer, Fail>> {//HERE
+    pub fn poll_recv(&self, fd: QDesc, ctx: &mut Context) -> Poll<Result<Buffer, Fail>> {
         let inner = self.inner.borrow_mut();
         let key = match inner.sockets.get(&fd) {
             Some(Socket::Established { local, remote }) => (*local, *remote),
@@ -704,7 +722,26 @@ impl Inner {
                 // self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
                 // self.tcpmig.queue_length_heartbeat();
                 
+                /* activate this for recv_queue_len vs mig_lat eval */
+                /* let mig_key = (
+                    SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10000),
+                    SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 7), 201));
+                let qd = self.qds.get(&mig_key).ok_or_else(|| Fail::new(EBADF, "socket not exist"))?;
+                if let Some(mig_socket) = self.established.get(&mig_key) {
+                    if mig_socket.cb.receiver.recv_queue_len() == 100 {
+                        // The key exists in the hashmap, and mig_socket now contains the value.
+                        // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
+                        self.tcpmig.stop_tracking_connection_stats(mig_key.0, mig_key.1, mig_socket.cb.receiver.recv_queue_len());
+                        self.tcpmig.initiate_migration(mig_key, *qd);
+                    }
+                } else {
+                    // The key does not exist in the esablished hashmap, panic.
+                    panic!("Key not found in established HashMap: {:?}", mig_key);
+                } */
+                /* activate this for recv_queue_len vs mig_lat eval */
+                
                 // Possible decision-making point.
+                /* comment out this for recv_queue_len vs mig_lat eval */
                 if let Some(conn) = self.tcpmig.should_migrate() {
                     // eprintln!("{:?}", conn);
                     capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
@@ -727,6 +764,7 @@ impl Inner {
                         }
                     }
                 }
+                /* comment out this for recv_queue_len vs mig_lat eval */
             }
             return Ok(());
         }
@@ -898,7 +936,7 @@ impl TcpPeer {
 
         /* NON-CONCURRENT MIGRATION */
         /* if(conn.1.port() == 303){
-            capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1); //HERE: check port number and migrate only one port, and then distributed 50/50 connections + 1 more connection for migration
+            capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1); 
             inner.tcpmig.initiate_migration(conn, qd);
             Ok(())
         }else{
