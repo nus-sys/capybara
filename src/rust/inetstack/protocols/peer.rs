@@ -27,7 +27,7 @@ use crate::{
 };
 
 #[cfg(feature = "tcp-migration")]
-use crate::inetstack::protocols::tcp_migration::segment::TcpMigHeader;
+use crate::inetstack::protocols::tcpmig::{segment::TcpMigHeader, TcpmigPollState};
 
 use ::libc::ENOTCONN;
 use ::std::{
@@ -37,9 +37,6 @@ use ::std::{
     time::Duration,
 };
 
-#[cfg(feature = "tcp-migration")]
-use crate::inetstack::protocols::tcp_migration::TcpMigPeer;
-
 #[cfg(test)]
 use crate::runtime::QDesc;
 
@@ -48,9 +45,6 @@ pub struct Peer {
     icmpv4: Icmpv4Peer,
     pub tcp: TcpPeer,
     pub udp: UdpPeer,
-
-    #[cfg(feature = "tcp-migration")]
-    tcpmig: TcpMigPeer,
 }
 
 impl Peer {
@@ -64,6 +58,9 @@ impl Peer {
         tcp_config: TcpConfig,
         arp: ArpPeer,
         rng_seed: [u8; 32],
+
+        #[cfg(feature = "tcp-migration")]
+        tcpmig_poll_state: Rc<TcpmigPollState>,
     ) -> Result<Peer, Fail> {
         let udp_offload_checksum: bool = udp_config.get_tx_checksum_offload();
         let udp: UdpPeer = UdpPeer::new(
@@ -85,13 +82,6 @@ impl Peer {
             rng_seed,
         )?;
 
-        #[cfg(feature = "tcp-migration")]
-        let tcpmig = TcpMigPeer::new(
-            rt.clone(),
-            local_link_addr,
-            local_ipv4_addr,
-        )?;
-
         let tcp: TcpPeer = TcpPeer::new(
             rt.clone(),
             scheduler.clone(),
@@ -103,7 +93,7 @@ impl Peer {
             rng_seed,
 
             #[cfg(feature = "tcp-migration")]
-            tcpmig.clone(),
+            tcpmig_poll_state,
         )?;
 
         Ok(Peer {
@@ -111,9 +101,6 @@ impl Peer {
             icmpv4,
             tcp,
             udp,
-
-            #[cfg(feature = "tcp-migration")]
-            tcpmig,
         })
     }
 
@@ -130,7 +117,7 @@ impl Peer {
             IpProtocol::UDP => {
                 #[cfg(feature = "tcp-migration")]
                 if TcpMigHeader::is_tcpmig(&payload) {
-                    return self.tcpmig.receive(&mut self.tcp, &header, payload);
+                    return self.tcp.receive_tcpmig(&header, payload);
                 }
 
                 self.udp.do_receive(&header, payload)

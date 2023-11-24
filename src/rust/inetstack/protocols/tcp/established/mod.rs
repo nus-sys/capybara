@@ -49,7 +49,13 @@ use ::std::{
 use crate::capy_log;
 
 #[cfg(feature = "tcp-migration")]
-use crate::inetstack::protocols::tcp_migration::TcpMigPeer;
+pub use ctrlblk::state::ControlBlockState;
+
+#[cfg(all(feature = "tcp-migration", test))]
+pub use ctrlblk::state::test::get_state as test_get_control_block_state;
+
+#[cfg(feature = "tcp-migration")]
+use crate::inetstack::protocols::tcpmig::TcpMigPeer;
 
 pub struct EstablishedSocket {
     pub cb: Rc<ControlBlock>,

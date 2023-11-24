@@ -47,12 +47,6 @@ pub struct UnackedSegment {
     pub initial_tx: Option<Instant>,
 }
 
-impl PartialEq for UnackedSegment {
-    fn eq(&self, other: &Self) -> bool {
-        self.bytes == other.bytes
-    }
-}
-
 /// Hard limit for unsent queue.
 /// ToDo: Remove this.  We should limit the unsent queue by either having a (configurable) send buffer size (in bytes,
 /// not segments) and rejecting send requests that exceed that, or by limiting the user's send buffer allocations.
@@ -430,6 +424,212 @@ impl Sender {
 //==============================================================================
 // TCP Migration
 //==============================================================================
+
+#[cfg(feature = "tcp-migration")]
+pub mod state {
+    use std::{collections::VecDeque, cell::{RefCell, Cell}};
+    use byteorder::{BigEndian, ByteOrder};
+
+    use crate::{
+        inetstack::protocols::tcp::{SeqNumber, peer::state::{Serialize, Deserialize}},
+        runtime::{memory::Buffer, watched::WatchedValue}
+    };
+    use super::{UnackedSegment, Sender};
+
+    //===================================================================
+    //  Structures
+    //===================================================================
+
+    #[derive(Debug, PartialEq, Eq)]
+    pub struct SenderState {
+        unsent_seq_no: SeqNumber, // 0..4
+        send_unacked: SeqNumber, // 4..8
+        send_next: SeqNumber, // 8..12
+        send_window: u32, // 12..16
+        send_window_last_update_seq: SeqNumber, // 16..20
+        send_window_last_update_ack: SeqNumber, // 20..24
+        mss: u32, // 24..28
+        window_scale: u8, // 28
+        unacked_queue: VecDeque<UnackedSegment>, // 29..
+        unsent_queue: VecDeque<Buffer>,
+    }
+
+    //===================================================================
+    //  Standard Library Trait Implementations
+    //===================================================================
+
+    impl From<&Sender> for SenderState {
+        fn from(Sender {
+            send_unacked,
+            unacked_queue,
+            send_next,
+            unsent_queue,
+            unsent_seq_no,
+
+            send_window,
+            send_window_last_update_seq,
+            send_window_last_update_ack,
+
+            window_scale,
+            mss,
+        }: &Sender) -> Self {
+            Self {
+                unsent_seq_no: unsent_seq_no.get(),
+                send_unacked: send_unacked.get(),
+                send_next: send_next.get(),
+                send_window: send_window.get(),
+                send_window_last_update_seq: send_window_last_update_seq.get(),
+                send_window_last_update_ack: send_window_last_update_ack.get(),
+                mss: (*mss).try_into().expect("MSS too big"),
+                window_scale: *window_scale,
+                unacked_queue: unacked_queue.take(),
+                unsent_queue: unsent_queue.take(),
+            }
+        }
+    }
+
+    impl From<SenderState> for Sender {
+        fn from(SenderState {
+            unsent_seq_no,
+            send_unacked,
+            send_next,
+            send_window,
+            send_window_last_update_seq,
+            send_window_last_update_ack,
+            mss,
+            window_scale,
+            unacked_queue,
+            unsent_queue
+        }: SenderState) -> Self {
+            Self {
+                send_unacked: WatchedValue::new(send_unacked),
+                unacked_queue: RefCell::new(unacked_queue),
+                send_next: WatchedValue::new(send_next),
+                unsent_queue: RefCell::new(unsent_queue),
+                unsent_seq_no: WatchedValue::new(unsent_seq_no),
+                send_window: WatchedValue::new(send_window),
+                send_window_last_update_seq: Cell::new(send_window_last_update_seq),
+                send_window_last_update_ack: Cell::new(send_window_last_update_ack),
+                window_scale,
+                mss: mss.try_into().unwrap(),
+            }
+        }
+    }
+
+    impl PartialEq for UnackedSegment {
+        fn eq(&self, other: &Self) -> bool {
+            self.bytes == other.bytes
+        }
+    }
+
+    impl Eq for UnackedSegment {}
+
+    //===================================================================
+    //  Trait Implementations
+    //===================================================================
+
+    //==============================
+    //  Serialization
+    //==============================
+
+    impl Serialize for SenderState {
+        fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
+            buf[0..4].copy_from_slice(&u32::from(self.unsent_seq_no).to_be_bytes());
+            buf[4..8].copy_from_slice(&u32::from(self.send_unacked).to_be_bytes());
+            buf[8..12].copy_from_slice(&u32::from(self.send_next).to_be_bytes());
+            buf[12..16].copy_from_slice(&self.send_window.to_be_bytes());
+            buf[16..20].copy_from_slice(&u32::from(self.send_window_last_update_seq).to_be_bytes());
+            buf[20..24].copy_from_slice(&u32::from(self.send_window_last_update_ack).to_be_bytes());
+            buf[24..28].copy_from_slice(&self.mss.to_be_bytes());
+            buf[28] = self.window_scale;
+
+            let buf = &mut buf[29..];
+            let buf = self.unacked_queue.serialize_into(buf);
+            self.unsent_queue.serialize_into(buf)
+        }
+    }
+
+    impl Serialize for UnackedSegment {
+        fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
+            self.bytes.serialize_into(buf)
+        }
+    }
+
+    //==============================
+    //  Deserialization
+    //==============================
+
+    impl Deserialize for SenderState {
+        fn deserialize_from(buf: &mut Buffer) -> Self {
+            let unsent_seq_no = SeqNumber::from(BigEndian::read_u32(&buf[0..4]));
+            let send_unacked = SeqNumber::from(BigEndian::read_u32(&buf[4..8]));
+            let send_next = SeqNumber::from(BigEndian::read_u32(&buf[8..12]));
+            let send_window = BigEndian::read_u32(&buf[12..16]);
+            let send_window_last_update_seq = SeqNumber::from(BigEndian::read_u32(&buf[16..20]));
+            let send_window_last_update_ack = SeqNumber::from(BigEndian::read_u32(&buf[20..24]));
+            let mss = BigEndian::read_u32(&buf[24..28]);
+            let window_scale = buf[28];
+
+            buf.adjust(29);
+            let unacked_queue = VecDeque::<UnackedSegment>::deserialize_from(buf);
+            let unsent_queue = VecDeque::<Buffer>::deserialize_from(buf);
+
+            Self { unsent_seq_no, send_unacked, send_next, send_window, send_window_last_update_seq,
+                send_window_last_update_ack, mss, window_scale, unacked_queue, unsent_queue }
+        }
+    }
+
+    impl Deserialize for UnackedSegment {
+        fn deserialize_from(buf: &mut Buffer) -> Self {
+            let bytes = Buffer::deserialize_from(buf);
+            Self { bytes, initial_tx: None }
+        }
+    }
+
+    //===================================================================
+    //  Implementations
+    //===================================================================
+
+    impl SenderState {
+        pub fn serialized_size(&self) -> usize {
+            29 // Fixed
+            + 4 + self.unacked_queue.iter().fold(0, |acc, e| acc + 4 + e.bytes.len()) // unacked_queue
+            + 4 + self.unsent_queue.iter().fold(0, |acc, e| acc + 4 + e.len()) // unsent_queue
+        }
+    }
+
+    //===================================================================
+    //  Unit Tests
+    //===================================================================
+
+    #[cfg(test)]
+    pub mod test {
+        use std::collections::VecDeque;
+
+        use crate::{inetstack::protocols::tcp::{SeqNumber, established::UnackedSegment}, runtime::memory::{Buffer, DataBuffer}};
+
+        use super::SenderState;
+
+        fn get_buf() -> Buffer {
+            Buffer::Heap(DataBuffer::from_slice(&vec![1; 64]))
+        }
+
+        pub fn get_state() -> SenderState {
+            SenderState {
+                unsent_seq_no: SeqNumber::from(10),
+                send_unacked: SeqNumber::from(10),
+                send_next: SeqNumber::from(10),
+                send_window: 10,
+                send_window_last_update_seq: SeqNumber::from(10),
+                send_window_last_update_ack: SeqNumber::from(10),
+                mss: 10,
+                window_scale: 10,
+                unacked_queue: VecDeque::from(vec![UnackedSegment { bytes: get_buf(), initial_tx: None }; 100]),
+                unsent_queue: VecDeque::from(vec![get_buf(); 100]),
+            }
+        }
+    }
+}
 
 #[cfg(feature = "tcp-migration")]
 impl Sender {

@@ -24,6 +24,7 @@ import subprocess
 from cycler import cycler
 
 import datetime
+import pty
 
 
 from test_config import *
@@ -74,6 +75,7 @@ def run_server(mig_delay, mig_var, mig_per_n):
     for j in range(NUM_BACKENDS):
         cmd = [f'cd {CAPYBARA_PATH} && \
                 sudo -E \
+                CAPY_LOG={CAPY_LOG} \
                 LIBOS=catnip \
                 RECV_QUEUE_LEN=100 \
                 MTU=1500 \
@@ -298,11 +300,17 @@ def run_eval():
                                 run_tcpdump(experiment_id)
                             
                             run_server(mig_delay, mig_var, mig_per_n)
-                            
+
                             host = pyrem.host.RemoteHost(CLIENT_NODE)
-                            cmd = [f'sudo numactl -m0 {HOME}/caladan/apps/synthetic/target/release/synthetic \
+                            cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
+                            task = host.run(cmd, quiet=True)
+                            pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+                            time.sleep(4)
+                            print('iokerneld is running')
+                            
+                            cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                     10.0.1.1:10000 \
-                                    --config {HOME}/caladan/client.config \
+                                    --config {CALADAN_PATH}/client.config \
                                     --mode runtime-client \
                                     --protocol=http \
                                     --transport=tcp \
@@ -316,9 +324,9 @@ def run_eval():
                                     --exptid={DATA_PATH}/{experiment_id} \
                                     > {DATA_PATH}/{experiment_id}.client']
                             if SERVER_APP == 'redis-server':
-                                cmd = [f'sudo numactl -m0 {HOME}/caladan/apps/synthetic/target/release/synthetic \
+                                cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                         10.0.1.1:10000 \
-                                        --config {HOME}/caladan/client.config \
+                                        --config {CALADAN_PATH}/client.config \
                                         --mode runtime-client \
                                         --transport=tcp \
                                         --samples=1 \
@@ -409,14 +417,24 @@ def exiting():
         file.write(final_result)
     kill_procs()
 
-atexit.register(exiting)
+
+def run_compile():
+    features = ''
+    for feat in FEATURES:
+        features += feat + ','
+
+    return os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make all-examples-rust")
 
 
 if __name__ == '__main__':
     # parse_result()
     # parse_mig_latency("20231031-091034.787136")
     # exit()
+
+    if len(sys.argv) > 1 and sys.argv[1] == 'build':
+        exit(run_compile())
     
+    atexit.register(exiting)
     # cleaning()
     run_eval()
     # parse_result()

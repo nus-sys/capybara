@@ -60,7 +60,7 @@ pub enum NetworkLibOS {
 /// Associated functions for network LibOSes.
 impl NetworkLibOS {
     /// Waits on a pending operation in an I/O queue.
-    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(usize, QDesc, OperationResult)]) -> Result<usize, Fail> {
+    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(libos) => libos.wait_any2(qts),
@@ -69,7 +69,33 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(libos) => libos.wait_any2(qts),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.wait_any2(qts, qrs),
+            NetworkLibOS::Catnip(libos) => libos.wait_any2(qts, qrs, indices),
+        }
+    }
+
+    pub fn wait_any_nonblocking2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(libos) => todo!("catpowder timedwait2()"),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(libos) => todo!("catnap timedwait2()"),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(libos) => todo!("catcollar timedwait2()"),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.wait_any_nonblocking2(qts, qrs, indices),
+        }
+    }
+
+    pub fn wait_any_nonblocking_one2(&mut self, qts: &[QToken]) -> Result<Option<(usize, QDesc, OperationResult)>, Fail> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(libos) => todo!("catpowder timedwait2()"),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(libos) => todo!("catnap timedwait2()"),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(libos) => todo!("catcollar timedwait2()"),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.wait_any_nonblocking_one2(qts),
         }
     }
 
@@ -98,32 +124,6 @@ impl NetworkLibOS {
             NetworkLibOS::Catcollar(libos) => todo!("catcollar timedwait2()"),
             #[cfg(feature = "catnip-libos")]
             NetworkLibOS::Catnip(libos) => libos.timedwait2(qt, abstime),
-        }
-    }
-
-    pub fn trywait_any_one2(&mut self, qts: &[QToken]) -> Result<Option<(usize, QDesc, OperationResult)>, Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(libos) => todo!("catpowder timedwait2()"),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(libos) => todo!("catnap timedwait2()"),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(libos) => todo!("catcollar timedwait2()"),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.trywait_any_one2(qts),
-        }
-    }
-
-    pub fn wait_any_nonblock2(&mut self, qts: &[QToken], qrs: &mut [(usize, QDesc, OperationResult)]) -> Result<usize, Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(libos) => todo!("catpowder timedwait2()"),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(libos) => todo!("catnap timedwait2()"),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(libos) => todo!("catcollar timedwait2()"),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.wait_any_nonblock2(qts, qrs),
         }
     }
 
@@ -373,19 +373,6 @@ impl NetworkLibOS {
 
 #[cfg(feature = "tcp-migration")]
 impl NetworkLibOS {
-    pub fn notify_migration_safety(&mut self, _qd: QDesc, _data: Option<&[u8]>) -> Result<bool, Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.notify_migration_safety(_qd, _data),
-        }
-    }
-
     pub fn take_migrated_data(&mut self, _qd: QDesc) -> Result<Option<crate::runtime::memory::Buffer>, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
@@ -412,19 +399,6 @@ impl NetworkLibOS {
             NetworkLibOS::Catnip(libos) => libos.initiate_migration(_qd),
         }
     }
-
-    pub fn get_migration_prepared_qds(&mut self) -> Result<HashSet<QDesc>, Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.get_migration_prepared_qds(),
-        }
-    }
     
     pub fn global_recv_queue_length(&mut self) -> usize {
         match self {
@@ -436,45 +410,6 @@ impl NetworkLibOS {
             NetworkLibOS::Catcollar(_) => panic!("TCP migration only supported for catnip"),
             #[cfg(feature = "catnip-libos")]
             NetworkLibOS::Catnip(libos) => libos.global_recv_queue_length(),
-        }
-    }
-
-    pub fn print_queue_length(&mut self) {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_) => panic!("TCP migration only supported for catnip"),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_) => panic!("TCP migration only supported for catnip"),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_) => panic!("TCP migration only supported for catnip"),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.print_queue_length(),
-        }
-    }
-
-    pub fn pushed_response(&mut self) {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_) => panic!("TCP migration only supported for catnip"),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_) => panic!("TCP migration only supported for catnip"),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_) => panic!("TCP migration only supported for catnip"),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.pushed_response(),
-        }
-    }
-
-    pub fn poll_tcpmig(&mut self) {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_) => panic!("TCP migration only supported for catnip"),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_) => panic!("TCP migration only supported for catnip"),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_) => panic!("TCP migration only supported for catnip"),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.poll_tcpmig(),
         }
     }
 }
