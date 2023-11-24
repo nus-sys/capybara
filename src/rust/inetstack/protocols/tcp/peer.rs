@@ -177,7 +177,10 @@ impl TcpPeer {
         tcpmig_poll_state: Rc<TcpmigPollState>,
     ) -> Result<Self, Fail> {
         let (tx, rx) = mpsc::unbounded();
+        
+        #[cfg(feature = "tcp-migration")]
         let tcpmig = TcpMigPeer::new(rt.clone(), local_link_addr, local_ipv4_addr);
+
         let inner = Rc::new(RefCell::new(Inner::new(
             rt.clone(),
             scheduler,
@@ -359,6 +362,7 @@ impl TcpPeer {
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         match inner.sockets.insert(new_qd, socket) {
             None => (),
+            #[cfg(feature = "tcp-migration")]
             Some(Socket::MigratedOut { .. }) => { capy_log_mig!("migrated socket QD overwritten"); },
             _ => panic!("duplicate queue descriptor in sockets table"),
         }

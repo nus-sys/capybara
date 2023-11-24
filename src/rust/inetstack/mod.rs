@@ -66,7 +66,6 @@ use ::std::{
         Instant,
         SystemTime,
     },
-    collections::HashSet,
 };
 
 #[cfg(feature = "profiler")]
@@ -131,6 +130,8 @@ impl InetStack {
         arp_config: ArpConfig,
     ) -> Result<Self, Fail> {
         let file_table: IoQueueTable = IoQueueTable::new();
+
+        #[cfg(feature = "tcp-migration")]
         let tcpmig_poll_state = Rc::new(TcpmigPollState::default());
 
         let arp: ArpPeer = ArpPeer::new(
