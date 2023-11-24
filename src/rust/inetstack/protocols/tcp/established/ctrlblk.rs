@@ -324,8 +324,8 @@ impl ControlBlock {
         #[cfg(feature = "tcp-migration")]
         tcpmig: Option<&TcpMigPeer>,
     ) -> Result<(), Fail> {
-        #[cfg(feature = "tcp-migration")]
-        #[cfg(not(feature = "mig-per-n-req"))]
+        
+        #[cfg(feature = "tcp-migration")]{ #[cfg(not(feature = "mig-per-n-req"))]{
         if let Some(tcpmig) = tcpmig {
             tcpmig.stats_recv_queue_pop(
                 (self.local, self.remote),
@@ -333,6 +333,7 @@ impl ControlBlock {
                 &self.stats_update_granularity_counter
             );
         }
+        }}
         
         self.sender.send(buf, self)
     }

@@ -197,7 +197,7 @@ def parse_mig_latency(experiment_id):
             
             step_idx = steps.index(step)
             if step_idx != prev_step+1:
-                print("[PANIC] migration step is wrong!: prev {}, current {}", prev_step, step_idx)
+                print("[PANIC] migration step is wrong!: prev {}, current {}", prev_step, step_idx, "\n", item)
                 exit()
             prev_step = step_idx
 
@@ -211,7 +211,8 @@ def parse_mig_latency(experiment_id):
                 prev_step = 0
             prev_ns = ns
         # print(result)
-        final_result = final_result + '\n'.join(result.split('\n')[20:])
+        # final_result = final_result + '\n'.join(result.split('\n')[20:])
+        final_result = final_result + '\n'.join(result.split('\n')[:])
     
     print(len(final_result.split('\n')))
     
@@ -219,7 +220,8 @@ def parse_mig_latency(experiment_id):
 
     with open(f'{DATA_PATH}/{experiment_id}.mig_latency', 'w') as file:
         # Write the content to the file
-        file.write('\n'.join(final_result.split('\n')[-10001:]))
+        # file.write('\n'.join(final_result.split('\n')[-10001:]))
+        file.write('\n'.join(final_result.split('\n')[:]))
 
   
 
@@ -272,6 +274,57 @@ def parse_poll_interval(experiment_id):
         file.write(final_result)
 
 
+
+def parse_latency_trace(experiment_id):
+    print(f'PARSING {experiment_id} latency_trace') 
+    
+    clusters = {}
+    file_path = f'{DATA_PATH}/{experiment_id}.latency_trace'
+    with open(file_path, "r") as file:
+        # Iterate through each line in the file
+        for line in file:            
+            columns = line.strip().split(",")
+            # print(columns[0], columns[1])
+
+            ms = int(int( (int(columns[0]) / 1000000) / 10 ) * 10);
+            if ms in clusters:
+                clusters[ms].append(int(columns[1]))
+            else:
+                clusters[ms] = [int(columns[1])]
+    
+    # Sort the dictionary by keys
+    sorted_clusters = dict(sorted(clusters.items()))
+    # Initialize lists to store 99th percentiles and averages
+    percentiles_99 = []
+    averages = []
+
+    for key, values in sorted_clusters.items():
+        # Calculate the 99th percentile
+        sorted_values = sorted(values)
+        percentile_index = math.ceil(len(sorted_values) * 0.99) - 1
+        # print(len(sorted_values), math.ceil(len(sorted_values) * 0.99))
+        percentile_99 = sorted_values[percentile_index]
+
+        
+        # Calculate the average
+        average = int(np.mean(values))
+        # print(key, average, percentile_99)
+        # Append the results to the lists
+        percentiles_99.append((key, percentile_99))
+        averages.append((key, average))
+    
+    with open(f'{DATA_PATH}/{experiment_id}.latency_avg', 'w') as avg_file:
+        for key, average in averages:
+            avg_file.write(f"{key},{average}\n")
+
+    # Write 99p_lat.txt
+    with open(f'{DATA_PATH}/{experiment_id}.latency_99p', 'w') as p99_file:
+        for key, percentile_99 in percentiles_99:
+            p99_file.write(f"{key},{percentile_99}\n") 
+
+
+
+
 def run_eval():
     global experiment_id
     global final_result
@@ -322,7 +375,7 @@ def run_eval():
                                     --output=buckets \
                                     --rampup=0 \
                                     --exptid={DATA_PATH}/{experiment_id} \
-                                    > {DATA_PATH}/{experiment_id}.client']
+                                    > {DATA_PATH}/{experiment_id}.client'] # --loadshift=300000:2000000,600000:3000000 \
                             if SERVER_APP == 'redis-server':
                                 cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                         10.0.1.1:10000 \
@@ -395,6 +448,13 @@ def run_eval():
                                 kill_procs()
                                 time.sleep(5)
                                 parse_poll_interval(experiment_id)
+                            
+                            if EVAL_LETENCY_TRACE == True:
+                                kill_procs()
+                                time.sleep(3)
+                                parse_latency_trace(experiment_id)
+
+                                
 
             # task = host.run(cmd, return_output=True, quiet=False)
             # task.start()
