@@ -479,7 +479,7 @@ def exiting():
 
 
 def run_compile():
-    features = ''
+    features = '--features=' if len(FEATURES) > 0 else ''
     for feat in FEATURES:
         features += feat + ','
 
