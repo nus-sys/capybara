@@ -348,54 +348,13 @@ impl TcpPeer {
             Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
         };
         let remote = cb.get_remote();
-        
-        /* #[cfg(feature = "tcp-migration")]
-        if inner.tcpmig.take_connection(remote) {
-            capy_profile!("migrated_accept");
-            
-            #[cfg(not(feature = "mig-per-n-req"))]
-            let recv_queue_len = cb.receiver.recv_queue_len();
-
-            match inner.migrate_in_tcp_connection(new_qd, cb) {
-                Ok(()) => {
-                    #[cfg(not(feature = "mig-per-n-req"))]
-                    inner.tcpmig.start_tracking_connection_stats(local, remote, recv_queue_len);
-
-                    capy_log_mig!("MIG-CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
-            
-                    /* activate this for recv_queue_len vs mig_lat eval */
-                    /* let mig_key = (
-                        SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), inner.tcpmig.get_port()),
-                        SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 7), 201));
-                    let qd = inner.qds.get(&mig_key).ok_or_else(|| Fail::new(EBADF, "socket not exist"))?;
-                    if let Some(mig_socket) = inner.established.get(&mig_key) {
-                        if mig_socket.cb.receiver.recv_queue_len() == 100 {
-                            // The key exists in the hashmap, and mig_socket now contains the value.
-                            // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
-                            inner.tcpmig.stop_tracking_connection_stats(mig_key.0, mig_key.1, mig_socket.cb.receiver.recv_queue_len());
-                            inner.tcpmig.initiate_migration(mig_key, *qd);
-                        }
-                    } else {
-                        // The key does not exist in the esablished hashmap, panic.
-                        panic!("Key not found in established HashMap: {:?}", mig_key);
-                    } */
-                    /* activate this for recv_queue_len vs mig_lat eval */
-
-                    return Poll::Ready(Ok(new_qd));
-                },
-                Err(e) => {
-                    warn!("Dropped migrated-in connection");
-                    return Poll::Ready(Err(e));
-                }
-            };
-        }; */
 
         let established: EstablishedSocket = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
         let key: (SocketAddrV4, SocketAddrV4) = (local, remote);
 
         let socket: Socket = Socket::Established { local, remote };
 
-        eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?})", remote);
+        eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
 
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         match inner.sockets.insert(new_qd, socket) {
@@ -405,6 +364,16 @@ impl TcpPeer {
         }
 
         assert!(inner.qds.insert((local, remote), new_qd).is_none(), "duplicate entry in qds table");
+
+        /* activate this for recv_queue_len vs mig_lat eval */
+        /* if established.cb.receiver.recv_queue_len() == 100 {
+            // The key exists in the hashmap, and mig_socket now contains the value.
+            // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
+            capy_time_log!("INIT_MIG,({}-{})", key.0, key.1);
+            inner.tcpmig.stop_tracking_connection_stats(key.0, key.1, established.cb.receiver.recv_queue_len());
+            inner.tcpmig.initiate_migration(key, new_qd);
+        } */
+        /* activate this for recv_queue_len vs mig_lat eval */
 
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         if inner.established.insert(key, established).is_some() {
@@ -416,7 +385,6 @@ impl TcpPeer {
         inner.tcpmig.start_tracking_connection_stats(local, remote, 0); */
 
         // TODO: Track connection stats.
-        
         Poll::Ready(Ok(new_qd))
     }
 
@@ -695,6 +663,7 @@ impl Inner {
                     if mig_socket.cb.receiver.recv_queue_len() == 100 {
                         // The key exists in the hashmap, and mig_socket now contains the value.
                         // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
+                        capy_time_log!("INIT_MIG,({}-{})", mig_key.0, mig_key.1);
                         self.tcpmig.stop_tracking_connection_stats(mig_key.0, mig_key.1, mig_socket.cb.receiver.recv_queue_len());
                         self.tcpmig.initiate_migration(mig_key, *qd);
                     }
@@ -708,7 +677,6 @@ impl Inner {
                 /* comment out this for recv_queue_len vs mig_lat eval */
                 if let Some(conn) = self.tcpmig.should_migrate() {
                     // eprintln!("{:?}", conn);
-                    capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
                     capy_log_mig!("should migrate");
                     {
                         capy_profile!("prepare");
@@ -720,6 +688,7 @@ impl Inner {
                         if let Some(mig_socket) = self.established.get(&mig_key) {
                             // The key exists in the hashmap, and mig_socket now contains the value.
                             // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
+                            capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
                             self.tcpmig.stop_tracking_connection_stats(conn.0, conn.1, mig_socket.cb.receiver.recv_queue_len());
                             self.tcpmig.initiate_migration(conn, *qd);
                         } else {
@@ -1020,13 +989,12 @@ impl TcpPeer {
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
         capy_profile!("prepare");
         capy_log_mig!("INIT MIG");
-        capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
+        
 
         let mut inner = self.inner.borrow_mut();
         let qd = *inner.qds.get(&conn).expect("no QD found for connection");
 
         // TODO: Turn off stats for this connection.
-
         inner.tcpmig.initiate_migration(conn, qd);
     }
     
