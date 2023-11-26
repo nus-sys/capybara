@@ -71,10 +71,7 @@ use ::std::{
 use crate::capy_log;
 
 #[cfg(feature = "tcp-migration")]
-use crate::inetstack::protocols::tcpmig::{
-    TcpMigPeer,
-    stats::RollingAverage,
-};
+use crate::inetstack::protocols::tcp::stats::StatsHandle;
 
 // ToDo: Review this value (and its purpose).  It (2048 segments) of 8 KB jumbo packets would limit the unread data to
 // just 16 MB.  If we don't want to lie, that is also about the max window size we should ever advertise.  Whereas TCP
@@ -87,8 +84,6 @@ const RECV_QUEUE_SZ: usize = 2048;
 // Ideally, we'd limit out-of-order data to that which (along with the unread data) will fit in the receive window.
 const MAX_OUT_OF_ORDER: usize = 2048;
 
-#[cfg(feature = "tcp-migration")]
-const RECV_QUEUE_LEN_ROLLAVG_WINDOW_LOG2: usize = 0;
 
 // TCP Connection State.
 // Note: This ControlBlock structure is only used after we've reached the ESTABLISHED state, so states LISTEN,
@@ -131,19 +126,17 @@ pub struct Receiver {
     recv_queue: RefCell<VecDeque<Buffer>>,
 
     #[cfg(feature = "tcp-migration")]
-    #[cfg(not(feature = "mig-per-n-req"))]
-    stats_recv_queue_len: RefCell<RollingAverage>,
+    stats: StatsHandle,
 }
 
 impl Receiver {
-    pub fn new(reader_next: SeqNumber, receive_next: SeqNumber) -> Self {
+    pub fn new(reader_next: SeqNumber, receive_next: SeqNumber, #[cfg(feature = "tcp-migration")] stats: StatsHandle) -> Self {
         Self {
             reader_next: Cell::new(reader_next),
             receive_next: Cell::new(receive_next),
             recv_queue: RefCell::new(VecDeque::with_capacity(RECV_QUEUE_SZ)),
             #[cfg(feature = "tcp-migration")]
-            #[cfg(not(feature = "mig-per-n-req"))]
-            stats_recv_queue_len: RefCell::new(RollingAverage::new(RECV_QUEUE_LEN_ROLLAVG_WINDOW_LOG2)),
+            stats,
         }
     }
 
@@ -151,9 +144,10 @@ impl Receiver {
         let mut recv_queue = self.recv_queue.borrow_mut();
         let buf: Buffer = recv_queue.pop_front()?;
 
+        capy_log!("Ready, take the segment ==> len(recv_queue): {}", recv_queue.len());
+
         #[cfg(feature = "tcp-migration")]
-        #[cfg(not(feature = "mig-per-n-req"))]
-        self.stats_recv_queue_len.borrow_mut().update(recv_queue.len());
+        self.stats.set(recv_queue.len());
 
         self.reader_next
             .set(self.reader_next.get() + SeqNumber::from(buf.len() as u32));
@@ -167,8 +161,7 @@ impl Receiver {
         recv_queue.push_back(buf);
 
         #[cfg(feature = "tcp-migration")]
-        #[cfg(not(feature = "mig-per-n-req"))]
-        self.stats_recv_queue_len.borrow_mut().update(recv_queue.len());
+        self.stats.set(recv_queue.len());
 
         self.receive_next
             .set(self.receive_next.get() + SeqNumber::from(buf_len as u32));
@@ -246,9 +239,6 @@ pub struct ControlBlock {
 
     // Retransmission Timeout (RTO) calculator.
     rto_calculator: RefCell<RtoCalculator>,
-
-    #[cfg(feature = "tcp-migration")]
-    stats_update_granularity_counter: Cell<i32>,
 }
 
 //==============================================================================
@@ -276,6 +266,10 @@ impl ControlBlock {
     ) -> Self {
         capy_log!("Creating ControlBlock");
         let sender = Sender::new(sender_seq_no, sender_window_size, sender_window_scale, sender_mss);
+
+        #[cfg(feature = "tcp-migration")]
+        let stats = StatsHandle::new((local, remote));
+
         Self {
             local,
             remote,
@@ -294,14 +288,11 @@ impl ControlBlock {
             waker: RefCell::new(None),
             out_of_order: RefCell::new(VecDeque::new()),
             out_of_order_fin: Cell::new(Option::None),
-            receiver: Receiver::new(receiver_seq_no, receiver_seq_no),
+            receiver: Receiver::new(receiver_seq_no, receiver_seq_no, #[cfg(feature = "tcp-migration")] stats),
             user_is_done_sending: Cell::new(false),
             cc: cc_constructor(sender_mss, sender_seq_no, congestion_control_options),
             retransmit_deadline: WatchedValue::new(None),
             rto_calculator: RefCell::new(RtoCalculator::new()),
-            
-            #[cfg(feature = "tcp-migration")]
-            stats_update_granularity_counter: Cell::new(0),
         }
     }
 
@@ -318,23 +309,7 @@ impl ControlBlock {
         self.arp.clone()
     }
 
-    pub fn send(
-        &self,
-        buf: Buffer,
-        #[cfg(feature = "tcp-migration")]
-        tcpmig: Option<&TcpMigPeer>,
-    ) -> Result<(), Fail> {
-        
-        #[cfg(feature = "tcp-migration")]{ #[cfg(not(feature = "mig-per-n-req"))]{
-        if let Some(tcpmig) = tcpmig {
-            tcpmig.stats_recv_queue_pop(
-                (self.local, self.remote),
-                self.receiver.stats_recv_queue_len.borrow().get(),
-                &self.stats_update_granularity_counter
-            );
-        }
-        }}
-        
+    pub fn send(&self, buf: Buffer) -> Result<(), Fail> {        
         self.sender.send(buf, self)
     }
 
@@ -444,13 +419,7 @@ impl ControlBlock {
 
     // This is the main TCP receive routine.
     //
-    pub fn receive(
-        &self, 
-        mut header: &mut TcpHeader, 
-        mut data: Buffer,
-        #[cfg(feature = "tcp-migration")]
-        tcpmig: &TcpMigPeer,
-    ) {
+    pub fn receive(&self, mut header: &mut TcpHeader, mut data: Buffer) {
         capy_log!("CTRLBLK RECEIVE seq_num: {}", header.seq_num);
         debug!(
             "{:?} Connection Receiving {} bytes + {:?}",
@@ -589,6 +558,11 @@ impl ControlBlock {
             // Our peer has given up.  Shut the connection down hard.
             info!("Received RST");
             capy_log!("RST");
+
+            // Disable stats.
+            #[cfg(feature = "tcp-migration")]
+            self.disable_stats();
+
             match self.state.get() {
                 // Data transfer states.
                 State::Established | State::FinWait1 | State::FinWait2 | State::CloseWait => {
@@ -624,7 +598,10 @@ impl ControlBlock {
                 // the connection, and then it will receive some late responses from the server,
                 // which results in more RST pkts from the client. 
                 // So, it should not panic here.  
-                state => { print!("Bad TCP state {:?}", state) },
+                s => { 
+                    eprintln!("Bad TCP state {:?}", s);
+                    return;
+                },
             }
 
             // Note: We should never get here.
@@ -785,12 +762,7 @@ impl ControlBlock {
             match self.state.get() {
                 State::Established | State::FinWait1 | State::FinWait2 => {
                     // We can only legitimately receive data in ESTABLISHED, FIN-WAIT-1, and FIN-WAIT-2.
-                    header.fin |= self.receive_data(
-                        seg_start, 
-                        data,
-                        #[cfg(feature = "tcp-migration")]
-                        tcpmig,
-                    );
+                    header.fin |= self.receive_data(seg_start, data);
                     should_schedule_ack = true;
                 },
                 state => warn!("Ignoring data received after FIN (in state {:?}).", state),
@@ -803,6 +775,10 @@ impl ControlBlock {
             // eprintln!("[RX] FIN");
             capy_log!("FIN");
             // ToDo: Signal the user "connection closing" and return any pending Receive requests.
+            
+            // Disable stats.
+            #[cfg(feature = "tcp-migration")]
+            self.disable_stats();
 
             // Advance RCV.NXT over the FIN.
             self.receiver
@@ -868,6 +844,10 @@ impl ControlBlock {
             // Review: Should we return an error here instead?  RFC 793 recommends a "connection closing" error.
             return Ok(());
         }
+        
+        // Disable stats.
+        #[cfg(feature = "tcp-migration")]
+        self.disable_stats();
 
         // In the normal case, we'll be in either ESTABLISHED or CLOSE_WAIT here (depending upon whether we've received
         // a FIN from our peer yet).  Queue up a FIN to be sent, and attempt to send it immediately (if possible).  We
@@ -876,10 +856,7 @@ impl ControlBlock {
 
         // Send a FIN.
         let fin_buf: Buffer = Buffer::Heap(DataBuffer::empty());
-        self.send(
-            fin_buf,
-            #[cfg(feature = "tcp-migration")] None,
-        ).expect("send failed");
+        self.send(fin_buf).expect("send failed");
 
         // Remember that the user has called close.
         self.user_is_done_sending.set(true);
@@ -1007,12 +984,7 @@ impl ControlBlock {
         hdr_window_size
     }
 
-    pub fn poll_recv(
-        &self, 
-        ctx: &mut Context,
-        #[cfg(feature = "tcp-migration")]
-        tcpmig: &TcpMigPeer,
-    ) -> Poll<Result<Buffer, Fail>> {
+    pub fn poll_recv(&self, ctx: &mut Context) -> Poll<Result<Buffer, Fail>> {
         // ToDo: Need to add a way to indicate that the other side closed (i.e. that we've received a FIN).
         // Should we do this via a zero-sized buffer?  Same as with the unsent and unacked queues on the send side?
         //
@@ -1030,17 +1002,10 @@ impl ControlBlock {
             .receiver
             .pop()
             .expect("poll_recv failed to pop data from receive queue");
-       
-        // #[cfg(feature = "tcp-migration")]
-        // tcpmig.stats_recv_queue_pop(
-        //     (self.local, self.remote),
-        //     self.receiver.recv_queue_len(),
-        //     &self.stats_update_granularity_counter
-        // );
 
         {
             let queue_length = self.receiver.recv_queue.borrow().len();
-            capy_log!("Ready, take the segment ==> len(recv_queue): {}", queue_length);
+            
         }
         Poll::Ready(Ok(segment))
     }
@@ -1157,13 +1122,7 @@ impl ControlBlock {
     //
     // Returns true if a previously out-of-order segment containing a FIN has now been received.
     //
-    pub fn receive_data(
-        &self, 
-        seg_start: SeqNumber, 
-        buf: Buffer,
-        #[cfg(feature = "tcp-migration")]
-        tcpmig: &TcpMigPeer,
-    ) -> bool {
+    pub fn receive_data(&self, seg_start: SeqNumber, buf: Buffer) -> bool {
         let recv_next: SeqNumber = self.receiver.receive_next.get();
 
         // This routine should only be called with in-order segment data.
@@ -1172,14 +1131,6 @@ impl ControlBlock {
         // Push the new segment data onto the end of the receive queue.
         let mut recv_next: SeqNumber = recv_next + SeqNumber::from(buf.len() as u32);
         self.receiver.push(buf);
-
-        #[cfg(feature = "tcp-migration")]{ #[cfg(not(feature = "mig-per-n-req"))]{
-        tcpmig.stats_recv_queue_push(
-            (self.local, self.remote),
-            self.receiver.stats_recv_queue_len.borrow().get(),
-            &self.stats_update_granularity_counter
-        );
-        }}
 
         // Okay, we've successfully received some new data.  Check if any of the formerly out-of-order data waiting in
         // the out-of-order queue is now in-order.  If so, we can move it to the receive queue.
@@ -1195,14 +1146,6 @@ impl ControlBlock {
                         recv_next = recv_next + SeqNumber::from(temp.1.len() as u32);
                         self.receiver.push(temp.1);
                         added_out_of_order = true;
-
-                        #[cfg(feature = "tcp-migration")]{ #[cfg(not(feature = "mig-per-n-req"))]{
-                        tcpmig.stats_recv_queue_push(
-                            (self.local, self.remote),
-                            self.receiver.stats_recv_queue_len.borrow().get(),
-                            &self.stats_update_granularity_counter
-                        );
-                        }}
                     }
                 } else {
                     // Since our out-of-order list is sorted, we can stop when the next segment is not in sequence.
@@ -1249,6 +1192,20 @@ impl ControlBlock {
 //==============================================================================
 
 #[cfg(feature = "tcp-migration")]
+use super::super::stats::Stats;
+
+#[cfg(feature = "tcp-migration")]
+impl ControlBlock {
+    pub fn enable_stats(&self, stats: &mut Stats) {
+        self.receiver.stats.enable(stats, self.receiver.recv_queue.borrow().len());
+    }
+
+    pub fn disable_stats(&self) {
+        self.receiver.stats.disable();
+    }
+}
+
+#[cfg(feature = "tcp-migration")]
 pub mod state {
     use std::{
         net::{SocketAddrV4, Ipv4Addr},
@@ -1268,9 +1225,8 @@ pub mod state {
                     rto::RtoCalculator, 
                     Sender
                 },
-                congestion_control::{self, CongestionControl}, peer::state::{Serialize, Deserialize}
+                congestion_control::{self, CongestionControl}, peer::state::{Serialize, Deserialize}, stats::StatsHandle
             },
-            tcpmig::stats::RollingAverage,
             arp::ArpPeer
         },
         runtime::{
@@ -1283,7 +1239,7 @@ pub mod state {
         MacAddress
     };
 
-    use super::{Receiver, RECV_QUEUE_LEN_ROLLAVG_WINDOW_LOG2, ControlBlock, State};
+    use super::{Receiver, ControlBlock, State};
 
     //===================================================================
     //  Structures
@@ -1323,30 +1279,6 @@ pub mod state {
                 reader_next: reader_next.get(),
                 receive_next: receive_next.get(),
                 recv_queue: recv_queue.take()
-            }
-        }
-    }
-
-    impl From<ReceiverState> for Receiver {
-        fn from(ReceiverState {
-            reader_next,
-            receive_next,
-            recv_queue
-        }: ReceiverState) -> Self {
-            let stats_recv_queue_len = {
-                let mut avg = RollingAverage::new(RECV_QUEUE_LEN_ROLLAVG_WINDOW_LOG2);
-                avg.update(recv_queue.len());
-                RefCell::new(avg)
-            };
-
-            Self {
-                reader_next: Cell::new(reader_next),
-                receive_next: Cell::new(receive_next),
-                recv_queue: RefCell::new(recv_queue),
-
-                #[cfg(feature = "tcp-migration")]
-                #[cfg(not(feature = "mig-per-n-req"))]
-                stats_recv_queue_len
             }
         }
     }
@@ -1560,6 +1492,25 @@ pub mod state {
     //  Implementations
     //===================================================================
 
+    impl Receiver {
+        fn from_state(
+            ReceiverState {
+                reader_next,
+                receive_next,
+                recv_queue
+            }: ReceiverState,
+            #[cfg(feature = "tcp-migration")]
+            stats: StatsHandle
+        ) -> Self {
+            Self {
+                reader_next: Cell::new(reader_next),
+                receive_next: Cell::new(receive_next),
+                recv_queue: RefCell::new(recv_queue),
+                stats,
+            }
+        }
+    }
+
     impl ControlBlock {
         pub fn from_state(
             rt: Rc<dyn NetworkRuntime>,
@@ -1601,12 +1552,11 @@ pub mod state {
 				waker: RefCell::new(None),
 				out_of_order: RefCell::new(out_of_order_queue),
 				out_of_order_fin: Cell::new(out_of_order_fin),
-				receiver: receiver.into(),
+				receiver: Receiver::from_state(receiver, StatsHandle::new((local, remote))),
 				user_is_done_sending: Cell::new(false),
 				cc: congestion_control::None::new(mss, seq_no, None),
 				retransmit_deadline: WatchedValue::new(None),
                 rto_calculator: RefCell::new(RtoCalculator::new()), // Check
-                stats_update_granularity_counter: Cell::new(0),
             }
         }
     }
@@ -1678,116 +1628,5 @@ pub mod state {
                 sender: super::super::super::sender::state::test::get_state(),
             }
         }
-    }
-}
-
-#[cfg(feature = "tcp-migration")]
-impl Receiver{
-    pub fn migrated_in(reader_next: SeqNumber, receive_next: SeqNumber, recv_queue: VecDeque<Buffer>) -> Self{
-        let stats_recv_queue_len = {
-            let mut avg = RollingAverage::new(RECV_QUEUE_LEN_ROLLAVG_WINDOW_LOG2);
-            avg.update(recv_queue.len());
-            RefCell::new(avg)
-        };
-
-        Self {
-            reader_next: Cell::new(reader_next),
-            receive_next: Cell::new(receive_next),
-            recv_queue: RefCell::new(recv_queue),
-            #[cfg(not(feature = "mig-per-n-req"))]
-            stats_recv_queue_len,
-        }
-    }
-
-    pub fn take_receive_queue(&self) -> VecDeque<Buffer> {
-        let mut temp = VecDeque::<Buffer>::with_capacity(0);
-        std::mem::swap(&mut temp, &mut *self.recv_queue.borrow_mut());
-        temp
-    }
-}
-
-#[cfg(feature = "tcp-migration")]
-impl ControlBlock {
-    pub fn migrated_in(
-        local: SocketAddrV4,
-        remote: SocketAddrV4,
-        rt: Rc<dyn NetworkRuntime>,
-        scheduler: Scheduler,
-        clock: TimerRc,
-        local_link_addr: MacAddress,
-        tcp_config: TcpConfig,
-        arp: ArpPeer,
-        ack_delay_timeout: Duration,
-        receiver_window_size: u32,
-        receiver_window_scale: u32,
-        out_of_order_queue: VecDeque<(SeqNumber, Buffer)>,
-        out_of_order_fin: Option<SeqNumber>,
-        sender: Sender,
-        receiver: Receiver,
-        cc_constructor: CongestionControlConstructor,
-        congestion_control_options: Option<congestion_control::Options>,
-    ) -> Self {
-        let mss = sender.get_mss();
-        let seq_no = sender.get_send_unacked().0;
-
-        Self {
-            local,
-            remote,
-            rt,
-            scheduler,
-            clock,
-            local_link_addr,
-            tcp_config,
-            arp: Rc::new(arp),
-            sender,
-            state: Cell::new(State::Established),
-            ack_delay_timeout,
-            ack_deadline: WatchedValue::new(None),
-            receive_buffer_size: receiver_window_size,
-            window_scale: receiver_window_scale,
-            waker: RefCell::new(None),
-            out_of_order: RefCell::new(out_of_order_queue),
-            out_of_order_fin: Cell::new(out_of_order_fin),
-            receiver,
-            user_is_done_sending: Cell::new(false),
-            cc: cc_constructor(mss, seq_no, congestion_control_options),
-            retransmit_deadline: WatchedValue::new(None),
-            rto_calculator: RefCell::new(RtoCalculator::new()), // Check
-            stats_update_granularity_counter: Cell::new(0),
-        }
-    }
-
-    pub fn get_state(&self) -> State {
-        self.state.get()
-    }
-
-    pub fn get_receiver_window_scale(&self) -> u32 {
-        self.window_scale
-    }
-
-    pub fn get_receiver_max_window_size(&self) -> u32 {
-        self.receive_buffer_size
-    }
-
-    pub fn get_sender_window_scale(&self) -> u8 {
-        self.sender.get_window_scale()
-    }
-
-    pub fn take_receive_queue(&self) -> VecDeque<Buffer> {
-        self.receiver.take_receive_queue()
-    }
-
-    pub fn take_unsent_queue(&self) -> VecDeque<Buffer> {
-        self.sender.take_unsent_queue()
-    }
-
-    pub fn take_unacked_queue(&self) -> VecDeque<UnackedSegment> {
-        self.sender.take_unacked_queue()
-    }
-
-    pub fn take_out_of_order_queue(&self) -> VecDeque<(SeqNumber, Buffer)> {
-        let mut temp = VecDeque::<(SeqNumber, Buffer)>::with_capacity(0);
-        std::mem::swap(&mut temp, &mut *self.out_of_order.borrow_mut());
-        temp
     }
 }

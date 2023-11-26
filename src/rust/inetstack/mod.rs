@@ -760,11 +760,18 @@ impl InetStack {
         #[cfg(not(feature = "tcp-migration"))]
         self.poll_runtime();
 
-        #[cfg(not(feature = "mig-per-n-req"))]
+        #[cfg(feature = "tcp-migration")]
         {
-            // TODO: Update stats here.
+            // Poll stats updates.
+            self.ipv4.tcp.poll_stats();
         
-            // TODO: If overloaded, start migrations.
+            // If overloaded, start migrations.
+            #[cfg(not(feature = "mig-per-n-req"))]
+            if let Some(conns_to_migrate) = self.ipv4.tcp.connections_to_migrate() {
+                for conn in conns_to_migrate {
+                    self.ipv4.tcp.initiate_migration(conn);
+                }
+            }
         }
 
         if self.ts_iters == 0 {

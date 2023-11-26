@@ -77,7 +77,8 @@ def run_server(mig_delay, mig_var, mig_per_n):
                 sudo -E \
                 CAPY_LOG={CAPY_LOG} \
                 LIBOS=catnip \
-                RECV_QUEUE_LEN=100 \
+                RECV_QUEUE_THRESHOLD={RECV_QUEUE_THRESHOLD} \
+                {f"MAX_STAT_MIGS={MAX_STAT_MIGS}" if MAX_STAT_MIGS != "" else ""} \
                 MTU=1500 \
                 MSS=1500 \
                 NUM_CORES=4 \
@@ -355,11 +356,12 @@ def run_eval():
                             run_server(mig_delay, mig_var, mig_per_n)
 
                             host = pyrem.host.RemoteHost(CLIENT_NODE)
-                            cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
+                            """ cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
                             task = host.run(cmd, quiet=True)
-                            pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+                            iokerneld_task = pyrem.task.Parallel([task], aggregate=True)
+                            iokerneld_task.start(wait=False)
                             time.sleep(4)
-                            print('iokerneld is running')
+                            print('iokerneld is running') """
                             
                             cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                     10.0.1.1:10000 \
@@ -449,7 +451,7 @@ def run_eval():
                                 time.sleep(5)
                                 parse_poll_interval(experiment_id)
                             
-                            if EVAL_LETENCY_TRACE == True:
+                            if EVAL_LATENCY_TRACE == True:
                                 kill_procs()
                                 time.sleep(3)
                                 parse_latency_trace(experiment_id)

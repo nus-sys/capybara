@@ -6,7 +6,7 @@
 //==============================================================================
 
 use super::constants::*;
-use super::{segment::TcpMigHeader, active::ActiveMigration, stats::TcpMigStats};
+use super::{segment::TcpMigHeader, active::ActiveMigration};
 use crate::{
     inetstack::protocols::{
             ipv4::Ipv4Header, 
@@ -84,7 +84,7 @@ pub struct TcpMigPeer {
 
     incoming_user_data: HashMap<SocketAddrV4, Buffer>,
 
-    stats: TcpMigStats,
+    // stats: TcpMigStats,
 
     //is_currently_migrating: bool,
 
@@ -120,7 +120,7 @@ impl TcpMigPeer {
     ) -> Self {
         let recv_queue_length_threshold: usize = match std::env::var("RECV_QUEUE_LEN") {
             Ok(val) => val.parse().expect("RECV_QUEUE_LEN should be a number"),
-            Err(..) => BASE_RECV_QUEUE_LENGTH_THRESHOLD,
+            Err(..) => 30,
         };
 
         log_init();
@@ -137,7 +137,7 @@ impl TcpMigPeer {
             },
             active_migrations: HashMap::new(),
             incoming_user_data: HashMap::new(),
-            stats: TcpMigStats::new(recv_queue_length_threshold),
+            // stats: TcpMigStats::new(recv_queue_length_threshold),
             recv_queue_length_threshold,
             self_udp_port: SELF_UDP_PORT, // TEMP
             migrated_out_connections: HashSet::new(),
@@ -385,7 +385,7 @@ impl TcpMigPeer {
         self.self.borrow_mut().stats.update_outgoing();
     } */
 
-    pub fn should_migrate(&mut self) -> Option<(SocketAddrV4, SocketAddrV4)> {
+    /* pub fn should_migrate(&mut self) -> Option<(SocketAddrV4, SocketAddrV4)> {
         static mut NUM_MIG: u32 = 0;
         static mut FLAG: u32 = 0;
         
@@ -427,7 +427,7 @@ impl TcpMigPeer {
             }
             return None;
         }
-    }
+    } */
 
     // TEMP (for migration test)
     /* pub fn should_migrate(&self) -> Option<(SocketAddrV4, SocketAddrV4)> {
@@ -465,7 +465,8 @@ impl TcpMigPeer {
     } */
 
     pub fn queue_length_heartbeat(&mut self) {
-        let queue_len: usize = self.stats.global_recv_queue_length() as usize;
+        todo!("heartbeat")
+        /* let queue_len: usize = self.stats.global_recv_queue_length() as usize;
         if queue_len > self.recv_queue_length_threshold{
             return;
         }
@@ -487,23 +488,23 @@ impl TcpMigPeer {
 
                 self.rt.transmit(Box::new(segment));
             }
-        }
+        } */
     }
 
-    pub fn stop_tracking_connection_stats(
+    /* pub fn stop_tracking_connection_stats(
         &mut self, 
         local: SocketAddrV4, 
         client: SocketAddrV4,
         recv_queue_len: usize,
     ) {
         self.stats.stop_tracking_connection(local, client, recv_queue_len)
-    }
+    } */
 
     /* pub fn stats_decrease_global_queue_length(&mut self, by: usize) {
         self.self.borrow_mut().stats.decrease_global_queue_length(by)
     } */
 
-    pub fn print_stats(&self) {
+    /* pub fn print_stats(&self) {
         println!("global_recv_queue_length: {}", self.stats.global_recv_queue_length());
         // println!("ratio: {}", self.self.borrow().stats.get_rx_tx_ratio());
         // println!("TCPMig stats: {:?}", self.stats);
@@ -515,7 +516,7 @@ impl TcpMigPeer {
     
     pub fn global_recv_queue_length(&mut self) -> usize {
         self.stats.global_recv_queue_length()
-    }
+    } */
 }
 
 impl HeartbeatData {

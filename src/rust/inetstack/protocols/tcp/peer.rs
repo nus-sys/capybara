@@ -7,10 +7,7 @@
 
 use super::{
     active_open::ActiveOpenSocket,
-    established::{
-        EstablishedSocket,
-        State,
-    },
+    established::EstablishedSocket,
     isn_generator::IsnGenerator,
     passive_open::PassiveSocket,
 };
@@ -97,7 +94,10 @@ use ::std::{
 #[cfg(feature = "tcp-migration")]
 use state::TcpState;
 #[cfg(feature = "tcp-migration")]
-use crate::inetstack::protocols::tcpmig::{TcpMigPeer, TcpmigPollState};
+use crate::inetstack::protocols::{
+    tcp::stats::Stats,
+    tcpmig::{TcpMigPeer, TcpmigPollState}
+};
 
 #[cfg(feature = "profiler")]
 use crate::timer;
@@ -150,6 +150,8 @@ pub struct Inner {
 
     #[cfg(feature = "tcp-migration")]
     tcpmig: TcpMigPeer,
+    #[cfg(feature = "tcp-migration")]
+    stats: Stats,
     #[cfg(feature = "tcp-migration")]
     tcpmig_poll_state: Rc<TcpmigPollState>,
 }
@@ -321,7 +323,7 @@ impl TcpPeer {
             inner.tcp_config.clone(),
             inner.local_link_addr,
             inner.arp.clone(),
-            nonce,
+            nonce
         );
         assert!(inner.passive.insert(local, socket).is_none());
         inner.sockets.insert(qd, Socket::Listening { local });
@@ -351,6 +353,10 @@ impl TcpPeer {
             Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
         };
         let remote = cb.get_remote();
+
+        // Enable stats tracking.
+        #[cfg(feature = "tcp-migration")]
+        cb.enable_stats(&mut inner.stats);
 
         let established: EstablishedSocket = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
         let key: (SocketAddrV4, SocketAddrV4) = (local, remote);
@@ -463,12 +469,7 @@ impl TcpPeer {
 
         capy_log!("\n\npolling POP on {:?}", key);
         match inner.established.get(&key) {
-            Some(ref s) 
-            => s.poll_recv(
-                ctx,
-                #[cfg(feature = "tcp-migration")]
-                &inner.tcpmig,
-            ),
+            Some(ref s) => s.poll_recv(ctx),
             None => Poll::Ready(Err(Fail::new(ENOTCONN, "connection not established"))),
         }
     }
@@ -502,7 +503,7 @@ impl TcpPeer {
             },
         };
         let send_result = match inner.established.get(&key) {
-            Some(ref s) => s.send(buf, #[cfg(feature = "tcp-migration")] &inner.tcpmig),
+            Some(ref s) => s.send(buf),
             None => Err(Fail::new(ENOTCONN, "connection not established")),
         };
 
@@ -619,6 +620,8 @@ impl Inner {
             #[cfg(feature = "tcp-migration")]
             tcpmig,
             #[cfg(feature = "tcp-migration")]
+            stats: Stats::new(),
+            #[cfg(feature = "tcp-migration")]
             tcpmig_poll_state,
         }
     }
@@ -637,17 +640,12 @@ impl Inner {
 
         capy_log!("\n\n[RX] {:?} => {:?}", remote, local);
         if let Some(s) = self.established.get(&key) {
-            let is_data_empty = data.is_empty();
+            // let is_data_empty = data.is_empty();
 
             debug!("Routing to established connection: {:?}", key);
-            s.receive(
-                &mut tcp_hdr,
-                data,
-                #[cfg(feature = "tcp-migration")]
-                &self.tcpmig,
-            );
+            s.receive(&mut tcp_hdr,data);
 
-            #[cfg(all(feature = "tcp-migration", not(feature = "mig-per-n-req")))]
+            /* #[cfg(all(feature = "tcp-migration", not(feature = "mig-per-n-req")))]
             // Remove
             if tcp_hdr.fin || tcp_hdr.rst {
                 capy_log!("RX FIN or RST => tcpmig stops tracking this conn");
@@ -702,7 +700,7 @@ impl Inner {
                     }
                 }
                 /* comment out this for recv_queue_len vs mig_lat eval */
-            }
+            } */
             return Ok(());
         }
         if let Some(s) = self.connecting.get_mut(&key) {
@@ -993,10 +991,13 @@ impl TcpPeer {
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
         capy_profile!("prepare");
         capy_log_mig!("INIT MIG");
-        
 
         let mut inner = self.inner.borrow_mut();
         let qd = *inner.qds.get(&conn).expect("no QD found for connection");
+
+        // Disable stats for this connection.
+        inner.established.get(&conn).expect("connection not in established table")
+            .cb.disable_stats();
 
         // TODO: Turn off stats for this connection.
         inner.tcpmig.initiate_migration(conn, qd);
@@ -1019,6 +1020,10 @@ impl TcpPeer {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
         };
+
+        // Disable stats for this connection.
+        inner.established.get(&conn).expect("connection not in established table")
+            .cb.disable_stats();
 
         capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
@@ -1053,8 +1058,17 @@ impl TcpPeer {
         Ok(inner.tcpmig.take_incoming_user_data(remote))
     }
 
+    pub fn poll_stats(&mut self) {
+        self.inner.borrow_mut().stats.poll();
+    }
+
+    pub fn connections_to_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
+        self.inner.borrow_mut().stats.connections_to_migrate()
+    }
+
     pub fn global_recv_queue_length(&mut self) -> usize {
-        self.inner.borrow_mut().tcpmig.global_recv_queue_length()
+        todo!("get global queue length")
+        //self.inner.borrow_mut().tcpmig.global_recv_queue_length()
     }
 }
 
@@ -1108,11 +1122,6 @@ impl Inner {
             Entry::Vacant(_) => panic!("inconsistency between `sockets` and `established`"),
         };
 
-        match entry.get().cb.get_state() {
-            State::Established => (),
-            s => panic!("We only migrate out established connections. Found: {:?}", s),
-        }
-
         // 3) Remove connection from Established hashmap.
         let cb = entry.remove().cb;
         Ok(TcpState::new(cb.as_ref().into()))
@@ -1135,7 +1144,7 @@ impl Inner {
 
         // Receive all target-buffered packets into the CB.
         for (mut hdr, data) in buffered {
-            cb.receive(&mut hdr, data, &self.tcpmig);
+            cb.receive(&mut hdr, data);
         }
 
         match self.passive.get_mut(&cb.get_local()) {
