@@ -386,7 +386,7 @@ impl NetworkLibOS {
         }
     }
 
-    #[cfg(feature = "mig-per-n-req")]
+    #[cfg(feature = "manual-tcp-migration")]
     pub fn initiate_migration(&mut self, _qd: QDesc) -> Result<(), Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]

@@ -2,7 +2,6 @@ pub mod constants;
 pub mod segment;
 mod peer;
 mod active;
-// pub mod stats;
 
 use std::cell::Cell;
 

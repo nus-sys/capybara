@@ -363,7 +363,7 @@ impl TcpPeer {
 
         let socket: Socket = Socket::Established { local, remote };
 
-        // eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
+        // capy_log!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
 
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         match inner.sockets.insert(new_qd, socket) {
@@ -390,11 +390,6 @@ impl TcpPeer {
             panic!("duplicate queue descriptor in established sockets table");
         }
 
-        /* #[cfg(feature = "tcp-migration")]
-        #[cfg(not(feature = "mig-per-n-req"))]
-        inner.tcpmig.start_tracking_connection_stats(local, remote, 0); */
-
-        // TODO: Track connection stats.
         Poll::Ready(Ok(new_qd))
     }
 
@@ -645,17 +640,7 @@ impl Inner {
             debug!("Routing to established connection: {:?}", key);
             s.receive(&mut tcp_hdr,data);
 
-            /* #[cfg(all(feature = "tcp-migration", not(feature = "mig-per-n-req")))]
-            // Remove
-            if tcp_hdr.fin || tcp_hdr.rst {
-                capy_log!("RX FIN or RST => tcpmig stops tracking this conn");
-                self.tcpmig.stop_tracking_connection_stats(local, remote, s.cb.receiver.recv_queue_len());
-            }
-            else if !is_data_empty {
-                // println!("receive");
-                // self.tcpmig.update_incoming_stats(local, remote, s.cb.receiver.recv_queue_len());
-                // self.tcpmig.queue_length_heartbeat();
-                
+            /*else if !is_data_empty {
                 /* activate this for recv_queue_len vs mig_lat eval */
                 /* let mig_key = (
                     SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10000),
@@ -987,7 +972,7 @@ impl TcpPeer {
         inner.tcpmig.send_tcp_state(state);
     }
 
-    #[cfg(not(feature = "mig-per-n-req"))]
+    #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
         capy_profile!("prepare");
         capy_log_mig!("INIT MIG");
@@ -1003,7 +988,7 @@ impl TcpPeer {
         inner.tcpmig.initiate_migration(conn, qd);
     }
     
-    #[cfg(feature = "mig-per-n-req")]
+    #[cfg(feature = "manual-tcp-migration")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         capy_profile!("prepare");
         capy_log_mig!("INIT MIG");
@@ -1068,7 +1053,6 @@ impl TcpPeer {
 
     pub fn global_recv_queue_length(&mut self) -> usize {
         todo!("get global queue length")
-        //self.inner.borrow_mut().tcpmig.global_recv_queue_length()
     }
 }
 

@@ -428,9 +428,9 @@ all-libs-mig:
 state-time-test:
 	$(CARGO) test measure_state_time $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,capy-profile,capy-log,capy-time-log -- --nocapture
 
-all-libs-mig-per-n:
-	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=mig-per-n-req"
-	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=mig-per-n-req
+all-libs-mig-manual:
+	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=manual-tcp-migration"
+	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=manual-tcp-migration
 
 redis-server: all-libs
 	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) make redis-server

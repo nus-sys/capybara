@@ -101,10 +101,6 @@ impl ActiveMigration {
         }
     }
 
-    pub fn qd(&self) -> Option<QDesc> {
-        self.qd
-    }
-
     pub fn process_packet(&mut self, ipv4_hdr: &Ipv4Header, hdr: TcpMigHeader, buf: Buffer) -> Result<TcpmigReceiveStatus, Fail> {
         #[inline]
         fn next_header(mut hdr: TcpMigHeader, next_stage: MigrationStage) -> TcpMigHeader {

@@ -21,9 +21,7 @@ use ::std::{
     panic,
     str::FromStr,
 };
-use std::sync::atomic::{AtomicBool, Ordering};
 use ctrlc;
-use std::sync::Arc;
 
 #[cfg(feature = "tcp-migration")]
 use demikernel::demikernel::bindings::demi_print_queue_length_log;
@@ -226,10 +224,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
             .unwrap_or(String::from("0")) // Default value is 0 if MIG_PER_N is not set
             .parse()
             .expect("MIG_PER_N must be a i32");
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
     ctrlc::set_handler(move || {
-        //r.store(false, Ordering::SeqCst);
         // println!("Received Ctrl-C signal. Total requests processed: {}", request_count);
         LibOS::capylog_dump(&mut std::io::stderr().lock());
         std::process::exit(0);
@@ -249,7 +244,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     qts.push(libos.accept(sockqd).expect("accept"));
 
-    #[cfg(feature = "mig-per-n-req")]
+    #[cfg(feature = "manual-tcp-migration")]
     let mut requests_remaining: HashMap<QDesc, i32> = HashMap::new();
 
     // Create qrs filled with garbage.
@@ -259,118 +254,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
     indices.resize(2000, 0);
     
     loop {
-        if !running.load(Ordering::SeqCst) {
-            break;
-        }
-
-        /* let result = libos.trywait_any_one2(&qts).expect("result");
-        #[cfg(feature = "mig-per-n-req")]
-        let mut qds_to_migrate = HashSet::new();
-        if let Some((index, qd, result)) = result {
-            server_log!("\n\n======= OS: one I/O operation have been completed, take result! =======");        
-            qts.swap_remove(index);
-            match result {
-                OperationResult::Accept(new_qd) => {
-                    server_log!("ACCEPT complete ==> issue POP and ACCEPT");
-
-                    let buffer = {
-                        let mut buffer = Buffer::new();
-
-                        #[cfg(feature = "tcp-migration")]
-                        if let Some(data) = libos.take_migrated_data(new_qd).expect("take_migrated_data failed") {
-                            server_log!("Received migrated data ({} bytes)", data.len());
-
-                            buffer.get_empty_buf()[..data.len()].copy_from_slice(&data);
-                            buffer.push_data(data.len());
-                        }
-
-                        buffer
-                    };
-
-                    connstate.insert(new_qd, ConnectionState {
-                        pushing: 0,
-                        buffer,
-                    });
-
-                    // Pop from new_qd
-                    match libos.pop(new_qd) {
-                        Ok(pop_qt) => qts.push(pop_qt),
-                        #[cfg(feature = "tcp-migration")]
-                        Err(e) if e.errno == demikernel::ETCPMIG => (),
-                        Err(e) => panic!("pop qt: {}", e),
-                    }
-
-                    // Re-arm accept
-                    qts.push(libos.accept(qd).expect("accept qtoken"));
-                },
-
-                OperationResult::Push => {
-                    connstate.get_mut(&qd).unwrap().pushing -= 1;
-                    
-                    // #[cfg(feature = "tcp-migration")]
-                    // libos.pushed_response();
-
-                    server_log!("PUSH complete ==> {} pushes are pending", connstate.get_mut(&qd).unwrap().pushing);
-                    
-                    #[cfg(feature = "mig-per-n-req")]
-                    if migration_per_n > 0  && !requests_remaining.contains_key(&qd) {
-                        // Server has been processed N requests from this qd 
-                        qds_to_migrate.insert(qd);
-                    }
-                },
-
-                OperationResult::Pop(_, recvbuf) => {
-                    server_log!("POP complete");
-
-                    let mut state = connstate.get_mut(&qd).unwrap();
-                    let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
-                    state.pushing += sent;
-
-                    server_log!("Issued PUSH => {} pushes pending", state.pushing);
-                    
-                    
-                    #[cfg(feature = "mig-per-n-req")] {
-                        let remaining = requests_remaining.entry(qd).or_insert(migration_per_n);
-                        *remaining -= 1;
-                        if *remaining > 0 {
-                            // queue next pop
-                            match libos.pop(qd) {
-                                Ok(qt) => {
-                                    qts.push(qt);
-                                    server_log!("Issued POP");
-                                },
-                                Err(e) if e.errno == demikernel::ETCPMIG => (),
-                                Err(e) => panic!("pop qt: {}", e),
-                            }
-                        } else{
-                            server_log!("Should be migrated (no POP issued)");
-                            requests_remaining.remove(&qd).unwrap();
-                        }
-                    }
-                    #[cfg(not(feature = "mig-per-n-req"))]{
-                        // queue next pop
-                        match libos.pop(qd) {
-                            Ok(qt) => {
-                                qts.push(qt);
-                                server_log!("Issued POP");
-                            },
-                            #[cfg(feature = "tcp-migration")]
-                            Err(e) if e.errno == demikernel::ETCPMIG => (),
-                            Err(e) => panic!("pop qt: {}", e),
-                        }
-                    }
-                },
-
-                OperationResult::Failed(e) => {
-                    server_log!("operation failed: {}", e);
-                }
-
-                _ => {
-                    panic!("Unexpected op: RESULT: {:?}", result);
-                },
-            }
-        } */
-
         let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices).expect("result");
 
         /* let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
@@ -393,7 +276,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
             let (index, qd) = (*index, *qd);
             qts.swap_remove(index);
 
-            #[cfg(feature = "mig-per-n-req")]
+            #[cfg(feature = "manual-tcp-migration")]
             let mut should_migrate_this_qd = false;
 
             match result {
@@ -430,7 +313,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         qts: 1
                     });
                     
-                    #[cfg(feature = "mig-per-n-req")]
+                    #[cfg(feature = "manual-tcp-migration")]
                     assert!(requests_remaining.insert(new_qd, migration_per_n).is_none());
 
                     // Re-arm accept
@@ -438,16 +321,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 },
 
                 OperationResult::Push => {
-                    //let state = connstate.get_mut(&qd).unwrap();
-
-                    //server_log!("PUSH complete ==> {} pushes are pending", connstate.pushing);
                     server_log!("PUSH complete");
-                    
-                    /* #[cfg(feature = "mig-per-n-req")]
-                    if migration_per_n > 0  && !requests_remaining.contains_key(&qd) {
-                        // Server has been processed N requests from this qd 
-                        should_migrate_this_qd = true;
-                    } */
                 },
 
                 OperationResult::Pop(_, recvbuf) => {
@@ -461,7 +335,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     server_log!("Issued PUSH");
                     
                     
-                    #[cfg(feature = "mig-per-n-req")]
+                    #[cfg(feature = "manual-tcp-migration")]
                     if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {
                         let remaining = entry.get_mut();
                         *remaining -= 1;
@@ -489,7 +363,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             /* NON-CONCURRENT MIGRATION */
                         }
                     }
-                    #[cfg(not(feature = "mig-per-n-req"))]
+                    #[cfg(not(feature = "manual-tcp-migration"))]
                     {
                         // queue next pop
                         qts.push(libos.pop(qd).expect("pop qt"));
@@ -500,7 +374,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Failed(e) => {
                     match e.errno {
                         #[cfg(feature = "tcp-migration")]
-                        demikernel::ETCPMIG => server_log!("migrated {:?} polled", qd),
+                        demikernel::ETCPMIG => { server_log!("migrated {:?} polled", qd) },
                         _ => panic!("operation failed: {}", e),
                     }
                 }

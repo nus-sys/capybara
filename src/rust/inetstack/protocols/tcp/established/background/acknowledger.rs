@@ -12,8 +12,6 @@ use ::futures::{
 };
 use ::std::rc::Rc;
 
-use crate::capy_log;
-
 pub async fn acknowledger(cb: Rc<ControlBlock>) -> Result<!, Fail> {
     loop {
         // TODO: Implement TCP delayed ACKs, subject to restrictions from RFC 1122

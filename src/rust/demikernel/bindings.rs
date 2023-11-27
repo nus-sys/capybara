@@ -708,7 +708,7 @@ pub extern "C" fn demi_print_queue_length_log() {
 // initiate_migration
 //======================================================================================================================
 
-#[cfg(all(feature = "tcp-migration", feature = "mig-per-n-req"))]
+#[cfg(all(feature = "tcp-migration", feature = "manual-tcp-migration"))]
 #[allow(unused)]
 #[no_mangle]
 pub extern "C" fn demi_initiate_migration(qd: c_int) -> c_int {

@@ -766,7 +766,7 @@ impl InetStack {
             self.ipv4.tcp.poll_stats();
         
             // If overloaded, start migrations.
-            #[cfg(not(feature = "mig-per-n-req"))]
+            #[cfg(not(feature = "manual-tcp-migration"))]
             if let Some(conns_to_migrate) = self.ipv4.tcp.connections_to_migrate() {
                 for conn in conns_to_migrate {
                     capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
@@ -883,7 +883,7 @@ impl InetStack {
         self.ipv4.tcp.take_migrated_data(qd)
     }
 
-    #[cfg(feature = "mig-per-n-req")]
+    #[cfg(feature = "manual-tcp-migration")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         self.ipv4.tcp.initiate_migration(qd)
     }

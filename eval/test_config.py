@@ -17,7 +17,7 @@ TCPDUMP_NODE = 'node8'
 ################## BUILD CONFIG #####################
 FEATURES = [
     'tcp-migration',
-    'mig-per-n-req',
+    'manual-tcp-migration',
     #'capy-log',
     #'capy-profile',
     'capy-time-log'

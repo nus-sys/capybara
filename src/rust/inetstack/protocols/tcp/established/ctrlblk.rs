@@ -168,7 +168,7 @@ impl Receiver {
         capy_log!("Insert payload into recv_queue ==> len(recv_queue): {}", recv_queue.len());
     }
 
-    #[cfg(not(feature = "mig-per-n-req"))]
+    #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn recv_queue_len(&self) -> usize {
         self.recv_queue.borrow().len()
     }
