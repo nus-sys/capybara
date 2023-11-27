@@ -148,7 +148,7 @@ impl Stats {
 
         let mut conns = ArrayVec::new();
 
-        let mut should_end = self.global_recv_queue_length < self.threshold || conns.remaining_capacity() == 0;
+        let mut should_end = self.global_recv_queue_length <= self.threshold || conns.remaining_capacity() == 0;
         let base_index = std::cmp::min((self.global_recv_queue_length - self.threshold) >> BUCKET_SIZE_LOG2, self.buckets.buckets.len());
 
         capy_log_mig!("Need to migrate: base_index({})\nbuckets: {:#?}", base_index, self.buckets.buckets);
@@ -156,11 +156,7 @@ impl Stats {
         let (left, right) = self.buckets.buckets.split_at_mut(base_index);
         let iter = right.iter_mut().chain(left.iter_mut().rev());
 
-        for bucket in iter {
-            if should_end {
-                break;
-            }
-
+        'outer: for bucket in iter {
             while let Some(handle) = bucket.pop() {
                 capy_log_mig!("Chose: {:#?}", handle);
 
@@ -173,19 +169,23 @@ impl Stats {
 
                 self.global_recv_queue_length -= handle.inner.queue_len.get().expect_enabled("bucket list stat not enabled");
                 conns.push(handle.inner.conn);
-                should_end = self.global_recv_queue_length < self.threshold || conns.remaining_capacity() == 0;
+                should_end = self.global_recv_queue_length <= self.threshold || conns.remaining_capacity() == 0;
+
+                
+                if let Some(val) = self.max_migrations.as_mut() {
+                    *val -= 1;
+                    if *val <= 0 {
+                        break 'outer;
+                    }
+                }
                 
                 if should_end {
-                    break;
+                    break 'outer;
                 }
             }
         }
 
         self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
-
-        if let Some(val) = self.max_migrations.as_mut() {
-            *val -= i32::try_from(conns.len()).unwrap();
-        }
 
         Some(conns)
     }
