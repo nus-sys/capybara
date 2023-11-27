@@ -35,6 +35,7 @@ pub struct Stats {
     handles: Vec<StatsHandle>,
     
     /// Global recv queue length threshold above which migration is triggered.
+    #[cfg(not(feature = "manual-tcp-migration"))]
     threshold: usize,
     /// TEMP TEST: Max number of connections to migrate for this test.
     max_migrations: Option<i32>,
@@ -122,8 +123,10 @@ impl Stats {
             buckets: BucketList::new(),
             handles: Vec::new(),
             
+            #[cfg(not(feature = "manual-tcp-migration"))]
             threshold: std::env::var("RECV_QUEUE_THRESHOLD").expect("No RECV_QUEUE_THRESHOLD specified")
                 .parse().expect("RECV_QUEUE_THRESHOLD should be a number"),
+
             max_migrations: std::env::var("MAX_STAT_MIGS")
                 .map(|e| Some(e.parse().expect("MAX_STAT_MIGS should be a number")))
                 .unwrap_or(None),
@@ -132,6 +135,7 @@ impl Stats {
 
     /// Extracts connections so that the global recv queue length goes below the threshold.
     /// Returns `None` if no connections need to be migrated.
+    #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
         if let Some(val) = self.max_migrations {
             if val <= 0 {

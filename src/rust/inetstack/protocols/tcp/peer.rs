@@ -1047,6 +1047,7 @@ impl TcpPeer {
         self.inner.borrow_mut().stats.poll();
     }
 
+    #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
         self.inner.borrow_mut().stats.connections_to_migrate()
     }

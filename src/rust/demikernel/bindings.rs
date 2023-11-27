@@ -480,8 +480,9 @@ pub extern "C" fn demi_wait(qr_out: *mut demi_qresult_t, qt: demi_qtoken_t) -> c
 
 #[no_mangle]
 pub extern "C" fn demi_wait_any(
-    qr_out: *mut demi_qresult_t,
-    ready_offset: *mut c_int,
+    qrs_out: *mut demi_qresult_t,
+    ready_offsets: *mut c_int,
+    qrs_count: *mut c_int,
     qts: *mut demi_qtoken_t,
     num_qts: c_int,
 ) -> c_int {
@@ -498,13 +499,19 @@ pub extern "C" fn demi_wait_any(
         raw_qts.iter().map(|i| QToken::from(*i)).collect()
     };
 
+    // TODO: Remove allocations.
+    let qrs_len = unsafe { *qrs_count } as usize;
+    let qrs = unsafe { slice::from_raw_parts_mut(qrs_out, qrs_len) };
+    let mut indices = vec![0usize; qrs_len];
+
     // Issue wait_any operation.
-    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.wait_any(&qts) {
-        Ok((ix, qr)) => {
-            unsafe {
-                *qr_out = qr;
-                *ready_offset = ix as c_int;
-            }
+    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.wait_any(&qts, qrs, &mut indices) {
+        Ok(num_qrs) => {
+            assert!(num_qrs <= qrs_len);
+            let ready_offsets = unsafe { slice::from_raw_parts_mut(ready_offsets, num_qrs) };
+            ready_offsets.iter_mut().zip(indices.iter().copied())
+                .for_each(|(ready, i)| *ready = i as c_int);
+            unsafe { *qrs_count = num_qrs as c_int };
             0
         },
         Err(e) => {
@@ -680,17 +687,6 @@ pub extern "C" fn demi_getsockopt(
 ) -> c_int {
     // TODO: Implement this system call.
     libc::ENOSYS
-}
-
-//======================================================================================================================
-// notify_migration_safety
-//======================================================================================================================
-
-#[cfg(feature = "tcp-migration")]
-#[allow(unused)]
-#[no_mangle]
-pub extern "C" fn demi_notify_migration_safety(was_migration_done: *mut c_int, qd: c_int, data: *const c_void, data_len: libc::size_t) -> c_int {
-    unimplemented!("demi_notify_migration_safety() is deprecated")
 }
 
 //======================================================================================================================

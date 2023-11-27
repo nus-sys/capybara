@@ -89,7 +89,7 @@ pub fn pack_result(rt: Rc<DPDKRuntime>, result: OperationResult, qd: QDesc, qt: 
                 qr_opcode: demi_opcode_t::DEMI_OPC_FAILED,
                 qr_qd: qd.into(),
                 qr_qt: qt,
-                qr_value: unsafe { mem::zeroed() },
+                qr_value: demi_qr_value_t { err: e.errno },
             }
         },
     }

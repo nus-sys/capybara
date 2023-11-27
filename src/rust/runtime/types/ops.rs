@@ -44,6 +44,7 @@ pub struct demi_accept_result_t {
 pub union demi_qr_value_t {
     pub sga: demi_sgarray_t,
     pub ares: demi_accept_result_t,
+    pub err: c_int,
 }
 
 /// Result

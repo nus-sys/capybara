@@ -81,6 +81,7 @@ extern "C"
         union {
             demi_sgarray_t sga;        /**< Pushed/popped scatter-gather array. */
             demi_accept_result_t ares; /**< Accept result.                      */
+            int err;                   /**< Error code.                         */
         } qr_value;
     } demi_qresult_t;
 

@@ -224,9 +224,9 @@ impl LibOS {
     }
 
     /// Waits for any operation in an I/O queue.
-    pub fn wait_any(&mut self, qts: &[QToken]) -> Result<(usize, demi_qresult_t), Fail> {
+    pub fn wait_any(&mut self, qts: &[QToken], qrs: &mut [demi_qresult_t], indices: &mut [usize]) -> Result<usize, Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.wait_any(qts),
+            LibOS::NetworkLibOS(libos) => libos.wait_any(qts, qrs, indices),
         }
     }
 

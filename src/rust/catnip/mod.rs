@@ -63,6 +63,9 @@ pub struct CatnipLibOS {
     scheduler: Scheduler,
     inetstack: InetStack,
     rt: Rc<DPDKRuntime>,
+
+    // TEMP until we can find a better solution.
+    intermediate_wait_any_results: Vec<(QDesc, OperationResult)>,
 }
 
 //==============================================================================
@@ -107,6 +110,12 @@ impl CatnipLibOS {
             inetstack,
             scheduler,
             rt,
+            intermediate_wait_any_results: {
+                let mut vec = Vec::with_capacity(1024);
+                // Fill with garbage.
+                vec.resize_with(1024, || (0.into(), OperationResult::Connect));
+                vec
+            },
         }
     }
 
@@ -176,13 +185,27 @@ impl CatnipLibOS {
     }
 
     /// Waits for any operation to complete.
-    pub fn wait_any(&mut self, qts: &[QToken]) -> Result<(usize, demi_qresult_t), Fail> {
+    pub fn wait_any(&mut self, qts: &[QToken], qrs: &mut [demi_qresult_t], indices: &mut [usize]) -> Result<usize, Fail> {
         #[cfg(feature = "profiler")]
         timer!("catnip::wait_any");
         trace!("wait_any(): qts={:?}", qts);
 
-        let (i, qd, r): (usize, QDesc, OperationResult) = todo!("C API for wait_any() vector"); //self.wait_any2(qts)?;
-        Ok((i, pack_result(self.rt.clone(), r, qd, qts[i].into())))
+        assert!(qts.len() <= self.intermediate_wait_any_results.len(), "intermediate results not large enough");
+
+        let temp_qrs = unsafe { core::slice::from_raw_parts_mut(
+            self.intermediate_wait_any_results.as_mut_ptr(),
+            self.intermediate_wait_any_results.len(),
+        )};
+
+        let qrs_count = self.wait_any2(qts, temp_qrs, indices)?;
+        let iter =  qrs.iter_mut()
+            .zip(self.intermediate_wait_any_results[0..qrs_count].iter_mut())
+            .zip(indices.iter().copied());
+        for ((qr, (qd, r)), i) in iter {
+            let r = std::mem::replace(r, OperationResult::Connect); // Replace with garbage.
+            *qr = pack_result(self.rt.clone(), r, *qd, qts[i].into());
+        }
+        Ok(qrs_count)
     }
 
     pub fn try_wait_any(&mut self, qts: &[QToken]) -> Result<Option<Vec<(usize, demi_qresult_t)>>, Fail> {
@@ -190,14 +213,7 @@ impl CatnipLibOS {
         timer!("catnip::try_wait_any");
         trace!("try_wait_any(): qts={:?}", qts);
 
-        todo!("C API for try_wait_any()");
-
-        /* match self.trywait_any2(qts)? {
-            None => Ok(None),
-            Some(results) => Ok(Some(results.into_iter()
-                .map(|(i, qd, r)| (i, pack_result(self.rt.clone(), r, qd, qts[i].into())))
-                .collect()))
-        } */
+        unimplemented!("C API for try_wait_any()");
     }
 
     /// Allocates a scatter-gather array.
