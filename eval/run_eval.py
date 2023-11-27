@@ -73,12 +73,13 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
 
     server_tasks = []
     for j in range(NUM_BACKENDS):
-        cmd = [f'cd {CAPYBARA_PATH} && \
+        if SERVER_APP == 'http-server':
+            cmd = [f'cd {CAPYBARA_PATH} && \
                 sudo -E \
                 CAPY_LOG={CAPY_LOG} \
                 LIBOS=catnip \
                 RECV_QUEUE_THRESHOLD={RECV_QUEUE_THRESHOLD} \
-                {f"MAX_STAT_MIGS={MAX_STAT_MIGS}" if MAX_STAT_MIGS != "" else ""} \
+                {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
                 MTU=1500 \
                 MSS=1500 \
                 NUM_CORES=4 \
@@ -90,15 +91,18 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
                 PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
-                numactl -m0 {CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP} 10.0.1.9:1000{j} \
+                numactl -m0 {CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP}.elf 10.0.1.9:1000{j} \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
         if SERVER_APP == 'redis-server':
             cmd = [f'cd {CAPYBARA_PATH} && \
                     make run-redis-server \
                     CORE_ID={j+1} \
                     CONF=redis{j} \
-                    MAX_STAT_MIGS={int(max_stat_migs)} \
+                    {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
                     > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
+        else:
+            print(f'Invalid server app: {SERVER_APP}')
+            exit(1)
         task = host.run(cmd, quiet=False)
         server_tasks.append(task)
     pyrem.task.Parallel(server_tasks, aggregate=True).start(wait=False)    
@@ -369,7 +373,8 @@ def run_eval():
                             time.sleep(4)
                             print('iokerneld is running')
                             
-                            cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
+                            if SERVER_APP == 'http-server':
+                                cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                     10.0.1.1:10000 \
                                     --config {CALADAN_PATH}/client.config \
                                     --mode runtime-client \
@@ -399,8 +404,11 @@ def run_eval():
                                         --rampup=0 \
                                         --exptid={DATA_PATH}/{experiment_id} \
                                         --protocol=resp \
-                                        --redis-string=1000000 \
+                                        --redis-string=100 \
                                         > {DATA_PATH}/{experiment_id}.client']
+                            else:
+                                print(f'Invalid server app: {SERVER_APP}')
+                                exit(1)
                             # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \
                             #         -a 31:00.1 \
                             #         -n 4 \
@@ -487,11 +495,25 @@ def exiting():
 
 
 def run_compile():
+    # only for redis-server
+    mig = ''
+    if 'manual-tcp-migration' in FEATURES:
+        mig = '-mig-manual'
+    elif 'tcp-migration' in FEATURES:
+        mig = '-mig'
+
     features = '--features=' if len(FEATURES) > 0 else ''
     for feat in FEATURES:
         features += feat + ','
 
-    return os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make all-examples-rust")
+    if SERVER_APP == 'http-server':
+        return os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make all-examples-rust")
+    elif SERVER_APP == 'redis-server':
+        clean = 'make clean-redis &&' if len(sys.argv) > 2 and sys.argv[2] == 'clean' else ''
+        return os.system(f'cd {CAPYBARA_PATH} && {clean} make redis-server{mig}')
+    else:
+        print(f'Invalid server app: {SERVER_APP}')
+        exit(1)
 
 
 if __name__ == '__main__':

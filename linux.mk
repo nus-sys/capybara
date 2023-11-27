@@ -412,6 +412,8 @@ tcp-pushpop:
 	timeout 10 /homes/inho/Capybara/capybara/bin/examples/rust/tcp-push-pop.elf \
 	--server 10.0.1.8:22222
 
+state-time-test:
+	$(CARGO) test measure_state_time $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,capy-profile,capy-log,capy-time-log -- --nocapture
 
 #============= REDIS =============#
 
@@ -425,9 +427,6 @@ all-libs-mig:
 	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,capy-profile
 #,capy-log
 
-state-time-test:
-	$(CARGO) test measure_state_time $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,capy-profile,capy-log,capy-time-log -- --nocapture
-
 all-libs-mig-manual:
 	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=manual-tcp-migration"
 	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration --features=manual-tcp-migration
@@ -438,7 +437,7 @@ redis-server: all-libs
 redis-server-mig: all-libs-mig
 	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 make redis-server
 
-redis-server-mig-per-n: all-libs-mig-per-n
+redis-server-mig-manual: all-libs-mig-manual
 	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 make redis-server
 
 run-redis-server:
