@@ -363,7 +363,7 @@ impl TcpPeer {
 
         let socket: Socket = Socket::Established { local, remote };
 
-        eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
+        // eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
 
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         match inner.sockets.insert(new_qd, socket) {
@@ -1030,7 +1030,7 @@ impl TcpPeer {
         Ok(())
 
         /* NON-CONCURRENT MIGRATION */
-        /* if(conn.1.port() == 303){
+        /* if(conn.1.port() == 301){
             capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1); 
             inner.tcpmig.initiate_migration(conn, qd);
             Ok(())

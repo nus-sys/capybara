@@ -174,11 +174,15 @@ impl TcpMigPeer {
 
         // First packet that target receives.
         if hdr.stage == MigrationStage::PrepareMigration {
-            capy_time_log!("RECV_PREPARE_MIG,({})", remote);
             capy_profile!("prepare_ack");
 
             capy_log_mig!("******* MIGRATION REQUESTED *******");
             capy_log_mig!("PREPARE_MIG {}", remote);
+            let target = SocketAddrV4::new(self.local_ipv4_addr, self.self_udp_port);
+            capy_log_mig!("I'm target {}", target);
+
+            capy_time_log!("RECV_PREPARE_MIG,({}-{})", hdr.origin, remote);
+            
 
             let active = ActiveMigration::new(
                 self.rt.clone(),
@@ -202,9 +206,6 @@ impl TcpMigPeer {
                 //self.is_currently_migrating = false;
                 return Ok(TcpmigReceiveStatus::Ok)
             }
-
-            let target = SocketAddrV4::new(self.local_ipv4_addr, self.self_udp_port);
-            capy_log_mig!("I'm target {}", target);
             //self.origins.insert((target, hdr.client), hdr.origin);
         }
 

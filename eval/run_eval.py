@@ -33,7 +33,7 @@ final_result = ''
 
 
 def kill_procs():
-    cmd = ['sudo pkill -INT -f Capybara && sudo pkill -INT -f caladan']
+    cmd = ['sudo pkill -INT -f Capybara && sudo pkill -INT -f caladan && sudo pkill -INT -f iokerneld']
     if TCPDUMP:
         cmd[0] += ' && sudo pkill -INT -f tcpdump'
     # cmd = [f'sudo pkill -INT -f Capybara && sleep 2 && sudo pkill -f Capybara && sudo pkill -f caladan']
@@ -48,7 +48,7 @@ def kill_procs():
     print('KILLED CAPYBARA PROCESSES')
 
 
-def run_server(mig_delay, mig_var, mig_per_n):
+def run_server(mig_delay, max_stat_migs, mig_per_n):
     global experiment_id
     
     print('SETUP SWITCH')
@@ -85,7 +85,7 @@ def run_server(mig_delay, mig_var, mig_per_n):
                 RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
                 MIG_DELAY={int(mig_delay/10) * 76} \
-                MIG_VAR={int(mig_var)} \
+                MAX_STAT_MIGS={int(max_stat_migs)} \
                 MIG_PER_N={int(mig_per_n)} \
                 CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
@@ -97,7 +97,7 @@ def run_server(mig_delay, mig_var, mig_per_n):
                     make run-redis-server \
                     CORE_ID={j+1} \
                     CONF=redis{j} \
-                    MIG_VAR={int(mig_var)} \
+                    MAX_STAT_MIGS={int(max_stat_migs)} \
                     > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
         task = host.run(cmd, quiet=False)
         server_tasks.append(task)
@@ -331,7 +331,7 @@ def run_eval():
     global final_result
     for repeat in range(0, REPEAT_NUM):
         for mig_delay in MIG_DELAYS:
-            for mig_var in MIG_VARS: 
+            for max_stat_migs in MAX_STAT_MIGS: 
                 for mig_per_n in MIG_PER_N:
                     for pps in CLIENT_PPS:
                         for conn in NUM_CONNECTIONS:
@@ -339,29 +339,31 @@ def run_eval():
                             experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
                             
                             print(f'================ RUNNING TEST =================\n'
-                                    f'RUNTIME: {RUNTIME} / NUM_BACKENDS: {NUM_BACKENDS} / TCPDUMP: {TCPDUMP}\n'
+                                    f'NUM_BACKENDS: {NUM_BACKENDS} / TCPDUMP: {TCPDUMP}\n'
                                     f'SERVER_APP: {SERVER_APP}\n'
                                     f'REPEAT: {repeat}\n'
-                                    f'RUN ID: {experiment_id}\n'
+                                    f'RECV_QUEUE_THRESHOLD: {RECV_QUEUE_THRESHOLD}\n'
+                                    f'MIG_DELAY: {mig_delay}\n'
+                                    f'MAX_STAT_MIGS: {max_stat_migs}\n'
+                                    f'MIG_PER_N: {mig_per_n}\n'
                                     f'RATE: {pps}\n'
                                     f'NUM_CONNECTIONS: {conn}\n'
-                                    f'MIG_DELAY: {mig_delay}\n'
-                                    f'MIG_VAR: {mig_var}\n'
-                                    f'MIG_PER_N: {mig_per_n}\n')
+                                    f'RUNTIME: {RUNTIME}\n'
+                                    f'RUN ID: {experiment_id}\n'
+                                    )
                             
 
                             if TCPDUMP == True:
                                 run_tcpdump(experiment_id)
                             
-                            run_server(mig_delay, mig_var, mig_per_n)
+                            run_server(mig_delay, max_stat_migs, mig_per_n)
 
                             host = pyrem.host.RemoteHost(CLIENT_NODE)
-                            """ cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
+                            cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
                             task = host.run(cmd, quiet=True)
-                            iokerneld_task = pyrem.task.Parallel([task], aggregate=True)
-                            iokerneld_task.start(wait=False)
+                            pyrem.task.Parallel([task], aggregate=True).start(wait=False)
                             time.sleep(4)
-                            print('iokerneld is running') """
+                            print('iokerneld is running')
                             
                             cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                     10.0.1.1:10000 \
@@ -422,8 +424,8 @@ def run_eval():
                                     stderr=subprocess.STDOUT,
                                     check=True,
                                 ).stdout.decode()
-                                print('[RESULT]' + f'{experiment_id}, {conn}, {mig_delay}, {mig_var}, {mig_per_n},{result[len("[RESULT]"):]}' + '\n\n')
-                                final_result = final_result + f'{experiment_id}, {conn}, {mig_delay}, {mig_var}, {mig_per_n},{result[len("[RESULT]"):]}'
+                                print('[RESULT]' + f'{experiment_id}, {conn}, {mig_delay}, {max_stat_migs}, {mig_per_n},{result[len("[RESULT]"):]}' + '\n\n')
+                                final_result = final_result + f'{experiment_id}, {conn}, {mig_delay}, {max_stat_migs}, {mig_per_n},{result[len("[RESULT]"):]}'
                             except subprocess.CalledProcessError as e:
                                 # Handle the exception for a failed command execution
                                 print("EXPERIMENT FAILED\n\n")
@@ -490,7 +492,7 @@ def run_compile():
 
 if __name__ == '__main__':
     # parse_result()
-    # parse_mig_latency("20231031-091034.787136")
+    # parse_mig_latency("20231127-070656.170424")
     # exit()
 
     if len(sys.argv) > 1 and sys.argv[1] == 'build':
