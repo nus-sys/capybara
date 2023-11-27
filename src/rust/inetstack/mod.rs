@@ -769,6 +769,7 @@ impl InetStack {
             #[cfg(not(feature = "mig-per-n-req"))]
             if let Some(conns_to_migrate) = self.ipv4.tcp.connections_to_migrate() {
                 for conn in conns_to_migrate {
+                    capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
                     self.ipv4.tcp.initiate_migration(conn);
                 }
             }

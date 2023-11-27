@@ -85,7 +85,7 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
                 MIG_DELAY={int(mig_delay/10) * 76} \
-                MAX_STAT_MIGS={int(max_stat_migs)} \
+                MAX_STAT_MIGS={int(max_stat_migs) if j == 0 else 0} \
                 MIG_PER_N={int(mig_per_n)} \
                 CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
@@ -339,7 +339,7 @@ def run_eval():
                             experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
                             
                             print(f'================ RUNNING TEST =================\n'
-                                    f'NUM_BACKENDS: {NUM_BACKENDS} / TCPDUMP: {TCPDUMP}\n'
+                                    f'NUM_BACKENDS: {NUM_BACKENDS}\n'
                                     f'SERVER_APP: {SERVER_APP}\n'
                                     f'REPEAT: {repeat}\n'
                                     f'RECV_QUEUE_THRESHOLD: {RECV_QUEUE_THRESHOLD}\n'
@@ -350,6 +350,10 @@ def run_eval():
                                     f'NUM_CONNECTIONS: {conn}\n'
                                     f'RUNTIME: {RUNTIME}\n'
                                     f'RUN ID: {experiment_id}\n'
+                                    f'TCPDUMP: {TCPDUMP}\n'
+                                    f'EVAL_MIG_LATENCY: {EVAL_MIG_LATENCY}\n'
+                                    f'EVAL_POLL_INTERVAL: {EVAL_POLL_INTERVAL}\n'
+                                    f'EVAL_LATENCY_TRACE: {EVAL_LATENCY_TRACE}\n'
                                     )
                             
 

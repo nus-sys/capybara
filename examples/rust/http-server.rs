@@ -500,7 +500,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Failed(e) => {
                     match e.errno {
                         #[cfg(feature = "tcp-migration")]
-                        demikernel::ETCPMIG => eprintln!("migrated {:?} polled", qd),
+                        demikernel::ETCPMIG => server_log!("migrated {:?} polled", qd),
                         _ => panic!("operation failed: {}", e),
                     }
                 }
