@@ -550,38 +550,6 @@ impl InetStack {
         }
     }
 
-    /* /// Waits for any operation to complete.
-    pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<(usize, QDesc, OperationResult), Fail> {
-        #[cfg(feature = "profiler")]
-        timer!("inetstack::wait_any2");
-        trace!("wait_any2(): qts={:?}", qts);
-
-        loop {
-            // Poll first, so as to give pending operations a chance to complete.
-            self.poll_bg_work();
-
-            // Search for any operation that has completed.
-            for (i, &qt) in qts.iter().enumerate() {
-                // Retrieve associated schedule handle.
-                // TODO: move this out of the loop.
-                let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
-                    Some(handle) => handle,
-                    None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
-                };
-
-                // Found one, so extract the result and return.
-                if handle.has_completed() {
-                    let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
-                    return Ok((i, qd, r));
-                }
-
-                // Return this operation to the scheduling queue by removing the associated key
-                // (which would otherwise cause the operation to be freed).
-                handle.take_key();
-            }
-        }
-    } */
-
     /// Waits for any operation to complete.
     /// 
     /// The length of `qrs` and `indices` needs to be at least as big as `qts`. If `qrs` is not big enough, all results are not written to it.
