@@ -93,7 +93,7 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
                 numactl -m0 {CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP}.elf 10.0.1.9:1000{j} \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
-        if SERVER_APP == 'redis-server':
+        elif SERVER_APP == 'redis-server':
             cmd = [f'cd {CAPYBARA_PATH} && \
                     make run-redis-server \
                     CORE_ID={j+1} \
@@ -389,7 +389,7 @@ def run_eval():
                                     --rampup=0 \
                                     --exptid={DATA_PATH}/{experiment_id} \
                                     > {DATA_PATH}/{experiment_id}.client'] # --loadshift=300000:2000000,600000:3000000 \
-                            if SERVER_APP == 'redis-server':
+                            elif SERVER_APP == 'redis-server':
                                 cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                         10.0.1.1:10000 \
                                         --config {CALADAN_PATH}/client.config \
