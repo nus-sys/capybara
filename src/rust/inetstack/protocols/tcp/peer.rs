@@ -779,184 +779,6 @@ impl Inner {
 //==========================================================================================================================
 
 //==============================================================================
-// TCP State
-//==============================================================================
-
-#[cfg(feature = "tcp-migration")]
-pub mod state {
-    use std::net::SocketAddrV4;
-
-    use crate::{inetstack::protocols::tcp::established::ControlBlockState, runtime::memory::{Buffer, DataBuffer}};
-
-    pub trait Serialize {
-        /// Serializes into the buffer and returns its unused part.
-        fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8];
-    }
-    
-    #[cfg(feature = "tcp-migration")]
-    pub trait Deserialize: Sized {
-        /// Deserializes and removes the deserialised part from the buffer.
-        fn deserialize_from(buf: &mut Buffer) -> Self;
-    }
-
-    #[derive(Debug, PartialEq, Eq)]
-    pub struct TcpState {
-        pub cb: ControlBlockState
-    }
-
-    impl Serialize for TcpState {
-        fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
-            self.cb.serialize_into(buf)
-        }
-    }
-
-    impl TcpState {
-        pub fn new(cb: ControlBlockState) -> Self {
-            Self { cb }
-        }
-
-        pub fn remote(&self) -> SocketAddrV4 {
-            self.cb.remote()
-        }
-
-        pub fn connection(&self) -> (SocketAddrV4, SocketAddrV4) {
-            self.cb.endpoints()
-        }
-
-        pub fn set_local(&mut self, local: SocketAddrV4) {
-            self.cb.set_local(local)
-        }
-
-        pub fn recv_queue_len(&self) -> usize {
-            self.cb.recv_queue_len()
-        }
-
-        pub fn serialize(&self) -> Buffer {
-            let mut buf = Buffer::Heap(DataBuffer::new(self.serialized_size()).unwrap());
-            let remaining = self.cb.serialize_into(&mut buf);
-            assert!(remaining.is_empty());
-            buf
-        }
-
-        pub fn deserialize(mut buf: Buffer) -> Self {
-            let cb = ControlBlockState::deserialize_from(&mut buf);
-            Self { cb }
-        }
-
-        fn serialized_size(&self) -> usize {
-            self.cb.serialized_size()
-        }
-    }
-
-    #[cfg(test)]
-    mod test {
-        use std::net::{SocketAddrV4, Ipv4Addr};
-
-        use crate::{
-            runtime::memory::{Buffer, DataBuffer},
-            inetstack::protocols::{
-                tcpmig::segment::{TcpMigSegment, TcpMigHeader, TcpMigDefragmenter},
-                ethernet2::Ethernet2Header, ipv4::Ipv4Header
-            },
-            capy_profile, capy_profile_dump, MacAddress
-        };
-
-        use super::TcpState;
-
-        fn get_socket_addr() -> SocketAddrV4 {
-            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 10000)
-        }
-
-        fn get_buf() -> Buffer {
-            Buffer::Heap(DataBuffer::from_slice(&vec![1; 64]))
-        }
-
-        fn get_state() -> TcpState {
-            TcpState { cb: super::super::super::established::test_get_control_block_state() }
-        }
-
-        fn get_header() -> TcpMigHeader {
-            TcpMigHeader::new(
-                get_socket_addr(),
-                get_socket_addr(),
-                100,
-                crate::inetstack::protocols::tcpmig::MigrationStage::ConnectionState,
-                10000,
-                10000,
-            )
-        }
-
-        #[inline(always)]
-        fn create_segment(payload: Buffer) -> TcpMigSegment {
-            let len = payload.len();
-            TcpMigSegment::new(
-                Ethernet2Header::new(MacAddress::broadcast(), MacAddress::broadcast(), crate::inetstack::protocols::ethernet2::EtherType2::Ipv4),
-                Ipv4Header::new(Ipv4Addr::LOCALHOST, Ipv4Addr::LOCALHOST, crate::inetstack::protocols::ip::IpProtocol::UDP),
-                get_header(),
-                payload,
-            )
-        }
-
-        #[test]
-        fn measure_state_time() {
-            std::env::set_var("CAPY_LOG", "all");
-            crate::capylog::init();
-            eprintln!();
-            let state = get_state();
-
-            let state = {
-                capy_profile!("serialise");
-                state.serialize()
-            };
-
-            let segment = {
-                capy_profile!("segment creation");
-                create_segment(state)
-            };
-
-            let seg_clone = segment.clone();
-            let count = seg_clone.fragments().count();
-
-            let mut fragments = Vec::with_capacity(count);
-            {
-                capy_profile!("total fragment");
-                for e in segment.fragments() {
-                    fragments.push((e.tcpmig_hdr, e.data));
-                }
-            }
-            
-            let mut defragmenter = TcpMigDefragmenter::new();
-
-            let mut i = 0;
-            let mut segment = None;
-            {
-                capy_profile!("total defragment");
-                for (hdr, buf) in fragments {
-                    i += 1;
-                    if let Some(seg) = {
-                        capy_profile!("defragment");
-                        defragmenter.defragment(hdr, buf)
-                    } {
-                        segment = Some(seg);
-                    }
-                }
-            };
-            assert_eq!(count, i);
-            
-            let (hdr, buf) = segment.unwrap();
-            let state = {
-                capy_profile!("deserialise");
-                TcpState::deserialize(buf)
-            };
-            assert_eq!(state, get_state());
-
-            capy_profile_dump!(&mut std::io::stderr().lock());
-            eprintln!();
-        }
-    }
-}
-
-//==============================================================================
 //  Implementations
 //==============================================================================
 
@@ -1138,5 +960,183 @@ impl Inner {
         };
 
         Ok(())
+    }
+}
+
+//==============================================================================
+// TCP State
+//==============================================================================
+
+#[cfg(feature = "tcp-migration")]
+pub mod state {
+    use std::net::SocketAddrV4;
+
+    use crate::{inetstack::protocols::tcp::established::ControlBlockState, runtime::memory::{Buffer, DataBuffer}};
+
+    pub trait Serialize {
+        /// Serializes into the buffer and returns its unused part.
+        fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8];
+    }
+    
+    #[cfg(feature = "tcp-migration")]
+    pub trait Deserialize: Sized {
+        /// Deserializes and removes the deserialised part from the buffer.
+        fn deserialize_from(buf: &mut Buffer) -> Self;
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    pub struct TcpState {
+        pub cb: ControlBlockState
+    }
+
+    impl Serialize for TcpState {
+        fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
+            self.cb.serialize_into(buf)
+        }
+    }
+
+    impl TcpState {
+        pub fn new(cb: ControlBlockState) -> Self {
+            Self { cb }
+        }
+
+        pub fn remote(&self) -> SocketAddrV4 {
+            self.cb.remote()
+        }
+
+        pub fn connection(&self) -> (SocketAddrV4, SocketAddrV4) {
+            self.cb.endpoints()
+        }
+
+        pub fn set_local(&mut self, local: SocketAddrV4) {
+            self.cb.set_local(local)
+        }
+
+        pub fn recv_queue_len(&self) -> usize {
+            self.cb.recv_queue_len()
+        }
+
+        pub fn serialize(&self) -> Buffer {
+            let mut buf = Buffer::Heap(DataBuffer::new(self.serialized_size()).unwrap());
+            let remaining = self.cb.serialize_into(&mut buf);
+            assert!(remaining.is_empty());
+            buf
+        }
+
+        pub fn deserialize(mut buf: Buffer) -> Self {
+            let cb = ControlBlockState::deserialize_from(&mut buf);
+            Self { cb }
+        }
+
+        fn serialized_size(&self) -> usize {
+            self.cb.serialized_size()
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use std::net::{SocketAddrV4, Ipv4Addr};
+
+        use crate::{
+            runtime::memory::{Buffer, DataBuffer},
+            inetstack::protocols::{
+                tcpmig::segment::{TcpMigSegment, TcpMigHeader, TcpMigDefragmenter},
+                ethernet2::Ethernet2Header, ipv4::Ipv4Header
+            },
+            capy_profile, capy_profile_dump, MacAddress
+        };
+
+        use super::TcpState;
+
+        fn get_socket_addr() -> SocketAddrV4 {
+            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 10000)
+        }
+
+        fn get_buf() -> Buffer {
+            Buffer::Heap(DataBuffer::from_slice(&vec![1; 64]))
+        }
+
+        fn get_state() -> TcpState {
+            TcpState { cb: super::super::super::established::test_get_control_block_state() }
+        }
+
+        fn get_header() -> TcpMigHeader {
+            TcpMigHeader::new(
+                get_socket_addr(),
+                get_socket_addr(),
+                100,
+                crate::inetstack::protocols::tcpmig::MigrationStage::ConnectionState,
+                10000,
+                10000,
+            )
+        }
+
+        #[inline(always)]
+        fn create_segment(payload: Buffer) -> TcpMigSegment {
+            let len = payload.len();
+            TcpMigSegment::new(
+                Ethernet2Header::new(MacAddress::broadcast(), MacAddress::broadcast(), crate::inetstack::protocols::ethernet2::EtherType2::Ipv4),
+                Ipv4Header::new(Ipv4Addr::LOCALHOST, Ipv4Addr::LOCALHOST, crate::inetstack::protocols::ip::IpProtocol::UDP),
+                get_header(),
+                payload,
+            )
+        }
+
+        #[test]
+        fn measure_state_time() {
+            std::env::set_var("CAPY_LOG", "all");
+            crate::capylog::init();
+            eprintln!();
+            let state = get_state();
+
+            let state = {
+                capy_profile!("serialise");
+                state.serialize()
+            };
+
+            let segment = {
+                capy_profile!("segment creation");
+                create_segment(state)
+            };
+
+            let seg_clone = segment.clone();
+            let count = seg_clone.fragments().count();
+
+            let mut fragments = Vec::with_capacity(count);
+            {
+                capy_profile!("total fragment");
+                for e in segment.fragments() {
+                    fragments.push((e.tcpmig_hdr, e.data));
+                }
+            }
+            
+            let mut defragmenter = TcpMigDefragmenter::new();
+
+            let mut i = 0;
+            let mut segment = None;
+            {
+                capy_profile!("total defragment");
+                for (hdr, buf) in fragments {
+                    i += 1;
+                    if let Some(seg) = {
+                        capy_profile!("defragment");
+                        defragmenter.defragment(hdr, buf)
+                    } {
+                        segment = Some(seg);
+                    }
+                }
+            };
+            assert_eq!(count, i);
+            
+            let (hdr, buf) = segment.unwrap();
+            let state = {
+                capy_profile!("deserialise");
+                TcpState::deserialize(buf)
+            };
+            assert_eq!(state, get_state());
+
+            capy_profile_dump!(&mut std::io::stderr().lock());
+            eprintln!();
+        }
     }
 }
