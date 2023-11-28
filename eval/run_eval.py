@@ -216,8 +216,8 @@ def parse_mig_latency(experiment_id):
                 prev_step = 0
             prev_ns = ns
         # print(result)
-        # final_result = final_result + '\n'.join(result.split('\n')[20:])
-        final_result = final_result + '\n'.join(result.split('\n')[:])
+        final_result = final_result + '\n'.join(result.split('\n')[20:])
+        # final_result = final_result + '\n'.join(result.split('\n')[:])
     
     print(len(final_result.split('\n')))
     
@@ -225,8 +225,8 @@ def parse_mig_latency(experiment_id):
 
     with open(f'{DATA_PATH}/{experiment_id}.mig_latency', 'w') as file:
         # Write the content to the file
-        # file.write('\n'.join(final_result.split('\n')[-10001:]))
-        file.write('\n'.join(final_result.split('\n')[:]))
+        file.write('\n'.join(final_result.split('\n')[-10001:]))
+        # file.write('\n'.join(final_result.split('\n')[:]))
 
   
 
@@ -518,7 +518,7 @@ def run_compile():
 
 if __name__ == '__main__':
     # parse_result()
-    # parse_mig_latency("20231127-070656.170424")
+    # parse_mig_latency("20231128-111746.131253")
     # exit()
 
     if len(sys.argv) > 1 and sys.argv[1] == 'build':

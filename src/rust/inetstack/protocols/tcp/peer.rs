@@ -376,12 +376,16 @@ impl TcpPeer {
         assert!(inner.qds.insert((local, remote), new_qd).is_none(), "duplicate entry in qds table");
 
         /* activate this for recv_queue_len vs mig_lat eval */
-        /* if established.cb.receiver.recv_queue_len() == 100 {
+        /* static mut NUM_MIG: u32 = 0;
+        if established.cb.receiver.recv_queue_len() == 1000 {
             // The key exists in the hashmap, and mig_socket now contains the value.
             // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
             capy_time_log!("INIT_MIG,({}-{})", key.0, key.1);
-            inner.tcpmig.stop_tracking_connection_stats(key.0, key.1, established.cb.receiver.recv_queue_len());
-            inner.tcpmig.initiate_migration(key, new_qd);
+            established.cb.disable_stats();
+            unsafe{ NUM_MIG += 1; }
+            if unsafe{ NUM_MIG } < 10000 {
+                inner.tcpmig.initiate_migration(key, new_qd);
+            }
         } */
         /* activate this for recv_queue_len vs mig_lat eval */
 
@@ -635,57 +639,34 @@ impl Inner {
 
         capy_log!("\n\n[RX] {:?} => {:?}", remote, local);
         if let Some(s) = self.established.get(&key) {
+            /* activate this for recv_queue_len vs mig_lat eval */
             // let is_data_empty = data.is_empty();
+            /* activate this for recv_queue_len vs mig_lat eval */
 
             debug!("Routing to established connection: {:?}", key);
             s.receive(&mut tcp_hdr,data);
 
-            /*else if !is_data_empty {
-                /* activate this for recv_queue_len vs mig_lat eval */
-                /* let mig_key = (
+            /* activate this for recv_queue_len vs mig_lat eval */
+            /* if !is_data_empty {
+                let mig_key = (
                     SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10000),
                     SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 7), 201));
                 let qd = self.qds.get(&mig_key).ok_or_else(|| Fail::new(EBADF, "socket not exist"))?;
                 if let Some(mig_socket) = self.established.get(&mig_key) {
-                    if mig_socket.cb.receiver.recv_queue_len() == 100 {
+                    if mig_socket.cb.receiver.recv_queue_len() == 1000 {
                         // The key exists in the hashmap, and mig_socket now contains the value.
                         // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
                         capy_time_log!("INIT_MIG,({}-{})", mig_key.0, mig_key.1);
-                        self.tcpmig.stop_tracking_connection_stats(mig_key.0, mig_key.1, mig_socket.cb.receiver.recv_queue_len());
+                        s.cb.disable_stats();
                         self.tcpmig.initiate_migration(mig_key, *qd);
                     }
                 } else {
                     // The key does not exist in the esablished hashmap, panic.
                     panic!("Key not found in established HashMap: {:?}", mig_key);
-                } */
-                /* activate this for recv_queue_len vs mig_lat eval */
-                
-                // Possible decision-making point.
-                /* comment out this for recv_queue_len vs mig_lat eval */
-                if let Some(conn) = self.tcpmig.should_migrate() {
-                    // eprintln!("{:?}", conn);
-                    capy_log_mig!("should migrate");
-                    {
-                        capy_profile!("prepare");
-                        // self.tcpmig.print_stats();
-                        let qd = self.qds.get(&conn).ok_or_else(|| Fail::new(EBADF, "socket not exist"))?;
-                        capy_log_mig!("qd: {:?}, conn: {:?}", qd, conn);
-                        let mig_key = (conn.0, conn.1);
-                        // Attempt to retrieve the value from the hashmap
-                        if let Some(mig_socket) = self.established.get(&mig_key) {
-                            // The key exists in the hashmap, and mig_socket now contains the value.
-                            // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
-                            capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
-                            self.tcpmig.stop_tracking_connection_stats(conn.0, conn.1, mig_socket.cb.receiver.recv_queue_len());
-                            self.tcpmig.initiate_migration(conn, *qd);
-                        } else {
-                            // The key does not exist in the esablished hashmap, panic.
-                            panic!("Key not found in established HashMap: {:?}", mig_key);
-                        }
-                    }
                 }
-                /* comment out this for recv_queue_len vs mig_lat eval */
             } */
+            /* activate this for recv_queue_len vs mig_lat eval */
+
             return Ok(());
         }
         if let Some(s) = self.connecting.get_mut(&key) {
