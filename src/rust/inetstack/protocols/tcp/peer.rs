@@ -95,7 +95,7 @@ use ::std::{
 use state::TcpState;
 #[cfg(feature = "tcp-migration")]
 use crate::inetstack::protocols::{
-    tcp::stats::Stats,
+    //tcp::stats::Stats,
     tcpmig::{TcpMigPeer, TcpmigPollState}
 };
 
@@ -150,8 +150,8 @@ pub struct Inner {
 
     #[cfg(feature = "tcp-migration")]
     tcpmig: TcpMigPeer,
-    #[cfg(feature = "tcp-migration")]
-    stats: Stats,
+    /* #[cfg(feature = "tcp-migration")]
+    stats: Stats, */
     #[cfg(feature = "tcp-migration")]
     tcpmig_poll_state: Rc<TcpmigPollState>,
 }
@@ -355,8 +355,8 @@ impl TcpPeer {
         let remote = cb.get_remote();
 
         // Enable stats tracking.
-        #[cfg(feature = "tcp-migration")]
-        cb.enable_stats(&mut inner.stats);
+        /* #[cfg(feature = "tcp-migration")]
+        cb.enable_stats(&mut inner.stats); */
 
         let established: EstablishedSocket = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
         let key: (SocketAddrV4, SocketAddrV4) = (local, remote);
@@ -502,11 +502,6 @@ impl TcpPeer {
             None => Err(Fail::new(ENOTCONN, "connection not established")),
         };
 
-        // #[cfg(feature = "tcp-migration")]
-        // {
-        //     inner.tcpmig.update_outgoing_stats();
-        // }
-
         send_result
     }
 
@@ -614,8 +609,8 @@ impl Inner {
 
             #[cfg(feature = "tcp-migration")]
             tcpmig,
-            #[cfg(feature = "tcp-migration")]
-            stats: Stats::new(),
+            /* #[cfg(feature = "tcp-migration")]
+            stats: Stats::new(), */
             #[cfg(feature = "tcp-migration")]
             tcpmig_poll_state,
         }
@@ -803,8 +798,8 @@ impl TcpPeer {
         let qd = *inner.qds.get(&conn).expect("no QD found for connection");
 
         // Disable stats for this connection.
-        inner.established.get(&conn).expect("connection not in established table")
-            .cb.disable_stats();
+        /* inner.established.get(&conn).expect("connection not in established table")
+            .cb.disable_stats(); */
 
         // TODO: Turn off stats for this connection.
         inner.tcpmig.initiate_migration(conn, qd);
@@ -829,8 +824,8 @@ impl TcpPeer {
         };
 
         // Disable stats for this connection.
-        inner.established.get(&conn).expect("connection not in established table")
-            .cb.disable_stats();
+        /* inner.established.get(&conn).expect("connection not in established table")
+            .cb.disable_stats(); */
 
         capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
@@ -865,14 +860,14 @@ impl TcpPeer {
         Ok(inner.tcpmig.take_incoming_user_data(remote))
     }
 
-    pub fn poll_stats(&mut self) {
+    /* pub fn poll_stats(&mut self) {
         self.inner.borrow_mut().stats.poll();
     }
 
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
         self.inner.borrow_mut().stats.connections_to_migrate()
-    }
+    } */
 
     pub fn global_recv_queue_length(&mut self) -> usize {
         todo!("get global queue length")

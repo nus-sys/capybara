@@ -728,7 +728,7 @@ impl InetStack {
         #[cfg(not(feature = "tcp-migration"))]
         self.poll_runtime();
 
-        #[cfg(feature = "tcp-migration")]
+        /* #[cfg(feature = "tcp-migration")]
         {
             // Poll stats updates.
             self.ipv4.tcp.poll_stats();
@@ -741,7 +741,7 @@ impl InetStack {
                     self.ipv4.tcp.initiate_migration(conn);
                 }
             }
-        }
+        } */
 
         if self.ts_iters == 0 {
             self.clock.advance_clock(Instant::now());

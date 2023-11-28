@@ -11,8 +11,8 @@ pub mod peer;
 pub mod segment;
 mod sequence_number;
 
-#[cfg(feature = "tcp-migration")]
-mod stats;
+/* #[cfg(feature = "tcp-migration")]
+mod stats; */
 
 #[cfg(test)]
 mod tests;
