@@ -42,7 +42,7 @@ use crate::{
     scheduler::{
         Scheduler,
         SchedulerHandle,
-    },
+    }, capy_log,
 };
 use ::futures::FutureExt;
 use ::libc::{
@@ -118,6 +118,8 @@ impl ActiveOpenSocket {
             Some(handle) => handle,
             None => panic!("failed to insert task in the scheduler"),
         };
+
+        capy_log!("Created active socket ({}, {})", local, remote);
 
         // TODO: Add fast path here when remote is already in the ARP cache (and subtract one retry).
         Self {
@@ -282,6 +284,7 @@ impl ActiveOpenSocket {
                 let remote_link_addr = match arp.query(remote.ip().clone()).await {
                     Ok(r) => r,
                     Err(e) => {
+                        capy_log!("ARP query failed: {:?}", e);
                         warn!("ARP query failed: {:?}", e);
                         continue;
                     },

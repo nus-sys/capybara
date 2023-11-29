@@ -71,8 +71,8 @@ use ::std::{
 #[cfg(feature = "profiler")]
 use crate::timer;
 
-#[cfg(feature = "tcp-migration")]
-use protocols::tcpmig::TcpmigPollState;
+/* #[cfg(feature = "tcp-migration")]
+use protocols::tcpmig::TcpmigPollState; */
 
 use crate::capy_log;
 
@@ -113,8 +113,8 @@ pub struct InetStack {
     ts_iters: usize,
     prev_time: NaiveTime,
 
-    #[cfg(feature = "tcp-migration")]
-    tcpmig_poll_state: Rc<TcpmigPollState>,
+    /* #[cfg(feature = "tcp-migration")]
+    tcpmig_poll_state: Rc<TcpmigPollState>, */
 }
 
 impl InetStack {
@@ -131,8 +131,8 @@ impl InetStack {
     ) -> Result<Self, Fail> {
         let file_table: IoQueueTable = IoQueueTable::new();
 
-        #[cfg(feature = "tcp-migration")]
-        let tcpmig_poll_state = Rc::new(TcpmigPollState::default());
+        /* #[cfg(feature = "tcp-migration")]
+        let tcpmig_poll_state = Rc::new(TcpmigPollState::default()); */
 
         let arp: ArpPeer = ArpPeer::new(
             rt.clone(),
@@ -153,8 +153,8 @@ impl InetStack {
             arp.clone(),
             rng_seed,
 
-            #[cfg(feature = "tcp-migration")]
-            tcpmig_poll_state.clone()
+            /* #[cfg(feature = "tcp-migration")]
+            tcpmig_poll_state.clone() */
         )?;
         Ok(Self {
             arp,
@@ -167,8 +167,8 @@ impl InetStack {
             ts_iters: 0,
             prev_time: chrono::Local::now().time(),
 
-            #[cfg(feature = "tcp-migration")]
-            tcpmig_poll_state
+            /* #[cfg(feature = "tcp-migration")]
+            tcpmig_poll_state */
         })
     }
 
@@ -711,8 +711,8 @@ impl InetStack {
         #[cfg(feature = "profiler")]
         timer!("inetstack::poll_bg_work");
 
-        #[cfg(feature = "tcp-migration")]
-        let was_runtime_polled = self.poll_runtime_tcpmig();
+        /* #[cfg(feature = "tcp-migration")]
+        let was_runtime_polled = self.poll_runtime_tcpmig(); */
         //self.prev_time = chrono::Local::now().time();
 
         {
@@ -720,12 +720,7 @@ impl InetStack {
             timer!("inetstack::poll_bg_work::poll");
             self.scheduler.poll();
         }
-
-        #[cfg(feature = "tcp-migration")]
-        if !was_runtime_polled {
-            self.poll_runtime();
-        }
-        #[cfg(not(feature = "tcp-migration"))]
+        
         self.poll_runtime();
 
         /* #[cfg(feature = "tcp-migration")]
@@ -757,6 +752,19 @@ impl InetStack {
             let batch = {
                 #[cfg(feature = "profiler")]
                 timer!("inetstack::poll_bg_work::for::receive");
+                unsafe { self.rt.as_dpdk_runtime().unwrap_unchecked() }.receive_tcpmig()
+            };
+            for pkt in batch {
+                if let Err(e) = self.do_receive(pkt) {
+                    warn!("Dropped packet: {:?}", e);
+                }
+                // TODO: This is a workaround for https://github.com/demikernel/inetstack/issues/149.
+                self.scheduler.poll();
+            }
+
+            let batch = {
+                #[cfg(feature = "profiler")]
+                timer!("inetstack::poll_bg_work::for::receive");
                 self.rt.receive()
             };
             if batch.is_empty() {
@@ -775,8 +783,8 @@ impl InetStack {
 
 #[cfg(feature = "tcp-migration")]
 impl InetStack {
-    /// Returns if TCP DPDK queue was also polled.
-    pub fn poll_runtime_tcpmig(&mut self) -> bool {
+    /* /// Returns if TCP DPDK queue was also polled.
+    pub fn poll_runtime_tcpmig(&mut self) {
         capy_profile!("poll_tcpmig()");
         // let recv_time: NaiveTime = chrono::Local::now().time();
 
@@ -807,7 +815,7 @@ impl InetStack {
             // Control only enters here if a PREPARE_ACK was received.
 
             // Fast migration is disabled, so TCP queue hasn't been polled yet. Poll it.
-            if !self.tcpmig_poll_state.is_fast_migrate_enabled() {
+            /* if !self.tcpmig_poll_state.is_fast_migrate_enabled() {
                 // Poll the TCP DPDK queue.
                 capy_log_mig!("PREPARE_MIG_ACK slow path entered");
                 self.poll_runtime_no_scheduler_poll();
@@ -817,7 +825,7 @@ impl InetStack {
 
                 // Enable fast migration now that TCP queue has been flushed.
                 self.tcpmig_poll_state.enable_fast_migrate();
-            }
+            } */
             
             // Free the QD.
             self.file_table.free(qd_to_remove);
@@ -825,7 +833,7 @@ impl InetStack {
         // self.prev_time = recv_time;
 
         // The state of fast migrate also indicates if any migration occured.
-        self.tcpmig_poll_state.is_fast_migrate_enabled()
+        // self.tcpmig_poll_state.is_fast_migrate_enabled()
     }
 
     /// Exactly the same as `poll_runtime()` but does not poll the scheduler after every packet.
@@ -845,16 +853,17 @@ impl InetStack {
                 }
             }
         }
-    }
+    } */
 
     pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<Buffer>, Fail> {
-        self.ipv4.tcp.take_migrated_data(qd)
+        unimplemented!()
+        // self.ipv4.tcp.take_migrated_data(qd)
     }
 
-    #[cfg(feature = "manual-tcp-migration")]
-    pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
-        self.ipv4.tcp.initiate_migration(qd)
-    }
+    /* #[cfg(feature = "manual-tcp-migration")]
+    pub fn initiate_migration(&mut self, qd: QDesc, buffer: Buffer) -> Result<(), Fail> {
+        self.ipv4.tcp.initiate_migration(qd, buffer)
+    } */
 
     pub fn global_recv_queue_length(&mut self) -> usize {
         self.ipv4.tcp.global_recv_queue_length()

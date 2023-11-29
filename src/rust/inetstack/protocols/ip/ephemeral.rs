@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-use crate::runtime::fail::Fail;
+use crate::{runtime::fail::Fail, capy_log};
 use ::rand::prelude::{
     SliceRandom,
     SmallRng,
@@ -33,6 +33,14 @@ impl EphemeralPorts {
             ports.push(port);
         }
         ports.shuffle(rng);
+
+        // Add port of this server.
+        if let Ok(val) = std::env::var("CORE_ID") {
+            let port = 9999 + val.parse::<u16>().unwrap();
+            capy_log!("Adding TCP port {} as allocatable", port);
+            ports.push(port);
+        }
+
         Self { ports }
     }
 

@@ -1592,6 +1592,10 @@ pub mod state {
         pub fn set_local(&mut self, local: SocketAddrV4) {
             self.local = local;
         }
+
+        pub fn push_front_recv_queue(&mut self, buffer: Buffer) {
+            self.receiver.recv_queue.push_front(buffer)
+        }
     }
     
     //===================================================================

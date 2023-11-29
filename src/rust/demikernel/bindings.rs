@@ -697,7 +697,8 @@ pub extern "C" fn demi_getsockopt(
 #[allow(unused)]
 #[no_mangle]
 pub extern "C" fn demi_print_queue_length_log() {
-    crate::inetstack::protocols::tcpmig::log_print();
+    unimplemented!()
+    // crate::inetstack::protocols::tcpmig::log_print();
 }
 
 //======================================================================================================================

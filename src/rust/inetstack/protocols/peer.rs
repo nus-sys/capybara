@@ -26,8 +26,8 @@ use crate::{
     scheduler::scheduler::Scheduler,
 };
 
-#[cfg(feature = "tcp-migration")]
-use crate::inetstack::protocols::tcpmig::{segment::TcpMigHeader, TcpmigPollState};
+/* #[cfg(feature = "tcp-migration")]
+use crate::inetstack::protocols::tcpmig::{segment::TcpMigHeader, TcpmigPollState}; */
 
 use ::libc::ENOTCONN;
 use ::std::{
@@ -59,8 +59,8 @@ impl Peer {
         arp: ArpPeer,
         rng_seed: [u8; 32],
 
-        #[cfg(feature = "tcp-migration")]
-        tcpmig_poll_state: Rc<TcpmigPollState>,
+        /* #[cfg(feature = "tcp-migration")]
+        tcpmig_poll_state: Rc<TcpmigPollState>, */
     ) -> Result<Peer, Fail> {
         let udp_offload_checksum: bool = udp_config.get_tx_checksum_offload();
         let udp: UdpPeer = UdpPeer::new(
@@ -92,8 +92,8 @@ impl Peer {
             arp,
             rng_seed,
 
-            #[cfg(feature = "tcp-migration")]
-            tcpmig_poll_state,
+            /* #[cfg(feature = "tcp-migration")]
+            tcpmig_poll_state, */
         )?;
 
         Ok(Peer {
@@ -115,10 +115,10 @@ impl Peer {
             IpProtocol::ICMPv4 => self.icmpv4.receive(&header, payload),
             IpProtocol::TCP => self.tcp.receive(&header, payload),
             IpProtocol::UDP => {
-                #[cfg(feature = "tcp-migration")]
+                /* #[cfg(feature = "tcp-migration")]
                 if TcpMigHeader::is_tcpmig(&payload) {
                     return self.tcp.receive_tcpmig(&header, payload);
-                }
+                } */
 
                 self.udp.do_receive(&header, payload)
             },

@@ -72,6 +72,6 @@ pub use crate::runtime::{
 };
 
 #[cfg(feature = "tcp-migration")]
-pub use crate::inetstack::protocols::tcpmig::ETCPMIG;
+pub const ETCPMIG: libc::c_int = 199;
 
 pub mod demikernel;
