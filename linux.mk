@@ -318,11 +318,20 @@ client-dpdk-ctrl:
 	taskset --cpu-list 4 \
 	$(ELF_DIR)/dpdk-ctrl.elf
 
-be-dpdk-ctrl:
+be-dpdk-ctrl-node9:
 	sudo -E RUST_LOG="debug" \
 	NUM_CORES=4 \
 	CORE_ID=5 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 4 \
+	$(ELF_DIR)/dpdk-ctrl.elf
+
+be-dpdk-ctrl-node8:
+	sudo -E RUST_LOG="debug" \
+	NUM_CORES=4 \
+	CORE_ID=5 \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 4 \
 	$(ELF_DIR)/dpdk-ctrl.elf

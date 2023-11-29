@@ -23,9 +23,11 @@ all: all-examples
 #	cp -f $(BUILD_DIR)/examples/tcpmig-server-multi $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/tcpmig-server-single $(BINDIR)/examples/rust/tcpmig-server-single.$(EXEC_SUFFIX)
 	cp -f $(BUILD_DIR)/examples/dpdk-ctrl $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
-	cp -f $(BUILD_DIR)/examples/http-server $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)
+#	cp -f $(BUILD_DIR)/examples/http-server $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)
+	cp -f $(BUILD_DIR)/examples/prism-fe $(BINDIR)/examples/rust/prism-fe.$(EXEC_SUFFIX)
+	cp -f $(BUILD_DIR)/examples/prism-be-http $(BINDIR)/examples/rust/prism-be-http.$(EXEC_SUFFIX)
 
-export EXAMPLE_FEATURES ?= --features=tcp-migration
+export EXAMPLE_FEATURES ?= --features=tcp-migration,capy-log
 
 all-examples:
 #	@echo "$(CARGO) build --examples $(CARGO_FEATURES) $(CARGO_FLAGS)"
@@ -44,8 +46,10 @@ all-examples:
 #	@echo "$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
+#	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
 #capy-profile,capy-time-log
+	$(CARGO) build --example prism-fe $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
+	$(CARGO) build --example prism-be-http $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
 
 clean:
 # 	@rm -rf $(BINDIR)/examples/rust/udp-dump.$(EXEC_SUFFIX)
@@ -65,6 +69,8 @@ clean:
 #	@rm -rf $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
 #	@rm -rf $(BINDIR)/examples/rust/tcpmig-server-client.$(EXEC_SUFFIX)
 	@rm -rf $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
-	@rm -rf $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)
+#	@rm -rf $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)
+	@rm -rf $(BINDIR)/examples/rust/prism-fe$(EXEC_SUFFIX)
+	@rm -rf $(BINDIR)/examples/rust/prism-be-http.$(EXEC_SUFFIX)
 	
 	

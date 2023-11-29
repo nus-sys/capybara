@@ -52,7 +52,7 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
     global experiment_id
     
     print('SETUP SWITCH')
-    cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
+    cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/prism/prism_setup.py"'] 
     result = subprocess.run(
         cmd,
         shell=True,
@@ -61,25 +61,54 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
         check=True,
     ).stdout.decode()
     # print(result + '\n\n')
+
+    print('RUNNING FRONTEND')
+    host = pyrem.host.RemoteHost(FRONTEND_NODE) 
+    cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl-node8'] 
+    task = host.run(cmd, quiet=True)
+    pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+    time.sleep(3)
+    print('Frontend dpdk-ctrl is running')
+
+    server_tasks = []
+    cmd = [f'cd {CAPYBARA_PATH} && \
+        sudo -E \
+        CAPY_LOG={CAPY_LOG} \
+        LIBOS=catnip \
+        MTU=1500 \
+        MSS=1500 \
+        NUM_CORES=4 \
+        RUST_BACKTRACE=full \
+        CORE_ID=1 \
+        MIG_DELAY={int(mig_delay/10) * 76} \
+        MAX_STAT_MIGS={int(max_stat_migs)} \
+        MIG_PER_N={int(mig_per_n)} \
+        CONFIG_PATH={CAPYBARA_PATH}/config/node8_config.yaml \
+        LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
+        PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
+        numactl -m0 {CAPYBARA_PATH}/bin/examples/rust/{FE_APP}.elf 10.0.1.8:10000 \
+        > {DATA_PATH}/{experiment_id}.fe 2>&1']
+    task = host.run(cmd, quiet=False)
+    server_tasks.append(task)
+    pyrem.task.Parallel(server_tasks, aggregate=True).start(wait=False)    
+    time.sleep(2)
+    print(f'frontend is running')
     
     print('RUNNING BACKENDS')
     tasks = []
     host = pyrem.host.RemoteHost(BACKEND_NODE) 
-    cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl'] 
+    cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl-node9'] 
     task = host.run(cmd, quiet=True)
     pyrem.task.Parallel([task], aggregate=True).start(wait=False)
     time.sleep(3)
-    print('be-dpdk-ctrl is running')
+    print('Backend dpdk-ctrl is running')
 
-    server_tasks = []
     for j in range(NUM_BACKENDS):
         if SERVER_APP == 'http-server':
             cmd = [f'cd {CAPYBARA_PATH} && \
                 sudo -E \
                 CAPY_LOG={CAPY_LOG} \
                 LIBOS=catnip \
-                RECV_QUEUE_THRESHOLD={RECV_QUEUE_THRESHOLD} \
-                {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
                 MTU=1500 \
                 MSS=1500 \
                 NUM_CORES=4 \
@@ -91,7 +120,7 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
                 PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
-                numactl -m0 {CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP}.elf 10.0.1.9:1000{j} \
+                numactl -m0 {CAPYBARA_PATH}/bin/examples/rust/{BE_APP}.elf 10.0.1.9:1000{j + 1} 10.0.1.8:10000 \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
         elif SERVER_APP == 'redis-server':
             cmd = [f'cd {CAPYBARA_PATH} && \
@@ -366,6 +395,8 @@ def run_eval():
                             
                             run_server(mig_delay, max_stat_migs, mig_per_n)
 
+                            #exit(0)
+
                             host = pyrem.host.RemoteHost(CLIENT_NODE)
                             cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
                             task = host.run(cmd, quiet=True)
@@ -375,7 +406,7 @@ def run_eval():
                             
                             if SERVER_APP == 'http-server':
                                 cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
-                                    10.0.1.1:10000 \
+                                    10.0.1.8:10000 \
                                     --config {CALADAN_PATH}/client.config \
                                     --mode runtime-client \
                                     --protocol=http \
@@ -391,7 +422,7 @@ def run_eval():
                                     > {DATA_PATH}/{experiment_id}.client'] # --loadshift=300000:2000000,600000:3000000 \
                             elif SERVER_APP == 'redis-server':
                                 cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
-                                        10.0.1.1:10000 \
+                                        10.0.1.8:10000 \
                                         --config {CALADAN_PATH}/client.config \
                                         --mode runtime-client \
                                         --transport=tcp \
@@ -495,13 +526,6 @@ def exiting():
 
 
 def run_compile():
-    # only for redis-server
-    mig = ''
-    if 'manual-tcp-migration' in FEATURES:
-        mig = '-mig-manual'
-    elif 'tcp-migration' in FEATURES:
-        mig = '-mig'
-
     features = '--features=' if len(FEATURES) > 0 else ''
     for feat in FEATURES:
         features += feat + ','
@@ -510,7 +534,7 @@ def run_compile():
         return os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make all-examples-rust")
     elif SERVER_APP == 'redis-server':
         clean = 'make clean-redis &&' if len(sys.argv) > 2 and sys.argv[2] == 'clean' else ''
-        return os.system(f'cd {CAPYBARA_PATH} && {clean} make redis-server{mig}')
+        return os.system(f'cd {CAPYBARA_PATH} && {clean} make redis-server')
     else:
         print(f'Invalid server app: {SERVER_APP}')
         exit(1)

@@ -147,6 +147,14 @@ path = "examples/rust/dpdk-ctrl.rs"
 name = "http-server"
 path = "examples/rust/http-server.rs"
 
+[[example]]
+name = "prism-fe"
+path = "examples/rust/prism-fe.rs"
+
+[[example]]
+name = "prism-be-http"
+path = "examples/rust/prism-be-http.rs"
+
 #=======================================================================================================================
 # Features
 #=======================================================================================================================
