@@ -793,10 +793,10 @@ impl InetStack {
         self.ipv4.tcp.migrate_out_connection(qd)
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> Result<(), Fail> {
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> QDesc {
         let qd = self.file_table.alloc(QType::TcpSocket.into());
-        todo!()
-        //self.ipv4.tcp.migrate_in_connection(qd, state)
+        self.ipv4.tcp.migrate_in_connection(qd, state);
+        qd
     }
     
     /* /// Returns if TCP DPDK queue was also polled.

@@ -265,6 +265,12 @@ impl LibOS {
         }
     }
 
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> QDesc {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.migrate_in_tcp_connection(state),
+        }
+    }
+
     /// Returns the data received if `qd` is a migrated connection and data was sent with it.
     pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<crate::runtime::memory::Buffer>, Fail> {
         match self {

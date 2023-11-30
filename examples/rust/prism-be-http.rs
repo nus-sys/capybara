@@ -8,6 +8,7 @@
 mod prism;
 
 use ::anyhow::Result;
+use demikernel::{inetstack::protocols::tcp::peer::state::TcpState, MacAddress};
 use ::demikernel::{
     LibOS,
     LibOSName,
@@ -16,7 +17,7 @@ use ::demikernel::{
     QToken,
 };
 
-use std::{collections::{HashMap, HashSet, hash_map::Entry}, time::{Instant, Duration}};
+use std::{collections::{HashMap, HashSet, hash_map::Entry}, time::{Instant, Duration}, net::Ipv4Addr};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -32,6 +33,8 @@ use demikernel::demikernel::bindings::demi_print_queue_length_log;
 use ::demikernel::perftools::profiler;
 
 use colored::Colorize;
+
+use crate::prism::PrismPacket;
 
 #[macro_use]
 extern crate lazy_static;
@@ -58,15 +61,15 @@ static mut START_TIME: Option<Instant> = None;
 //=====================================================================================
 
 // Borrowed from Loadgen
-struct Buffer {
+struct AppBuffer {
     buf: Vec<u8>,
     head: usize,
     tail: usize,
 }
 
-impl Buffer {
-    pub fn new() -> Buffer {
-        Buffer {
+impl AppBuffer {
+    pub fn new() -> AppBuffer {
+        AppBuffer {
             buf: vec![0; BUFSZ],
             head: 0,
             tail: 0,
@@ -171,7 +174,7 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[u8], qts: &mut Vec<QToken>) -> usize {
+fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut AppBuffer, data: &[u8], qts: &mut Vec<QToken>) -> usize {
     
     server_log!("buffer.data_size() {}", buffer.data_size());
     // fast path: no previous data in the stream and this request contains exactly one HTTP request
@@ -215,7 +218,7 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
 
 
 struct ConnectionState {
-    buffer: Buffer,
+    buffer: AppBuffer,
     has_sent: bool
 }
 
@@ -224,6 +227,9 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
         LibOS::capylog_dump(&mut std::io::stderr().lock());
         std::process::exit(0);
     }).expect("Error setting Ctrl-C handler");
+
+    let switch_addr: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 7), 5000);
+    const BE_MAC: MacAddress = MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]);
 
     let mut qts: Vec<QToken> = Vec::new();
     let mut connstate: HashMap<QDesc, ConnectionState> = HashMap::new();
@@ -268,6 +274,9 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
     qrs.resize_with(2000, || (0.into(), OperationResult::Connect));
     let mut indices: Vec<usize> = Vec::with_capacity(2000);
     indices.resize(2000, 0);
+
+    let mut prism_buf = [0u8; 64];
+    let mut state_buf = vec![0u8; 4096];
     
     loop {
         let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices).expect("result");
@@ -286,22 +295,57 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                     server_log!("PUSH complete");
                 },
 
-                OperationResult::Pop(_, recvbuf) => {
+                // TCP Pop.
+                OperationResult::Pop(None, buf) => {
                     server_log!("POP complete");
 
-                    let mut state = connstate.get_mut(&qd).unwrap();
+                    let buf = match TcpState::deserialize(buf.clone()) {
+                        // This is valid TCP state.
+                        Ok(state) => {
+                            server_log!("Received TCP State from FE");
+                            server_log!("{:#?}", state);
+                            let client = state.remote();
+                            let new_qd = libos.migrate_in_tcp_connection(state);
 
+                            assert!(connstate.insert(new_qd, ConnectionState { buffer: AppBuffer::new(), has_sent: false }).is_none());
+
+                            // Wait for request from this connection.
+                            qts.push(libos.pop(new_qd).expect("pop new_qd"));
+
+                            // Send CHOWN to switch.
+                            server_log!("Connection migrated in, sending PRISM CHOWN to SWITCH");
+                            let prism_buf = PrismPacket::chown(client, local, BE_MAC).serialize(&mut prism_buf);
+                            qts.push(libos.pushto2(switch_qd, prism_buf, switch_addr).expect("push2"));
+
+                            // Wait for CHOWN back from switch.
+                            qts.push(libos.pop(switch_qd).expect("pop switch"));
+
+                            continue;
+                        }
+
+                        Err(buf) => buf,
+                    };
+
+                    // This is a pop from a client.
+                    let state = connstate.get_mut(&qd).expect("no such connstate");
                     if state.has_sent {
                         server_log!("Migrating connection back to FE: {:?}", qd);
                         // TODO: Migrate back
                     } else {
                         // Send one response.
-                        let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
-                        server_log!("Issued PUSH");
+                        server_log!("First POP on migrated connection, sending response");
+                        let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &buf, &mut qts);
                         state.has_sent = true;
                         qts.push(libos.pop(qd).expect("pop qt"));
                     }
                 },
+
+                // UDP Pop.
+                OperationResult::Pop(Some(_), buf) => {
+                    let pkt = PrismPacket::deserialize(buf).expect("invalid prism packet");
+                    assert!(pkt.is_chown());
+                    server_log!("Received PRISM CHOWN from SWITCH ({})", pkt.client);
+                }
 
                 OperationResult::Failed(e) => {
                     match e.errno {

@@ -640,19 +640,6 @@ impl Inner {
             s.receive(&tcp_hdr);
             return Ok(());
         }
-        
-        /* #[cfg(feature = "tcp-migration")]
-        // Check if migrating queue exists. If yes, push buffer to queue and return, else continue normally.
-        let (tcp_hdr, data) = match self.tcpmig.try_buffer_packet(remote, tcp_hdr, data) {
-            Ok(()) => return Ok(()),
-            Err(val) => val,
-        }; */
-
-        /* #[cfg(feature = "tcp-migration")]
-        if self.tcpmig.is_migrated_out(remote) {
-            capy_log!("Dropped packet received on migrated out connection ({local}, {remote})");
-            return Ok(());
-        } */
 
         let (local, _) = key;
         if let Some(s) = self.passive.get_mut(&local) {
@@ -663,7 +650,7 @@ impl Inner {
         // Check if it's for migrated out connection.
         if let Some(qd) = self.qds.get(&key) {
             if let Some(Socket::MigratedOut { .. }) = self.sockets.get(qd) {
-                capy_log_mig!("Received packet for migrated out connection");
+                capy_log!("Dropping packet for migrated out connection");
                 return Err(Fail::new(crate::ETCPMIG, "received packet for migrated out connection"));
             }
         }
@@ -750,7 +737,7 @@ impl TcpPeer {
         self.inner.borrow_mut().migrate_out_connection(qd)
     }
 
-    pub fn migrate_in_connection(&mut self, qd: QDesc, state: TcpState) -> Result<(), Fail> {
+    pub fn migrate_in_connection(&mut self, qd: QDesc, state: TcpState) {
         self.inner.borrow_mut().migrate_in_connection(qd, state)
     }
 
@@ -907,8 +894,9 @@ impl Inner {
         TcpState::new(cb.as_ref().into())
     }
 
-    fn migrate_in_connection(&mut self, qd: QDesc, state: TcpState) -> Result<(), Fail> {
-        // TODO: Handle user data from the state.
+    fn migrate_in_connection(&mut self, qd: QDesc, state: TcpState) {
+        let key = state.connection();
+        let (local, remote) = key;
 
         // Convert state to control block.
         let cb = ControlBlock::from_state(
@@ -922,17 +910,23 @@ impl Inner {
             state.cb
         );
 
-        // Receive all target-buffered packets into the CB.
-        /* for (mut hdr, data) in buffered {
-            cb.receive(&mut hdr, data);
-        } */
+        let established: EstablishedSocket = EstablishedSocket::new(cb, qd, self.dead_socket_tx.clone());
+        let socket: Socket = Socket::Established { local, remote };
 
-        match self.passive.get_mut(&cb.get_local()) {
-            Some(passive) => passive.push_migrated_in(cb),
-            None => return Err(Fail::new(libc::EBADF, "socket not listening")),
-        };
+        match self.sockets.insert(qd, socket) {
+            None => (),
+            #[cfg(feature = "tcp-migration")]
+            Some(Socket::MigratedOut { .. }) => { capy_log_mig!("migrated socket QD overwritten"); },
+            _ => panic!("duplicate queue descriptor in sockets table"),
+        }
 
-        Ok(())
+        assert!(self.qds.insert((local, remote), qd).is_none(), "duplicate entry in qds table");
+
+        if self.established.insert(key, established).is_some() {
+            panic!("duplicate queue descriptor in established sockets table");
+        }
+        
+        capy_log!("CONNECTION MIGRATED IN (REMOTE: {:?}, new_qd: {:?})", remote, qd);
     }
 }
 
@@ -990,14 +984,24 @@ pub mod state {
         }
 
         pub fn serialize<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-            let size = self.serialized_size();
-            self.cb.serialize_into(buf);
+            let size = self.serialized_size() + 4;
+
+            // MAGIC for state.
+            buf[0..4].copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
+
+            self.cb.serialize_into(&mut buf[4..]);
             &buf[..size]
         }
 
-        pub fn deserialize(mut buf: Buffer) -> Self {
+        pub fn deserialize(mut buf: Buffer) -> Result<Self, Buffer> {
+            // Not valid state.
+            if &buf[0..4] != &[0xAA, 0xBB, 0xCC, 0xDD] {
+                return Err(buf);
+            }
+
+            buf.adjust(4);
             let cb = ControlBlockState::deserialize_from(&mut buf);
-            Self { cb }
+            Ok(Self { cb })
         }
 
         fn serialized_size(&self) -> usize {

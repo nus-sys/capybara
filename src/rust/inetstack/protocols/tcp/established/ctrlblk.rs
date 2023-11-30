@@ -972,6 +972,7 @@ impl ControlBlock {
 
     pub fn hdr_window_size(&self) -> u16 {
         let window_size: u32 = self.get_receive_window_size();
+        capy_log!("TCP window_size: {}, window_scale: {}", window_size, self.window_scale);
         let hdr_window_size: u16 = (window_size >> self.window_scale)
             .try_into()
             .expect("Window size overflow");
@@ -1594,7 +1595,8 @@ pub mod state {
         }
 
         pub fn push_front_recv_queue(&mut self, buffer: Buffer) {
-            self.receiver.recv_queue.push_front(buffer)
+            self.receiver.reader_next = SeqNumber::from(u32::from(self.receiver.reader_next).checked_sub(buffer.len() as u32).expect("underflow"));
+            self.receiver.recv_queue.push_front(buffer);
         }
     }
     

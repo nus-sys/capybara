@@ -389,6 +389,14 @@ impl NetworkLibOS {
         }
     }
 
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> QDesc {
+        match self {
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.migrate_in_tcp_connection(state),
+            _ => panic!("invalid libos"),
+        }
+    }
+
     pub fn take_migrated_data(&mut self, _qd: QDesc) -> Result<Option<crate::runtime::memory::Buffer>, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]

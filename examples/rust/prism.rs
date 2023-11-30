@@ -64,6 +64,27 @@ impl PrismPacket {
         Self { client, kind: PrismType::Add(fe, fe_mac) }
     }
 
+    pub fn is_add(&self) -> bool {
+        match self.kind {
+            PrismType::Add(..) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_chown(&self) -> bool {
+        match self.kind {
+            PrismType::Chown(..) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_lock(&self) -> bool {
+        match self.kind {
+            PrismType::Lock => true,
+            _ => false,
+        }
+    }
+
     pub fn chown(client: SocketAddrV4, be: SocketAddrV4, be_mac: MacAddress) -> Self {
         Self { client, kind: PrismType::Chown(be, be_mac) }
     }
