@@ -70,7 +70,6 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
     time.sleep(3)
     print('Frontend dpdk-ctrl is running')
 
-    server_tasks = []
     cmd = [f'cd {CAPYBARA_PATH} && \
         sudo -E \
         CAPY_LOG={CAPY_LOG} \
@@ -89,12 +88,12 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
         numactl -m0 {CAPYBARA_PATH}/bin/examples/rust/{FE_APP}.elf 10.0.1.8:10000 \
         > {DATA_PATH}/{experiment_id}.fe 2>&1']
     task = host.run(cmd, quiet=False)
-    server_tasks.append(task)
-    pyrem.task.Parallel(server_tasks, aggregate=True).start(wait=False)    
+    pyrem.task.Parallel([task], aggregate=True).start(wait=False)    
     time.sleep(2)
-    print(f'frontend is running')
+    print(f'Frontend is running')
     
     print('RUNNING BACKENDS')
+    server_tasks = []
     tasks = []
     host = pyrem.host.RemoteHost(BACKEND_NODE) 
     cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl-node9'] 
@@ -136,7 +135,7 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
         server_tasks.append(task)
     pyrem.task.Parallel(server_tasks, aggregate=True).start(wait=False)    
     time.sleep(2)
-    print(f'{NUM_BACKENDS} backends are running')
+    print(f'{NUM_BACKENDS} Backend{"s are" if NUM_BACKENDS != 1 else " is"} running')
 
 def run_tcpdump(experiment_id):
     print(f'RUNNING TCPDUMP to node8:{PCAP_PATH}/{experiment_id}.pcap')
