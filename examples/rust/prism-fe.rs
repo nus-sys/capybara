@@ -5,7 +5,10 @@
 // Imports
 //======================================================================================================================
 
+mod prism;
+
 use ::anyhow::Result;
+use demikernel::MacAddress;
 use ::demikernel::{
     LibOS,
     LibOSName,
@@ -14,7 +17,7 @@ use ::demikernel::{
     QToken,
 };
 
-use std::{collections::{HashMap, HashSet, hash_map::Entry, VecDeque}, time::Instant};
+use std::{collections::{HashMap, HashSet, hash_map::Entry, VecDeque}, time::Instant, net::Ipv4Addr};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -31,6 +34,8 @@ use ::demikernel::perftools::profiler;
 
 use colored::Colorize;
 
+use crate::prism::PrismPacket;
+
 #[macro_use]
 extern crate lazy_static;
 //=====================================================================================
@@ -40,7 +45,7 @@ macro_rules! server_log {
         #[cfg(feature = "capy-log")]
         if let Ok(val) = std::env::var("CAPY_LOG") {
             if val == "all" {
-                eprintln!("{}", format!($($arg)*).green());
+                eprintln!("\x1B[32m{}\x1B[0m", format_args!($($arg)*));
             }
         }
     }};
@@ -222,11 +227,15 @@ fn server(local: SocketAddrV4) -> Result<()> {
         std::process::exit(0);
     }).expect("Error setting Ctrl-C handler");
 
-    let switch_addr: SocketAddrV4 = SocketAddrV4::from_str("10.0.1.8:5000").unwrap();
+    let switch_addr: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 7), 5000);
+    const FE_MAC: MacAddress = MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xe8, 0x05]);
     
     let mut qts: Vec<QToken> = Vec::new();
     let mut connstate: HashMap<QDesc, ConnectionState> = HashMap::new();
-    let mut roundrobin: VecDeque<QDesc> = VecDeque::new();
+    let mut backends: VecDeque<QDesc> = VecDeque::new();
+
+    // Client addr -> QDesc.
+    let mut migrations: HashMap<SocketAddrV4, QDesc> = HashMap::new();
 
     let libos_name: LibOSName = LibOSName::from_env().unwrap().into();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
@@ -249,6 +258,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
     qrs.resize_with(2000, || (0.into(), OperationResult::Connect));
     let mut indices: Vec<usize> = Vec::with_capacity(2000);
     indices.resize(2000, 0);
+
+    let mut prism_buf = [0u8; 64];
+    let mut state_buf = vec![0u8; 4096];
     
     loop {
         let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices).expect("result");
@@ -281,25 +293,55 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 },
 
                 OperationResult::Push => {
-                    panic!("should never have issued a PUSH");
+                    assert_eq!(qd, switch_qd, "should never have pushed to anything but the switch");
+                    server_log!("PUSH to switch complete");
                 },
 
-                OperationResult::Pop(_, buf) => {
+                // TCP packet popped.
+                OperationResult::Pop(None, buf) => {
                     server_log!("POP complete");
 
                     // New BE.
                     if buf.as_ref() == &[0xCA, 0xFE, 0xDE, 0xAD] {
                         server_log!("New BE found");
-                        roundrobin.push_back(qd);
+                        backends.push_back(qd);
                         continue;
                     }
 
-                    eprintln!("{:?}", buf);
+                    // TODO: Might be TCP state from BE.
 
-                    // TODO: Might be TCP state.
+                    // New request from client.
+                    // Send ADD to switch.
+                    server_log!("New POP from client, sending PRISM ADD to SWITCH");
+                    let (_, client) = libos.get_tcp_endpoints(qd);
+                    let buf = PrismPacket::add(client, local, FE_MAC).serialize(&mut prism_buf);
+                    qts.push(libos.pushto2(switch_qd, buf, switch_addr).expect("push2"));
 
-                    // New request.
-                    // libos.pushto2(qd, data, switch_addr);
+                    // Wait for ADD back from switch.
+                    qts.push(libos.pop(switch_qd).expect("pop switch"));
+
+                    // Start tracking new migration.
+                    assert!(migrations.insert(client, qd).is_none(), "existing migration");
+                },
+
+                // UDP packet popped.
+                OperationResult::Pop(Some(_), buf) => {
+                    let pkt = PrismPacket::deserialize(buf).expect("invalid prism packet");
+                    server_log!("Received PRISM ADD from SWITCH ({})", pkt.client);
+                    
+                    // Get BE to migrate to.
+                    let be_qd = backends.pop_front().expect("no backends");
+                    backends.push_back(qd);
+
+                    // Get connection to migrate.
+                    let conn_qd = migrations.remove(&pkt.client).expect("no such migration");
+                    let state = libos.migrate_out_tcp_connection(conn_qd);
+                    server_log!("Migrated out {:#?}", state);
+                    //let state_buf = state.serialize(&mut state_buf);
+
+                    // Send state to BE.
+                    //qts.push(libos.push2(be_qd, state_buf).expect("push state"));
+                    //server_log!("Sent TCP state to {}", pkt.client);
                 },
 
                 OperationResult::Failed(e) => {

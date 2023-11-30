@@ -5,6 +5,8 @@
 // Imports
 //======================================================================================================================
 
+mod prism;
+
 use ::anyhow::Result;
 use ::demikernel::{
     LibOS,
@@ -40,7 +42,7 @@ macro_rules! server_log {
         #[cfg(feature = "capy-log")]
         if let Ok(val) = std::env::var("CAPY_LOG") {
             if val == "all" {
-                eprintln!("{}", format!($($arg)*).green());
+                eprintln!("\x1B[32m{}\x1B[0m", format_args!($($arg)*));
             }
         }
     };

@@ -14,7 +14,7 @@ use crate::{
         },
         QDesc,
         QToken,
-    },
+    }, inetstack::protocols::tcp::peer::state::TcpState,
 };
 use ::std::{
     net::SocketAddrV4,
@@ -373,6 +373,22 @@ impl NetworkLibOS {
 
 #[cfg(feature = "tcp-migration")]
 impl NetworkLibOS {
+    pub fn get_tcp_endpoints(&self, qd: QDesc) -> (SocketAddrV4, SocketAddrV4) {
+        match self {
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.get_tcp_endpoints(qd),
+            _ => panic!("invalid libos"),
+        }
+    }
+
+    pub fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> TcpState {
+        match self {
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.migrate_out_tcp_connection(qd),
+            _ => panic!("invalid libos"),
+        }
+    }
+
     pub fn take_migrated_data(&mut self, _qd: QDesc) -> Result<Option<crate::runtime::memory::Buffer>, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]

@@ -739,6 +739,21 @@ impl Inner {
 
 #[cfg(feature = "tcp-migration")]
 impl TcpPeer {
+    pub fn get_tcp_endpoints(&self, qd: QDesc) -> (SocketAddrV4, SocketAddrV4) {
+        match self.inner.borrow().sockets.get(&qd).expect("no such qd") {
+            Socket::Established { local, remote } => (*local, *remote),
+            s => panic!("invalid socket type: {:?}", s),
+        }
+    }
+
+    pub fn migrate_out_connection(&mut self, qd: QDesc) -> TcpState {
+        self.inner.borrow_mut().migrate_out_connection(qd)
+    }
+
+    pub fn migrate_in_connection(&mut self, qd: QDesc, state: TcpState) -> Result<(), Fail> {
+        self.inner.borrow_mut().migrate_in_connection(qd, state)
+    }
+
     /* pub fn receive_tcpmig(&self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         self.inner.borrow_mut().receive_tcpmig(ip_hdr, buf)
     }
@@ -864,7 +879,7 @@ impl Inner {
     /// 1) Mark this socket as migrated out.
     /// 2) Check if this connection is established one.
     /// 3) Remove socket from Established hashmap.
-    fn migrate_out_connection(&mut self, qd: QDesc) -> Result<TcpState, Fail> {
+    fn migrate_out_connection(&mut self, qd: QDesc) -> TcpState {
         // Mark socket as migrated out.
         let conn = match self.sockets.get_mut(&qd) {
             None => panic!("invalid QD for migrating out"),
@@ -889,10 +904,10 @@ impl Inner {
 
         // 3) Remove connection from Established hashmap.
         let cb = entry.remove().cb;
-        Ok(TcpState::new(cb.as_ref().into()))
+        TcpState::new(cb.as_ref().into())
     }
 
-    fn migrate_in_connection(&mut self, state: TcpState) -> Result<(), Fail> {
+    fn migrate_in_connection(&mut self, qd: QDesc, state: TcpState) -> Result<(), Fail> {
         // TODO: Handle user data from the state.
 
         // Convert state to control block.
@@ -974,11 +989,10 @@ pub mod state {
             self.cb.recv_queue_len()
         }
 
-        pub fn serialize(&self) -> Buffer {
-            let mut buf = Buffer::Heap(DataBuffer::new(self.serialized_size()).unwrap());
-            let remaining = self.cb.serialize_into(&mut buf);
-            assert!(remaining.is_empty());
-            buf
+        pub fn serialize<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
+            let size = self.serialized_size();
+            self.cb.serialize_into(buf);
+            &buf[..size]
         }
 
         pub fn deserialize(mut buf: Buffer) -> Self {

@@ -78,6 +78,8 @@ use crate::capy_log;
 
 use chrono::NaiveTime;
 
+use self::protocols::tcp::peer::state::TcpState;
+
 //==============================================================================
 // Exports
 //==============================================================================
@@ -783,6 +785,20 @@ impl InetStack {
 
 #[cfg(feature = "tcp-migration")]
 impl InetStack {
+    pub fn get_tcp_endpoints(&self, qd: QDesc) -> (SocketAddrV4, SocketAddrV4) {
+        self.ipv4.tcp.get_tcp_endpoints(qd)
+    }
+
+    pub fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> TcpState {
+        self.ipv4.tcp.migrate_out_connection(qd)
+    }
+
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> Result<(), Fail> {
+        let qd = self.file_table.alloc(QType::TcpSocket.into());
+        todo!()
+        //self.ipv4.tcp.migrate_in_connection(qd, state)
+    }
+    
     /* /// Returns if TCP DPDK queue was also polled.
     pub fn poll_runtime_tcpmig(&mut self) {
         capy_profile!("poll_tcpmig()");

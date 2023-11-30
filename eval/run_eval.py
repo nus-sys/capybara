@@ -51,7 +51,7 @@ def kill_procs():
 def run_server(mig_delay, max_stat_migs, mig_per_n):
     global experiment_id
     
-    print('SETUP SWITCH')
+    """ print('SETUP SWITCH')
     cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/prism/prism_setup.py"'] 
     result = subprocess.run(
         cmd,
@@ -59,7 +59,7 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=True,
-    ).stdout.decode()
+    ).stdout.decode() """
     # print(result + '\n\n')
 
     print('RUNNING FRONTEND')

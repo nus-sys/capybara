@@ -26,7 +26,7 @@ use crate::{
         },
         QDesc,
         QToken,
-    }
+    }, inetstack::protocols::tcp::peer::state::TcpState
 };
 use ::std::{
     env,
@@ -253,6 +253,18 @@ impl LibOS {
 
 #[cfg(feature = "tcp-migration")]
 impl LibOS {
+    pub fn get_tcp_endpoints(&self, qd: QDesc) -> (SocketAddrV4, SocketAddrV4) {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.get_tcp_endpoints(qd),
+        }
+    }
+
+    pub fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> TcpState {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.migrate_out_tcp_connection(qd),
+        }
+    }
+
     /// Returns the data received if `qd` is a migrated connection and data was sent with it.
     pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<crate::runtime::memory::Buffer>, Fail> {
         match self {
