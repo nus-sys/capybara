@@ -1004,6 +1004,10 @@ pub mod state {
             Ok(Self { cb })
         }
 
+        pub fn is_valid(buf: &[u8]) -> bool {
+            &buf[0..4] == &[0xAA, 0xBB, 0xCC, 0xDD]
+        }
+
         fn serialized_size(&self) -> usize {
             self.cb.serialized_size()
         }

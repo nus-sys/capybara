@@ -23,7 +23,7 @@ FEATURES = [
 ]
 
 ################## TEST CONFIG #####################
-NUM_BACKENDS = 1
+NUM_BACKENDS = 4
 SERVER_APP = 'http-server'
 FE_APP = 'prism-fe'
 BE_APP = 'prism-be-http'
@@ -32,14 +32,14 @@ RECV_QUEUE_THRESHOLD = 100
 MIG_DELAYS = [0] 
 MAX_STAT_MIGS = [0]#[5000, 10000, 15000] # set element to '' if you don't want to set this env var
 MIG_PER_N = [1]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
-CLIENT_PPS = [100]#[i for i in range(1000000, 1000000 + 1, 70000)]#[i for i in range(100000, 1_300_001, 100000)]
-NUM_CONNECTIONS = [1]
+CLIENT_PPS = [2000]#[i for i in range(1000000, 1000000 + 1, 70000)]#[i for i in range(100000, 1_300_001, 100000)]
+NUM_CONNECTIONS = [100]
 RUNTIME = 5
 TCPDUMP = False
 EVAL_MIG_LATENCY = False
 EVAL_POLL_INTERVAL = False
 EVAL_LATENCY_TRACE = False
-CAPY_LOG = 'all'
+CAPY_LOG = 'n'
 
 #####################
 # build command: run_eval.py [build [clean]]

@@ -790,7 +790,9 @@ impl InetStack {
     }
 
     pub fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> TcpState {
-        self.ipv4.tcp.migrate_out_connection(qd)
+        let state = self.ipv4.tcp.migrate_out_connection(qd);
+        self.file_table.free(qd).unwrap();
+        state
     }
 
     pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> QDesc {

@@ -8,7 +8,7 @@
 mod prism;
 
 use ::anyhow::Result;
-use demikernel::MacAddress;
+use demikernel::{MacAddress, inetstack::protocols::tcp::peer::state::TcpState};
 use ::demikernel::{
     LibOS,
     LibOSName,
@@ -51,6 +51,17 @@ macro_rules! server_log {
             }
         }
     }};
+}
+
+macro_rules! server_log_mig {
+    ($($arg:tt)*) => {
+        #[cfg(feature = "capy-log")]
+        if let Ok(val) = std::env::var("CAPY_LOG") {
+            if val == "all" || val == "mig" {
+                eprintln!("\x1B[33m{}\x1B[0m", format_args!($($arg)*));
+            }
+        }
+    };
 }
 
 //=====================================================================================
@@ -309,19 +320,34 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                     // New BE.
                     if buf.as_ref() == &[0xCA, 0xFE, 0xDE, 0xAD] {
-                        server_log!("New BE found");
+                        server_log_mig!("New BE found");
                         backends.push_back((qd, libos.get_tcp_endpoints(qd).1));
+
+                        // Re-arm POP from BE.
+                        qts.push(libos.pop(qd).expect("pop qtoken"));
                         continue;
                     }
 
-                    // TODO: Might be TCP state from BE.
+                    // This is TCP state from BE.
+                    if TcpState::is_valid(buf) {
+                        // Get next BE to migrate to.
+                        let (be_qd, be_addr) = backends.pop_front().expect("no backends");
+                        backends.push_back((be_qd, be_addr));
+
+                        server_log_mig!("Received TCP State from BE, sending to next BE {}", be_addr);
+                        qts.push(libos.push2(be_qd, buf).expect("push state"));
+
+                        // Re-arm POP from old BE.
+                        qts.push(libos.pop(qd).expect("pop qtoken"));
+                        continue;
+                    }
 
                     // New request from client.
                     // Save this request.
                     let request = buf.clone();
 
                     // Send ADD to switch.
-                    server_log!("New POP from client, sending PRISM ADD to SWITCH");
+                    server_log_mig!("New POP from client, sending PRISM ADD to SWITCH");
                     let (_, client) = libos.get_tcp_endpoints(qd);
                     let prism_buf = PrismPacket::add(client, local, FE_MAC).serialize(&mut prism_buf);
                     qts.push(libos.pushto2(switch_qd, prism_buf, switch_addr).expect("push2"));
@@ -337,23 +363,22 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Pop(Some(_), buf) => {
                     let pkt = PrismPacket::deserialize(buf).expect("invalid prism packet");
                     assert!(pkt.is_add());
-                    server_log!("Received PRISM ADD from SWITCH ({})", pkt.client);
+                    server_log_mig!("Received PRISM ADD from SWITCH ({})", pkt.client);
                     
                     // Get BE to migrate to.
                     let (be_qd, be_addr) = backends.pop_front().expect("no backends");
-                    backends.push_back((qd, be_addr));
+                    backends.push_back((be_qd, be_addr));
 
                     // Get connection to migrate.
                     let Migration { qd: conn_qd, request } = migrations.remove(&pkt.client).expect("no such migration");
                     let mut state = libos.migrate_out_tcp_connection(conn_qd);
-                    server_log!("Migrated out {:#?}", state);
-                    state.set_local(be_addr); // Change local addr to BE.
+                    server_log_mig!("Migrated out {:#?}", state);
                     state.cb.push_front_recv_queue(request); // Push request back in.
                     let state_buf = state.serialize(&mut state_buf);
 
                     // Send state to BE.
                     qts.push(libos.push2(be_qd, state_buf).expect("push state"));
-                    server_log!("Sent TCP state to {}", be_addr);
+                    server_log_mig!("Sent TCP state to {}", be_addr);
                 },
 
                 OperationResult::Failed(e) => {

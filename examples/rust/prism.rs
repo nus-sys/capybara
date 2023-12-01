@@ -42,13 +42,13 @@ use std::net::{SocketAddrV4, Ipv4Addr};
 use demikernel::{runtime::memory::{Buffer, DataBuffer}, MacAddress};
 use num_traits::ToBytes;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct PrismPacket {
     pub client: SocketAddrV4,
     pub kind: PrismType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum PrismType {
     Add(SocketAddrV4, MacAddress), // frontend addr
     Chown(SocketAddrV4, MacAddress), // backend addr

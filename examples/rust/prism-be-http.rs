@@ -8,7 +8,7 @@
 mod prism;
 
 use ::anyhow::Result;
-use demikernel::{inetstack::protocols::tcp::peer::state::TcpState, MacAddress};
+use demikernel::{inetstack::protocols::tcp::peer::state::TcpState, MacAddress, runtime::memory::Buffer};
 use ::demikernel::{
     LibOS,
     LibOSName,
@@ -46,6 +46,17 @@ macro_rules! server_log {
         if let Ok(val) = std::env::var("CAPY_LOG") {
             if val == "all" {
                 eprintln!("\x1B[32m{}\x1B[0m", format_args!($($arg)*));
+            }
+        }
+    };
+}
+
+macro_rules! server_log_mig {
+    ($($arg:tt)*) => {
+        #[cfg(feature = "capy-log")]
+        if let Ok(val) = std::env::var("CAPY_LOG") {
+            if val == "all" || val == "mig" {
+                eprintln!("\x1B[33m{}\x1B[0m", format_args!($($arg)*));
             }
         }
     };
@@ -222,6 +233,11 @@ struct ConnectionState {
     has_sent: bool
 }
 
+struct Migration {
+    qd: QDesc,
+    request: Option<Buffer>, // Set when sending LOCK to switch.
+}
+
 fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
     ctrlc::set_handler(move || {
         LibOS::capylog_dump(&mut std::io::stderr().lock());
@@ -234,19 +250,16 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
     let mut qts: Vec<QToken> = Vec::new();
     let mut connstate: HashMap<QDesc, ConnectionState> = HashMap::new();
 
+    // client -> migration.
+    let mut migrations: HashMap<SocketAddrV4, Migration> = HashMap::new();
+
     let libos_name: LibOSName = LibOSName::from_env().unwrap().into();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
     server_log!("LibOS initialised");
 
-    let sockqd: QDesc = libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0).expect("created socket");
-
-    // You don't need a listening socket for backend?
-    /* libos.bind(sockqd, local).expect("bind socket");
-    libos.listen(sockqd, 300).expect("listen socket");
-    qts.push(libos.accept(sockqd).expect("accept")); */
-
     // Connect to FE.
-    let qt = libos.connect(sockqd, fe).expect("connect");
+    let fe_qd: QDesc = libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0).expect("created socket");
+    let qt = libos.connect(fe_qd, fe).expect("connect");
     let (_, res) = libos.wait2(qt).unwrap();
     match res {
         OperationResult::Connect => (),
@@ -255,14 +268,14 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
     server_log!("Connected to FE");
 
     // Send magic values to inform FE that this is a BE.
-    let qt = libos.push2(sockqd, &[0xCA, 0xFE, 0xDE, 0xAD]).unwrap();
+    let qt = libos.push2(fe_qd, &[0xCA, 0xFE, 0xDE, 0xAD]).unwrap();
     match libos.wait2(qt).unwrap().1 {
         OperationResult::Push => (),
         _ => panic!("error"),
     }
     server_log!("Sent magic values to FE");
 
-    qts.push(libos.pop(sockqd).unwrap()); // wait for first connection from FE
+    qts.push(libos.pop(fe_qd).unwrap()); // wait for first connection from FE
 
     // Switch socket.
     let switch_qd: QDesc = libos.socket(libc::AF_INET, libc::SOCK_DGRAM, 0).expect("created socket");
@@ -301,24 +314,26 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
 
                     let buf = match TcpState::deserialize(buf.clone()) {
                         // This is valid TCP state.
-                        Ok(state) => {
-                            server_log!("Received TCP State from FE");
-                            server_log!("{:#?}", state);
+                        Ok(mut state) => {
+                            server_log_mig!("Received TCP State from FE");
+                            state.set_local(local);
+                            server_log_mig!("{:#?}", state);
                             let client = state.remote();
                             let new_qd = libos.migrate_in_tcp_connection(state);
 
                             assert!(connstate.insert(new_qd, ConnectionState { buffer: AppBuffer::new(), has_sent: false }).is_none());
-
-                            // Wait for request from this connection.
-                            qts.push(libos.pop(new_qd).expect("pop new_qd"));
+                            assert!(migrations.insert(client, Migration { qd: new_qd, request: None }).is_none());
 
                             // Send CHOWN to switch.
-                            server_log!("Connection migrated in, sending PRISM CHOWN to SWITCH");
+                            server_log_mig!("Connection migrated in, sending PRISM CHOWN to SWITCH");
                             let prism_buf = PrismPacket::chown(client, local, BE_MAC).serialize(&mut prism_buf);
                             qts.push(libos.pushto2(switch_qd, prism_buf, switch_addr).expect("push2"));
 
                             // Wait for CHOWN back from switch.
                             qts.push(libos.pop(switch_qd).expect("pop switch"));
+
+                            // Re-arm POP from FE.
+                            qts.push(libos.pop(fe_qd).expect("pop FE"));
 
                             continue;
                         }
@@ -326,14 +341,26 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                         Err(buf) => buf,
                     };
 
-                    // This is a pop from a client.
+                    // This is a request from a client.
                     let state = connstate.get_mut(&qd).expect("no such connstate");
                     if state.has_sent {
-                        server_log!("Migrating connection back to FE: {:?}", qd);
-                        // TODO: Migrate back
+                        // Need to migrate back the connection to FE.
+                        server_log!("Second POP on connection, migrating connection back to FE");
+
+                        // Send LOCK to switch.
+                        server_log_mig!("Sending PRISM LOCK to SWITCH");
+                        let (_, client) = libos.get_tcp_endpoints(qd);
+                        let prism_buf = PrismPacket::lock(client).serialize(&mut prism_buf);
+                        qts.push(libos.pushto2(switch_qd, prism_buf, switch_addr).expect("push2"));
+
+                        // Wait for LOCK back from switch.
+                        qts.push(libos.pop(switch_qd).expect("pop switch"));
+
+                        // Store request.
+                        migrations.get_mut(&client).expect("no migration").request = Some(buf.clone());
                     } else {
                         // Send one response.
-                        server_log!("First POP on migrated connection, sending response");
+                        server_log!("First POP on connection, sending response");
                         let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &buf, &mut qts);
                         state.has_sent = true;
                         qts.push(libos.pop(qd).expect("pop qt"));
@@ -343,8 +370,29 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                 // UDP Pop.
                 OperationResult::Pop(Some(_), buf) => {
                     let pkt = PrismPacket::deserialize(buf).expect("invalid prism packet");
-                    assert!(pkt.is_chown());
-                    server_log!("Received PRISM CHOWN from SWITCH ({})", pkt.client);
+                    match pkt.kind {
+                        prism::PrismType::Chown(..) => {
+                            server_log_mig!("Received PRISM CHOWN from SWITCH for client {}", pkt.client);
+
+                            // Switch is redirecting, pop new request for this connection now.
+                            let qd = migrations.get(&pkt.client).expect("no migration").qd;
+                            qts.push(libos.pop(qd).expect("pop new_qd"));
+                        },
+
+                        prism::PrismType::Lock => {
+                            server_log_mig!("Received PRISM LOCK from SWITCH for client {}, sending connection to FE", pkt.client);
+                            
+                            // Migrate out the connection and send to FE.
+                            let Migration { qd, request } = migrations.remove(&pkt.client).expect("no migration");
+                            let mut state = libos.migrate_out_tcp_connection(qd);
+                            state.cb.push_front_recv_queue(request.expect("no request"));
+                            let state_buf = state.serialize(&mut state_buf);
+                            qts.push(libos.push2(fe_qd, state_buf).expect("push FE"));
+                            assert!(connstate.remove(&qd).is_some());
+                        },
+
+                        k => panic!("Received invalid prism packet: {:?}", pkt),
+                    }
                 }
 
                 OperationResult::Failed(e) => {
