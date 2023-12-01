@@ -144,7 +144,7 @@ impl TcpMigPeer {
             let target = SocketAddrV4::new(self.local_ipv4_addr, self.self_udp_port);
             capy_log_mig!("I'm target {}", target);
 
-            capy_time_log!("RECV_PREPARE_MIG,({}-{})", hdr.origin, remote);
+            capy_time_log!("RECV_PREPARE_MIG,({})", remote);
             
 
             let active = ActiveMigration::new(

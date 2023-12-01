@@ -194,12 +194,30 @@ def parse_mig_latency(experiment_id):
         # print("Sorted")
         sorted_list = sorted(lines, key=lambda x: int(x.split(",")[0]))
         init_ns = 0
+        
+        black_out_times = list()
+        black_out_start = 0
         for item in sorted_list:
             # print(item)
             columns = item.split(',')
             ns = int(columns[0])
             step = columns[1]
+
+            if step == 'RECV_PREPARE_MIG_ACK':
+                black_out_start = ns
             
+            if step == 'CONN_ESTABLISHED':
+                black_out_times.append(ns - black_out_start)
+        
+        black_out_idx = 0
+        for item in sorted_list:
+            # print(item)
+            columns = item.split(',')
+            ns = int(columns[0])
+            step = columns[1]
+
+            if step == 'CONN_ESTABLISHED':
+                continue            
             step_idx = steps.index(step)
             if step_idx != prev_step+1:
                 print("[PANIC] migration step is wrong!: prev {}, current {}", prev_step, step_idx, "\n", item)
@@ -212,7 +230,8 @@ def parse_mig_latency(experiment_id):
                 latency = ns - prev_ns
                 result = result + str(latency) + ','
             if step_idx == 10:
-                result = result + str(ns - init_ns) + "\n"
+                result = result + str(ns - init_ns) + ',' + str(black_out_times[black_out_idx]) + "\n"
+                black_out_idx += 1
                 prev_step = 0
             prev_ns = ns
         # print(result)
@@ -375,7 +394,7 @@ def run_eval():
                             
                             if SERVER_APP == 'http-server':
                                 cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
-                                    10.0.1.1:10000 \
+                                    10.0.1.8:10000 \
                                     --config {CALADAN_PATH}/client.config \
                                     --mode runtime-client \
                                     --protocol=http \
@@ -518,7 +537,7 @@ def run_compile():
 
 if __name__ == '__main__':
     # parse_result()
-    # parse_mig_latency("20231128-111746.131253")
+    # parse_mig_latency("20231129-083149.755267")
     # exit()
 
     if len(sys.argv) > 1 and sys.argv[1] == 'build':

@@ -380,7 +380,7 @@ impl TcpPeer {
         if established.cb.receiver.recv_queue_len() == 1000 {
             // The key exists in the hashmap, and mig_socket now contains the value.
             // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
-            capy_time_log!("INIT_MIG,({}-{})", key.0, key.1);
+            capy_time_log!("INIT_MIG,({})", key.1);
             established.cb.disable_stats();
             unsafe{ NUM_MIG += 1; }
             if unsafe{ NUM_MIG } < 10000 {
@@ -393,7 +393,7 @@ impl TcpPeer {
         if inner.established.insert(key, established).is_some() {
             panic!("duplicate queue descriptor in established sockets table");
         }
-
+        capy_time_log!("CONN_ESTABLISHED,({})", remote);
         Poll::Ready(Ok(new_qd))
     }
 
@@ -656,7 +656,7 @@ impl Inner {
                     if mig_socket.cb.receiver.recv_queue_len() == 1000 {
                         // The key exists in the hashmap, and mig_socket now contains the value.
                         // eprintln!("recv_queue_len to be mig: {}", mig_socket.cb.receiver.recv_queue_len());
-                        capy_time_log!("INIT_MIG,({}-{})", mig_key.0, mig_key.1);
+                        capy_time_log!("INIT_MIG,({})", mig_key.1);
                         s.cb.disable_stats();
                         self.tcpmig.initiate_migration(mig_key, *qd);
                     }
@@ -813,13 +813,13 @@ impl TcpPeer {
         inner.established.get(&conn).expect("connection not in established table")
             .cb.disable_stats();
 
-        capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1);
+        capy_time_log!("INIT_MIG,({})", conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
         Ok(())
 
         /* NON-CONCURRENT MIGRATION */
         /* if(conn.1.port() == 301){
-            capy_time_log!("INIT_MIG,({}-{})", conn.0, conn.1); 
+            capy_time_log!("INIT_MIG,({})", conn.1); 
             inner.tcpmig.initiate_migration(conn, qd);
             Ok(())
         }else{
