@@ -119,7 +119,7 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
                 PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
-                numactl -m0 {CAPYBARA_PATH}/bin/examples/rust/{BE_APP}.elf 10.0.1.9:1000{j + 1} 10.0.1.8:10000 \
+                numactl -m0 {CAPYBARA_PATH}/bin/examples/rust/{BE_APP}.elf 10.0.1.9:1000{j} 10.0.1.8:10000 \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
         elif SERVER_APP == 'redis-server':
             cmd = [f'cd {CAPYBARA_PATH} && \
