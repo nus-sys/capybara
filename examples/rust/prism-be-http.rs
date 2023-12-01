@@ -389,7 +389,6 @@ pub fn main() -> Result<()> {
     if args.len() >= 2 {
         let local: SocketAddrV4 = SocketAddrV4::from_str(&args[1])?;
         let fe: SocketAddrV4 = SocketAddrV4::from_str(&args[2])?;
-        assert_ne!(local.port(), 10000, "BE cannot be on port 10000");
         return server(local, fe);
     }
 
