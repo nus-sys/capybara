@@ -347,147 +347,216 @@ def parse_latency_trace(experiment_id):
             p99_file.write(f"{key},{percentile_99}\n") 
 
 
+def parse_wrk_result(experiment_id):
+    import re
+    result_str = ''
+    # Read the text file
+    with open(f'{DATA_PATH}/{experiment_id}.client', "r") as file:
+        text = file.read()
+
+    # Use regular expressions to extract relevant values
+    avg_latency_match = re.search(r"(\d+\.\d+)us\s", text)
+    threads_match = re.search(r"(\d+)\s+threads", text)
+    connections_match = re.search(r"(\d+)\s+connections", text)
+    requests_sec_match = re.search(r"Requests/sec:\s+(\d+\.\d+)", text)
+    # print(avg_latency_match)
+    # Check if all necessary values were found
+    if not (avg_latency_match and threads_match and connections_match and requests_sec_match):
+        print("Failed to parse the text file")
+    else:
+        threads = threads_match.group(1)
+        connections = connections_match.group(1)
+        requests_per_sec = requests_sec_match.group(1)
+        
+        result_str = f'{experiment_id}, {NUM_BACKENDS}, {connections}, {threads}, {requests_per_sec.split(".")[0]}'
+
+        # Define a regular expression pattern to match the percentages and values
+        pattern = r'(\d+%)\s+(\d+\.\d+us)'
+        # Find all matches in the text using the regular expression pattern
+        matches = re.findall(pattern, text)
+
+        # Create a dictionary to store the parsed data
+        latency_data = {}
+
+        # Iterate through the matches and populate the dictionary
+        for match in matches:
+            percentile, value = match
+            latency_data[percentile] = value
+            result_str = result_str + f', {value.rstrip("us")}'
+        # Print the parsed data
+        # for percentile, value in latency_data.items():
+        #     print(f"{percentile}: {value}")
+
+        # # Create a CSV-style string
+        # csv_data = f"{threads},{connections},{requests_per_sec}"
+
+        # # Print the CSV-style string
+        # print(csv_data)
+    # print(result_str)
+    return result_str
 
 
 def run_eval():
     global experiment_id
     global final_result
+    if CLIENT_APP != 'wrk' and len(NUM_THREADS) > 1:
+        print("Error: NUM_THREADS is used only for wrk generator")
+        kill_procs()
+        exit(1)
     for repeat in range(0, REPEAT_NUM):
         for mig_delay in MIG_DELAYS:
             for max_stat_migs in MAX_STAT_MIGS: 
                 for mig_per_n in MIG_PER_N:
                     for pps in CLIENT_PPS:
                         for conn in NUM_CONNECTIONS:
-                            kill_procs()
-                            experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
-                            
-                            print(f'================ RUNNING TEST =================\n'
-                                    f'NUM_BACKENDS: {NUM_BACKENDS}\n'
-                                    f'SERVER_APP: {SERVER_APP}\n'
-                                    f'REPEAT: {repeat}\n'
-                                    f'RECV_QUEUE_THRESHOLD: {RECV_QUEUE_THRESHOLD}\n'
-                                    f'MIG_DELAY: {mig_delay}\n'
-                                    f'MAX_STAT_MIGS: {max_stat_migs}\n'
-                                    f'MIG_PER_N: {mig_per_n}\n'
-                                    f'RATE: {pps}\n'
-                                    f'NUM_CONNECTIONS: {conn}\n'
-                                    f'RUNTIME: {RUNTIME}\n'
-                                    f'RUN ID: {experiment_id}\n'
-                                    f'TCPDUMP: {TCPDUMP}\n'
-                                    f'EVAL_MIG_LATENCY: {EVAL_MIG_LATENCY}\n'
-                                    f'EVAL_POLL_INTERVAL: {EVAL_POLL_INTERVAL}\n'
-                                    f'EVAL_LATENCY_TRACE: {EVAL_LATENCY_TRACE}\n'
-                                    )
-                            
-
-                            if TCPDUMP == True:
-                                run_tcpdump(experiment_id)
-                            
-                            run_server(mig_delay, max_stat_migs, mig_per_n)
-
-                            host = pyrem.host.RemoteHost(CLIENT_NODE)
-                            cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
-                            task = host.run(cmd, quiet=True)
-                            pyrem.task.Parallel([task], aggregate=True).start(wait=False)
-                            time.sleep(4)
-                            print('iokerneld is running')
-                            
-                            if SERVER_APP == 'http-server':
-                                cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
-                                    10.0.1.8:10000 \
-                                    --config {CALADAN_PATH}/client.config \
-                                    --mode runtime-client \
-                                    --protocol=http \
-                                    --transport=tcp \
-                                    --samples=1 \
-                                    --pps={pps} \
-                                    --threads={conn} \
-                                    --runtime={RUNTIME} \
-                                    --discard_pct=10 \
-                                    --output=buckets \
-                                    --rampup=0 \
-                                    --exptid={DATA_PATH}/{experiment_id} \
-                                    > {DATA_PATH}/{experiment_id}.client'] # --loadshift=300000:2000000,600000:3000000 \
-                            elif SERVER_APP == 'redis-server':
-                                cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
-                                        10.0.1.1:10000 \
-                                        --config {CALADAN_PATH}/client.config \
-                                        --mode runtime-client \
-                                        --transport=tcp \
-                                        --samples=1 \
-                                        --pps={pps} \
-                                        --threads={conn} \
-                                        --runtime={RUNTIME} \
-                                        --discard_pct=10 \
-                                        --output=buckets \
-                                        --rampup=0 \
-                                        --exptid={DATA_PATH}/{experiment_id} \
-                                        --protocol=resp \
-                                        --redis-string=100 \
-                                        > {DATA_PATH}/{experiment_id}.client']
-                            else:
-                                print(f'Invalid server app: {SERVER_APP}')
-                                exit(1)
-                            # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \
-                            #         -a 31:00.1 \
-                            #         -n 4 \
-                            #         -c 0xffff -- \
-                            #         -d exponential \
-                            #         -c {HOME}/Capybara/tcp_generator/addr.cfg \
-                            #         -s 256 \
-                            #         -t 10 \
-                            #         -r {i} \
-                            #         -f {j} \
-                            #         -q {4 if j >= 4 else j} \
-                            #         -o {DATA_PATH}/{experiment_id}.latency \
-                            #         > {DATA_PATH}/{experiment_id}.stats 2>&1']
-                            task = host.run(cmd, quiet=False)
-                            pyrem.task.Parallel([task], aggregate=True).start(wait=True)
-
-                            print('================ TEST COMPLETE =================\n')
-                            
-                            try:
-                                cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]" | tail -1'
-                                result = subprocess.run(
-                                    cmd,
-                                    shell=True,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT,
-                                    check=True,
-                                ).stdout.decode()
-                                print('[RESULT]' + f'{experiment_id}, {conn}, {mig_delay}, {max_stat_migs}, {mig_per_n},{result[len("[RESULT]"):]}' + '\n\n')
-                                final_result = final_result + f'{experiment_id}, {conn}, {mig_delay}, {max_stat_migs}, {mig_per_n},{result[len("[RESULT]"):]}'
-                            except subprocess.CalledProcessError as e:
-                                # Handle the exception for a failed command execution
-                                print("EXPERIMENT FAILED\n\n")
-
-                            except Exception as e:
-                                # Handle any other unexpected exceptions
-                                print("EXPERIMENT FAILED\n\n")
-                            
-                            if TCPDUMP == True:
-                                time.sleep(3)
+                            for num_thread in NUM_THREADS:    
                                 kill_procs()
-                                parse_tcpdump(experiment_id)
+                                experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
                                 
-                                print("Parsing pcap file is done, finishing test here.\n\n")
+                                print(f'================ RUNNING TEST =================\n'
+                                        f'NUM_BACKENDS: {NUM_BACKENDS}\n'
+                                        f'SERVER_APP: {SERVER_APP}\n'
+                                        f'CLIENT_APP: {CLIENT_APP}\n'
+                                        f'REPEAT: {repeat}\n'
+                                        f'RECV_QUEUE_THRESHOLD: {RECV_QUEUE_THRESHOLD}\n'
+                                        f'MIG_DELAY: {mig_delay}\n'
+                                        f'MAX_STAT_MIGS: {max_stat_migs}\n'
+                                        f'MIG_PER_N: {mig_per_n}\n'
+                                        f'RATE: {pps}\n'
+                                        f'NUM_CONNECTIONS: {conn}\n'
+                                        f'RUNTIME: {RUNTIME}\n'
+                                        f'RUN ID: {experiment_id}\n'
+                                        f'TCPDUMP: {TCPDUMP}\n'
+                                        f'EVAL_MIG_LATENCY: {EVAL_MIG_LATENCY}\n'
+                                        f'EVAL_POLL_INTERVAL: {EVAL_POLL_INTERVAL}\n'
+                                        f'EVAL_LATENCY_TRACE: {EVAL_LATENCY_TRACE}\n'
+                                        f'NUM_THREAD: {num_thread}\n'
+                                        )
+                                
 
-                                exit()
+                                if TCPDUMP == True:
+                                    run_tcpdump(experiment_id)
+                                
+                                run_server(mig_delay, max_stat_migs, mig_per_n)
 
-                            if EVAL_MIG_LATENCY == True:
-                                kill_procs()
-                                time.sleep(5)
-                                parse_mig_latency(experiment_id)
+                                #exit(0)
+                                host = pyrem.host.RemoteHost(CLIENT_NODE)
+                                if CLIENT_APP != 'wrk':
+                                    cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
+                                    task = host.run(cmd, quiet=True)
+                                    pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+                                    time.sleep(4)
+                                    print('iokerneld is running')
+                                
+                                if SERVER_APP == 'http-server':
+                                    if CLIENT_APP == 'wrk':
+                                        cmd = [f'sudo numactl -m0 {HOME}/wrk-tools/wrk/wrk \
+                                            -t{num_thread} \
+                                            -c{int(conn)*int(num_thread)} \
+                                            -d{RUNTIME}s \
+                                            --latency \
+                                            http://10.0.1.8:10000/get \
+                                            > {DATA_PATH}/{experiment_id}.client']
+                                    else:    
+                                        cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
+                                            10.0.1.8:10000 \
+                                            --config {CALADAN_PATH}/client.config \
+                                            --mode runtime-client \
+                                            --protocol=http \
+                                            --transport=tcp \
+                                            --samples=1 \
+                                            --pps={pps} \
+                                            --threads={conn} \
+                                            --runtime={RUNTIME} \
+                                            --discard_pct=10 \
+                                            --output=buckets \
+                                            --rampup=0 \
+                                            --exptid={DATA_PATH}/{experiment_id} \
+                                            > {DATA_PATH}/{experiment_id}.client'] # --loadshift=300000:2000000,600000:3000000 \
+                                elif SERVER_APP == 'redis-server':
+                                    cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
+                                            10.0.1.8:10000 \
+                                            --config {CALADAN_PATH}/client.config \
+                                            --mode runtime-client \
+                                            --transport=tcp \
+                                            --samples=1 \
+                                            --pps={pps} \
+                                            --threads={conn} \
+                                            --runtime={RUNTIME} \
+                                            --discard_pct=10 \
+                                            --output=buckets \
+                                            --rampup=0 \
+                                            --exptid={DATA_PATH}/{experiment_id} \
+                                            --protocol=resp \
+                                            --redis-string=100 \
+                                            > {DATA_PATH}/{experiment_id}.client']
+                                else:
+                                    print(f'Invalid server app: {SERVER_APP}')
+                                    exit(1)
+                                # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \
+                                #         -a 31:00.1 \
+                                #         -n 4 \
+                                #         -c 0xffff -- \
+                                #         -d exponential \
+                                #         -c {HOME}/Capybara/tcp_generator/addr.cfg \
+                                #         -s 256 \
+                                #         -t 10 \
+                                #         -r {i} \
+                                #         -f {j} \
+                                #         -q {4 if j >= 4 else j} \
+                                #         -o {DATA_PATH}/{experiment_id}.latency \
+                                #         > {DATA_PATH}/{experiment_id}.stats 2>&1']
+                                task = host.run(cmd, quiet=False)
+                                pyrem.task.Parallel([task], aggregate=True).start(wait=True)
 
-                            if EVAL_POLL_INTERVAL == True:
-                                kill_procs()
-                                time.sleep(5)
-                                parse_poll_interval(experiment_id)
-                            
-                            if EVAL_LATENCY_TRACE == True:
-                                kill_procs()
-                                time.sleep(3)
-                                parse_latency_trace(experiment_id)
+                                print('================ TEST COMPLETE =================\n')
+                                if CLIENT_APP == 'wrk':
+                                    result_str = parse_wrk_result(experiment_id)
+                                    print(result_str + '\n\n')
+                                    final_result = final_result + result_str + '\n'
+                                else:
+                                    try:
+                                        cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]" | tail -1'
+                                        result = subprocess.run(
+                                            cmd,
+                                            shell=True,
+                                            stdout=subprocess.PIPE,
+                                            stderr=subprocess.STDOUT,
+                                            check=True,
+                                        ).stdout.decode()
+                                        print('[RESULT]' + f'{experiment_id}, {NUM_BACKENDS}, {conn}, {mig_delay}, {max_stat_migs}, {mig_per_n},{result[len("[RESULT]"):]}' + '\n\n')
+                                        final_result = final_result + f'{experiment_id}, {NUM_BACKENDS}, {conn}, {mig_delay}, {max_stat_migs}, {mig_per_n},{result[len("[RESULT]"):]}'
+                                    except subprocess.CalledProcessError as e:
+                                        # Handle the exception for a failed command execution
+                                        print("EXPERIMENT FAILED\n\n")
+
+                                    except Exception as e:
+                                        # Handle any other unexpected exceptions
+                                        print("EXPERIMENT FAILED\n\n")
+                                
+                                if TCPDUMP == True:
+                                    time.sleep(3)
+                                    kill_procs()
+                                    parse_tcpdump(experiment_id)
+                                    
+                                    print("Parsing pcap file is done, finishing test here.\n\n")
+
+                                    exit()
+
+                                if EVAL_MIG_LATENCY == True:
+                                    kill_procs()
+                                    time.sleep(5)
+                                    parse_mig_latency(experiment_id)
+
+                                if EVAL_POLL_INTERVAL == True:
+                                    kill_procs()
+                                    time.sleep(5)
+                                    parse_poll_interval(experiment_id)
+                                
+                                if EVAL_LATENCY_TRACE == True:
+                                    kill_procs()
+                                    time.sleep(3)
+                                    parse_latency_trace(experiment_id)
 
                                 
 
