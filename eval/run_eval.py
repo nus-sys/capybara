@@ -33,9 +33,13 @@ final_result = ''
 
 
 def kill_procs():
-    cmd = ['sudo pkill -INT -f Capybara && sudo pkill -INT -f caladan && sudo pkill -INT -f iokerneld']
+    cmd = [f'sudo pkill -INT -e iokerneld ; \
+            sudo pkill -INT -e synthetic ; \
+            sudo pkill -INT -e dpdk-ctrl.elf ; \
+            sudo pkill -INT -e {SERVER_APP} ']
+    # print(cmd)
     if TCPDUMP:
-        cmd[0] += ' && sudo pkill -INT -f tcpdump'
+        cmd[0] += ' ; sudo pkill -INT -f -e tcpdump'
     # cmd = [f'sudo pkill -INT -f Capybara && sleep 2 && sudo pkill -f Capybara && sudo pkill -f caladan']
     kill_tasks = []
     for node in ALL_NODES:
