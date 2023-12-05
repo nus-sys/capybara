@@ -855,8 +855,8 @@ impl TcpPeer {
         self.inner.borrow_mut().stats.connections_to_migrate()
     }
 
-    pub fn global_recv_queue_length(&mut self) -> usize {
-        todo!("get global queue length")
+    pub fn global_recv_queue_length(&self) -> usize {
+        self.inner.borrow().stats.global_recv_queue_length()
     }
 }
 

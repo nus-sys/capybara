@@ -400,7 +400,7 @@ impl NetworkLibOS {
         }
     }
     
-    pub fn global_recv_queue_length(&mut self) -> usize {
+    pub fn global_recv_queue_length(&self) -> usize {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(_) => panic!("TCP migration only supported for catnip"),

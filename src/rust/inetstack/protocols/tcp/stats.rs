@@ -133,6 +133,10 @@ impl Stats {
         }
     }
 
+    pub fn global_recv_queue_length(&self) -> usize {
+        self.global_recv_queue_length
+    }
+
     /// Extracts connections so that the global recv queue length goes below the threshold.
     /// Returns `None` if no connections need to be migrated.
     #[cfg(not(feature = "manual-tcp-migration"))]

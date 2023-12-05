@@ -858,7 +858,7 @@ impl InetStack {
         self.ipv4.tcp.initiate_migration(qd)
     }
 
-    pub fn global_recv_queue_length(&mut self) -> usize {
+    pub fn global_recv_queue_length(&self) -> usize {
         self.ipv4.tcp.global_recv_queue_length()
     }
 }

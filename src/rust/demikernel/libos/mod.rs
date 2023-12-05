@@ -267,7 +267,7 @@ impl LibOS {
         }
     }
 
-    pub fn global_recv_queue_length(&mut self) -> usize {
+    pub fn global_recv_queue_length(&self) -> usize {
         match self {
             LibOS::NetworkLibOS(libos) => libos.global_recv_queue_length(),
         }
