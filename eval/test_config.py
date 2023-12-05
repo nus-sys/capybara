@@ -23,7 +23,7 @@ FEATURES = [
 ]
 
 ################## TEST CONFIG #####################
-NUM_BACKENDS = 2
+NUM_BACKENDS = 1
 SERVER_APP = 'http-server'
 # CLIENT_APP = 'wrk'
 CLIENT_APP = 'caladan'
@@ -34,7 +34,7 @@ RECV_QUEUE_THRESHOLD = 100
 MIG_DELAYS = [0] 
 MAX_STAT_MIGS = [0]#[5000, 10000, 15000] # set element to '' if you don't want to set this env var
 MIG_PER_N = [1]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
-CLIENT_PPS = [i for i in range(52000, 65000 + 1, 3000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(28000, 28000 + 1, 3000)]#[i for i in range(100000, 1_300_001, 100000)]
 NUM_CONNECTIONS = [100]#[i for i in range(1, 10 + 1, 2)]
 NUM_THREADS = [1]#[i for i in range(1, 5 + 1, 1)]
 RUNTIME = 10
