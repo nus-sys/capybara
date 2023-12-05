@@ -789,16 +789,16 @@ impl InetStack {
         self.ipv4.tcp.get_tcp_endpoints(qd)
     }
 
-    pub fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> TcpState {
-        let state = self.ipv4.tcp.migrate_out_connection(qd);
+    pub fn migrate_out_tcp_connection(&mut self, qd: QDesc, request: Buffer) -> TcpState {
+        let state = self.ipv4.tcp.migrate_out_connection(qd, request);
         self.file_table.free(qd).unwrap();
         state
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> QDesc {
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> (QDesc, Buffer) {
         let qd = self.file_table.alloc(QType::TcpSocket.into());
-        self.ipv4.tcp.migrate_in_connection(qd, state);
-        qd
+        let request = self.ipv4.tcp.migrate_in_connection(qd, state);
+        (qd, request)
     }
     
     /* /// Returns if TCP DPDK queue was also polled.

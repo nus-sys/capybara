@@ -733,11 +733,11 @@ impl TcpPeer {
         }
     }
 
-    pub fn migrate_out_connection(&mut self, qd: QDesc) -> TcpState {
-        self.inner.borrow_mut().migrate_out_connection(qd)
+    pub fn migrate_out_connection(&mut self, qd: QDesc, request: Buffer) -> TcpState {
+        self.inner.borrow_mut().migrate_out_connection(qd, request)
     }
 
-    pub fn migrate_in_connection(&mut self, qd: QDesc, state: TcpState) {
+    pub fn migrate_in_connection(&mut self, qd: QDesc, state: TcpState) -> Buffer {
         self.inner.borrow_mut().migrate_in_connection(qd, state)
     }
 
@@ -866,7 +866,7 @@ impl Inner {
     /// 1) Mark this socket as migrated out.
     /// 2) Check if this connection is established one.
     /// 3) Remove socket from Established hashmap.
-    fn migrate_out_connection(&mut self, qd: QDesc) -> TcpState {
+    fn migrate_out_connection(&mut self, qd: QDesc, request: Buffer) -> TcpState {
         // Mark socket as migrated out.
         let conn = match self.sockets.get_mut(&qd) {
             None => panic!("invalid QD for migrating out"),
@@ -891,12 +891,14 @@ impl Inner {
 
         // 3) Remove connection from Established hashmap.
         let cb = entry.remove().cb;
-        TcpState::new(cb.as_ref().into())
+        TcpState::new(cb.as_ref().into(), request)
     }
 
-    fn migrate_in_connection(&mut self, qd: QDesc, state: TcpState) {
+    fn migrate_in_connection(&mut self, qd: QDesc, state: TcpState) -> Buffer {
         let key = state.connection();
         let (local, remote) = key;
+
+        let TcpState { cb, request } = state;
 
         // Convert state to control block.
         let cb = ControlBlock::from_state(
@@ -907,7 +909,7 @@ impl Inner {
             self.tcp_config.clone(),
             self.arp.clone(),
             self.tcp_config.get_ack_delay_timeout(),
-            state.cb
+            cb
         );
 
         let established: EstablishedSocket = EstablishedSocket::new(cb, qd, self.dead_socket_tx.clone());
@@ -927,6 +929,7 @@ impl Inner {
         }
         
         capy_log!("CONNECTION MIGRATED IN (REMOTE: {:?}, new_qd: {:?})", remote, qd);
+        request
     }
 }
 
@@ -953,7 +956,8 @@ pub mod state {
 
     #[derive(Debug, PartialEq, Eq)]
     pub struct TcpState {
-        pub cb: ControlBlockState
+        pub cb: ControlBlockState,
+        pub request: Buffer,
     }
 
     impl Serialize for TcpState {
@@ -963,8 +967,8 @@ pub mod state {
     }
 
     impl TcpState {
-        pub fn new(cb: ControlBlockState) -> Self {
-            Self { cb }
+        pub fn new(cb: ControlBlockState, request: Buffer) -> Self {
+            Self { cb, request }
         }
 
         pub fn remote(&self) -> SocketAddrV4 {
@@ -984,12 +988,12 @@ pub mod state {
         }
 
         pub fn serialize<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-            let size = self.serialized_size() + 4;
+            let size = 4 + 4 + self.request.len() + self.cb.serialized_size();
 
             // MAGIC for state.
             buf[0..4].copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
-
-            self.cb.serialize_into(&mut buf[4..]);
+            let next_buf = self.request.serialize_into(&mut buf[4..]);
+            self.cb.serialize_into(next_buf);
             &buf[..size]
         }
 
@@ -1000,66 +1004,27 @@ pub mod state {
             }
 
             buf.adjust(4);
+            let request = Buffer::deserialize_from(&mut buf);
             let cb = ControlBlockState::deserialize_from(&mut buf);
-            Ok(Self { cb })
+            Ok(Self { cb, request })
         }
 
         pub fn is_valid(buf: &[u8]) -> bool {
             &buf[0..4] == &[0xAA, 0xBB, 0xCC, 0xDD]
         }
-
-        fn serialized_size(&self) -> usize {
-            self.cb.serialized_size()
-        }
     }
 
-    /* #[cfg(test)]
+    #[cfg(test)]
     mod test {
-        use std::net::{SocketAddrV4, Ipv4Addr};
-
         use crate::{
             runtime::memory::{Buffer, DataBuffer},
-            inetstack::protocols::{
-                tcpmig::segment::{TcpMigSegment, TcpMigHeader, TcpMigDefragmenter},
-                ethernet2::Ethernet2Header, ipv4::Ipv4Header
-            },
-            capy_profile, capy_profile_dump, MacAddress
+            capy_profile, capy_profile_dump,
         };
 
         use super::TcpState;
 
-        fn get_socket_addr() -> SocketAddrV4 {
-            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 10000)
-        }
-
-        fn get_buf() -> Buffer {
-            Buffer::Heap(DataBuffer::from_slice(&vec![1; 64]))
-        }
-
         fn get_state() -> TcpState {
-            TcpState { cb: super::super::super::established::test_get_control_block_state() }
-        }
-
-        fn get_header() -> TcpMigHeader {
-            TcpMigHeader::new(
-                get_socket_addr(),
-                get_socket_addr(),
-                100,
-                crate::inetstack::protocols::tcpmig::MigrationStage::ConnectionState,
-                10000,
-                10000,
-            )
-        }
-
-        #[inline(always)]
-        fn create_segment(payload: Buffer) -> TcpMigSegment {
-            let len = payload.len();
-            TcpMigSegment::new(
-                Ethernet2Header::new(MacAddress::broadcast(), MacAddress::broadcast(), crate::inetstack::protocols::ethernet2::EtherType2::Ipv4),
-                Ipv4Header::new(Ipv4Addr::LOCALHOST, Ipv4Addr::LOCALHOST, crate::inetstack::protocols::ip::IpProtocol::UDP),
-                get_header(),
-                payload,
-            )
+            TcpState { cb: super::super::super::established::test_get_control_block_state(), request: Buffer::Heap(DataBuffer::from_slice(&vec![1; 64])) }
         }
 
         #[test]
@@ -1068,55 +1033,20 @@ pub mod state {
             crate::capylog::init();
             eprintln!();
             let state = get_state();
+            let mut buf = Buffer::Heap(DataBuffer::new(8192).unwrap());
 
             let state = {
                 capy_profile!("serialise");
-                state.serialize()
+                Buffer::Heap(state.serialize(&mut buf).into())
             };
-
-            let segment = {
-                capy_profile!("segment creation");
-                create_segment(state)
-            };
-
-            let seg_clone = segment.clone();
-            let count = seg_clone.fragments().count();
-
-            let mut fragments = Vec::with_capacity(count);
-            {
-                capy_profile!("total fragment");
-                for e in segment.fragments() {
-                    fragments.push((e.tcpmig_hdr, e.data));
-                }
-            }
-            
-            let mut defragmenter = TcpMigDefragmenter::new();
-
-            let mut i = 0;
-            let mut segment = None;
-            {
-                capy_profile!("total defragment");
-                for (hdr, buf) in fragments {
-                    i += 1;
-                    if let Some(seg) = {
-                        capy_profile!("defragment");
-                        defragmenter.defragment(hdr, buf)
-                    } {
-                        segment = Some(seg);
-                    }
-                }
-            };
-            assert_eq!(count, i);
-            
-            let (hdr, buf) = segment.unwrap();
             let state = {
-                capy_profile!("deserialise");
-                TcpState::deserialize(buf)
+                capy_profile!("serialise");
+                TcpState::deserialize(buf).unwrap()
             };
             assert_eq!(state, get_state());
 
             capy_profile_dump!(&mut std::io::stderr().lock());
             eprintln!();
         }
-    } */
+    }
 }

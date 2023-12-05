@@ -371,9 +371,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                     // Get connection to migrate.
                     let Migration { qd: conn_qd, request } = migrations.remove(&pkt.client).expect("no such migration");
-                    let mut state = libos.migrate_out_tcp_connection(conn_qd);
+                    let mut state = libos.migrate_out_tcp_connection(conn_qd, request);
                     server_log_mig!("Migrated out {:#?}", state);
-                    state.cb.push_front_recv_queue(request); // Push request back in.
                     let state_buf = state.serialize(&mut state_buf);
 
                     // Send state to BE.

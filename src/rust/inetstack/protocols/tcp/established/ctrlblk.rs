@@ -1593,11 +1593,6 @@ pub mod state {
         pub fn set_local(&mut self, local: SocketAddrV4) {
             self.local = local;
         }
-
-        pub fn push_front_recv_queue(&mut self, buffer: Buffer) {
-            self.receiver.reader_next = SeqNumber::from(u32::from(self.receiver.reader_next).checked_sub(buffer.len() as u32).expect("underflow"));
-            self.receiver.recv_queue.push_front(buffer);
-        }
     }
     
     //===================================================================
@@ -1620,7 +1615,7 @@ pub mod state {
             let receiver = ReceiverState {
                 reader_next: SeqNumber::from(10),
                 receive_next: SeqNumber::from(10),
-                recv_queue: VecDeque::from(vec![get_buf(); 100]),
+                recv_queue: VecDeque::from(vec![get_buf(); 2]),
             };
 
             ControlBlockState {
@@ -1629,7 +1624,7 @@ pub mod state {
                 receive_buffer_size: 10,
                 window_scale: 10,
                 out_of_order_fin: Some(10.into()),
-                out_of_order_queue: VecDeque::from(vec![(7.into(), get_buf()); 10]),
+                out_of_order_queue: VecDeque::from(vec![(7.into(), get_buf()); 1]),
                 receiver,
                 sender: super::super::super::sender::state::test::get_state(),
             }

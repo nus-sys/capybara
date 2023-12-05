@@ -624,8 +624,8 @@ pub mod state {
                 send_window_last_update_ack: SeqNumber::from(10),
                 mss: 10,
                 window_scale: 10,
-                unacked_queue: VecDeque::from(vec![UnackedSegment { bytes: get_buf(), initial_tx: None }; 100]),
-                unsent_queue: VecDeque::from(vec![get_buf(); 100]),
+                unacked_queue: VecDeque::from(vec![UnackedSegment { bytes: get_buf(), initial_tx: None }; 1]),
+                unsent_queue: VecDeque::from(vec![get_buf(); 1]),
             }
         }
     }

@@ -25,7 +25,7 @@ use crate::{
             demi_sgarray_t,
         },
         QDesc,
-        QToken,
+        QToken, memory::Buffer,
     }, inetstack::protocols::tcp::peer::state::TcpState
 };
 use ::std::{
@@ -259,13 +259,13 @@ impl LibOS {
         }
     }
 
-    pub fn migrate_out_tcp_connection(&mut self, qd: QDesc) -> TcpState {
+    pub fn migrate_out_tcp_connection(&mut self, qd: QDesc, request: Buffer) -> TcpState {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.migrate_out_tcp_connection(qd),
+            LibOS::NetworkLibOS(libos) => libos.migrate_out_tcp_connection(qd, request),
         }
     }
 
-    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> QDesc {
+    pub fn migrate_in_tcp_connection(&mut self, state: TcpState) -> (QDesc, Buffer) {
         match self {
             LibOS::NetworkLibOS(libos) => libos.migrate_in_tcp_connection(state),
         }

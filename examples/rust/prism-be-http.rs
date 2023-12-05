@@ -319,10 +319,10 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                             state.set_local(local);
                             server_log_mig!("{:#?}", state);
                             let client = state.remote();
-                            let new_qd = libos.migrate_in_tcp_connection(state);
+                            let (new_qd, request) = libos.migrate_in_tcp_connection(state);
 
                             assert!(connstate.insert(new_qd, ConnectionState { buffer: AppBuffer::new(), has_sent: false }).is_none());
-                            assert!(migrations.insert(client, Migration { qd: new_qd, request: None }).is_none());
+                            assert!(migrations.insert(client, Migration { qd: new_qd, request: Some(request) }).is_none());
 
                             // Send CHOWN to switch.
                             server_log_mig!("Connection migrated in, sending PRISM CHOWN to SWITCH");
@@ -341,30 +341,22 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                         Err(buf) => buf,
                     };
 
-                    // This is a request from a client.
-                    let state = connstate.get_mut(&qd).expect("no such connstate");
-                    if state.has_sent {
-                        // Need to migrate back the connection to FE.
-                        server_log!("Second POP on connection, migrating connection back to FE");
+                    // This is the 2nd request from a client, migrate it out now.
+                    server_log!("Second POP on connection, migrating connection back to FE");
+                    server_log_mig!("Sending PRISM LOCK to SWITCH");
+                    let (_, client) = libos.get_tcp_endpoints(qd);
+                    let mig = migrations.get_mut(&client).expect("no migration");
 
-                        // Send LOCK to switch.
-                        server_log_mig!("Sending PRISM LOCK to SWITCH");
-                        let (_, client) = libos.get_tcp_endpoints(qd);
-                        let prism_buf = PrismPacket::lock(client).serialize(&mut prism_buf);
-                        qts.push(libos.pushto2(switch_qd, prism_buf, switch_addr).expect("push2"));
+                    // Send LOCK to switch.
+                    let prism_buf = PrismPacket::lock(client).serialize(&mut prism_buf);
+                    qts.push(libos.pushto2(switch_qd, prism_buf, switch_addr).expect("push2"));
 
-                        // Wait for LOCK back from switch.
-                        qts.push(libos.pop(switch_qd).expect("pop switch"));
+                    // Wait for LOCK back from switch.
+                    qts.push(libos.pop(switch_qd).expect("pop switch"));
 
-                        // Store request.
-                        migrations.get_mut(&client).expect("no migration").request = Some(buf.clone());
-                    } else {
-                        // Send one response.
-                        server_log!("First POP on connection, sending response");
-                        let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &buf, &mut qts);
-                        state.has_sent = true;
-                        qts.push(libos.pop(qd).expect("pop qt"));
-                    }
+                    // Store request.
+                    assert!(mig.request.is_none());
+                    mig.request = Some(buf.clone());
                 },
 
                 // UDP Pop.
@@ -373,10 +365,17 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                     match pkt.kind {
                         prism::PrismType::Chown(..) => {
                             server_log_mig!("Received PRISM CHOWN from SWITCH for client {}", pkt.client);
+                            let mig = migrations.get_mut(&pkt.client).expect("no migration");
+                            let qd = mig.qd;
+                            let state = connstate.get_mut(&qd).expect("no such connstate");
 
-                            // Switch is redirecting, pop new request for this connection now.
-                            let qd = migrations.get(&pkt.client).expect("no migration").qd;
-                            qts.push(libos.pop(qd).expect("pop new_qd"));
+                            // Switch is redirecting, serve the request now.
+                            server_log!("First request on connection, sending response");
+                            let request = mig.request.take().expect("no request");
+                            push_data_and_run(&mut libos, qd, &mut state.buffer, &request, &mut qts);
+
+                            // Pop new request for this connection.
+                            qts.push(libos.pop(qd).expect("pop"));
                         },
 
                         prism::PrismType::Lock => {
@@ -384,8 +383,7 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                             
                             // Migrate out the connection and send to FE.
                             let Migration { qd, request } = migrations.remove(&pkt.client).expect("no migration");
-                            let mut state = libos.migrate_out_tcp_connection(qd);
-                            state.cb.push_front_recv_queue(request.expect("no request"));
+                            let mut state = libos.migrate_out_tcp_connection(qd, request.expect("no request"));
                             let state_buf = state.serialize(&mut state_buf);
                             qts.push(libos.push2(fe_qd, state_buf).expect("push FE"));
                             assert!(connstate.remove(&qd).is_some());
