@@ -44,6 +44,7 @@ use crate::catnip::CatnipLibOS;
 #[cfg(feature = "catpowder-libos")]
 use crate::catpowder::CatpowderLibOS;
 
+// use crate::{capy_profile, capy_log, capy_log_mig};
 //======================================================================================================================
 // Structures
 //======================================================================================================================
@@ -96,6 +97,7 @@ impl LibOS {
 
     /// Waits on a pending operation in an I/O queue.
     pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
+        // capy_profile!("wait_any2");
         match self {
             LibOS::NetworkLibOS(libos) => libos.wait_any2(qts, qrs, indices),
         }

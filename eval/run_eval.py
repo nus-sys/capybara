@@ -413,6 +413,78 @@ def parse_wrk_result(experiment_id):
 
     
 
+def parse_sched_ovhd(experiment_id):
+    print(f'PARSING {experiment_id} scheduler overhead') 
+    
+    # host = pyrem.host.RemoteHost(TCPDUMP_NODE)
+    start_printing = False
+    
+    clusters = {}
+    file_path = f'{DATA_PATH}/{experiment_id}.be0'
+    with open(file_path, "r") as file:
+        # Iterate through each line in the file
+        for line in file:
+            # Check if the line contains the target string
+            if "[CAPYLOG] dumping time log data" in line:
+                # Set the flag to start printing lines
+                start_printing = True
+                continue  # Skip this line
+
+            # Check if we should print the line
+            if start_printing:
+                columns = line.strip().split(",")
+                if len(columns) != 3:
+                    continue
+                time_str = columns[0]
+                time_components = time_str.split(':')
+                hours, minutes = map(int, time_components[:2])
+                seconds = float(time_components[2])  # Convert sub-second part to a float
+                nanosecond_timestamp = int((hours * 3600 + minutes * 60 + seconds) * 1_000_000_000)
+                columns[0] = str(nanosecond_timestamp)
+
+                last_column = columns[-1]
+
+                if last_column in clusters:
+                    clusters[last_column].append(columns[0] + ',' + columns[1] + ',' + columns[2])
+                else:
+                    clusters[last_column] = [columns[0] + ',' + columns[1] + ',' + columns[2]]
+    
+    prev_step = 0
+    prev_ns = 0
+    final_result = ''
+    for last_column, lines in clusters.items():
+        result = ''
+        # print(f"Cluster for last column '{last_column}':")
+        # for line in lines:
+        #     print(line)
+        
+        # print("Sorted")
+        sorted_list = sorted(lines, key=lambda x: int(x.split(",")[0]))
+        prev_ns = 0
+        for item in sorted_list:
+            # print(item)
+            columns = item.split(',')
+            ns = int(columns[0])
+            step = columns[1]
+            
+            if step == 'RECV_UDP':
+                prev_ns = ns
+            else:
+                result = result + str(ns - prev_ns) + "\n"
+            
+        # print(result)
+        final_result = final_result + '\n'.join(result.split('\n')[5:])
+        # final_result = final_result + '\n'.join(result.split('\n')[:])
+    
+    print(len(final_result.split('\n')))
+    
+    # print('\n'.join(final_result.split('\n')[-10001:]))
+
+    with open(f'{DATA_PATH}/{experiment_id}.sched_ovhd', 'w') as file:
+        # Write the content to the file
+        file.write('\n'.join(final_result.split('\n')[-10001:]))
+        # file.write('\n'.join(final_result.split('\n')[:]))
+
     
 
 
@@ -577,6 +649,10 @@ def run_eval():
                                     time.sleep(3)
                                     parse_latency_trace(experiment_id)
 
+                                if EVAL_SCHED_OVHD == True:
+                                    kill_procs()
+                                    time.sleep(3)
+                                    parse_sched_ovhd(experiment_id)
                                 
 
             # task = host.run(cmd, return_output=True, quiet=False)

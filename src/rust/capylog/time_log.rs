@@ -21,6 +21,7 @@ static mut DATA: Option<Vec<(NaiveTime, ArrayVec<u8, 128>)>> = None;
 // Macros
 //==============================================================================
 
+#[macro_export]
 macro_rules! __capy_time_log {
     ($($arg:tt)*) => {
         $crate::capylog::time_log::__push_time_log(format_args!($($arg)*));
@@ -34,7 +35,7 @@ macro_rules! __capy_time_log_dump {
 }
 
 #[allow(unused)]
-pub(crate) use __capy_time_log;
+pub use __capy_time_log;
 #[allow(unused)]
 pub(crate) use __capy_time_log_dump;
 
@@ -71,7 +72,7 @@ pub(crate) fn __write_time_log_data<W: std::io::Write>(w: &mut W) -> std::io::Re
 }
 
 #[allow(unused)]
-pub(crate) fn __push_time_log(args: std::fmt::Arguments) {
+pub fn __push_time_log(args: std::fmt::Arguments) {
     let data = data();
     if data.len() == data.capacity() {
         eprintln!("[CAPYLOG-WARN] Time log allocation");

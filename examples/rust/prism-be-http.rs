@@ -36,6 +36,8 @@ use colored::Colorize;
 
 use crate::prism::PrismPacket;
 
+use demikernel::capy_time_log;
+
 #[macro_use]
 extern crate lazy_static;
 //=====================================================================================
@@ -293,7 +295,6 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
     
     loop {
         let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices).expect("result");
-            
         server_log!("\n\n======= OS: I/O operations have been completed, take the results! =======");
 
         let results = &qrs[..result_count];
@@ -315,6 +316,7 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                     let buf = match TcpState::deserialize(buf.clone()) {
                         // This is valid TCP state.
                         Ok(mut state) => {
+                            // capy_time_log!("BE_RECV_STATE,10.0.1.7:10000");
                             server_log_mig!("Received TCP State from FE");
                             state.set_local(local);
                             server_log_mig!("{:#?}", state);
@@ -345,6 +347,7 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                     server_log!("Second POP on connection, migrating connection back to FE");
                     server_log_mig!("Sending PRISM LOCK to SWITCH");
                     let (_, client) = libos.get_tcp_endpoints(qd);
+                    // capy_time_log!("BE_RECV_REQ,{}", client);
                     let mig = migrations.get_mut(&client).expect("no migration");
 
                     // Send LOCK to switch.
@@ -364,6 +367,7 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                     let pkt = PrismPacket::deserialize(buf).expect("invalid prism packet");
                     match pkt.kind {
                         prism::PrismType::Chown(..) => {
+                            capy_time_log!("BE_CHOWN_ACKED,{}", pkt.client);
                             server_log_mig!("Received PRISM CHOWN from SWITCH for client {}", pkt.client);
                             let mig = migrations.get_mut(&pkt.client).expect("no migration");
                             let qd = mig.qd;
@@ -379,6 +383,7 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                         },
 
                         prism::PrismType::Lock => {
+                            capy_time_log!("BE_BLOCK_ACKED,{}", pkt.client);
                             server_log_mig!("Received PRISM LOCK from SWITCH for client {}, sending connection to FE", pkt.client);
                             
                             // Migrate out the connection and send to FE.

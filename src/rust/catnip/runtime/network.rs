@@ -171,7 +171,7 @@ impl DPDKRuntime {
         let nb_rx = unsafe {
             #[cfg(feature = "profiler")]
             timer!("catnip_libos::receive::rte_eth_rx_burst");
-            capy_profile!("rte_eth_rx_burst()");
+            // capy_profile!("rte_eth_rx_burst()");
 
             rte_eth_rx_burst(self.port_id, self.queue_id*2 + 1, packets.as_mut_ptr(), RECEIVE_BATCH_SIZE as u16)
         };

@@ -44,7 +44,7 @@ use crate::{
     scheduler::{
         Scheduler,
         SchedulerHandle,
-    },
+    }, capy_time_log,
 };
 use ::futures::FutureExt;
 use ::libc::{
@@ -343,7 +343,10 @@ impl UdpPeer {
         // Parse datagram.
         let (hdr, data): (UdpHeader, Buffer) = UdpHeader::parse(ipv4_hdr, buf, self.checksum_offload)?;
         debug!("UDP received {:?}", hdr);
-
+        capy_time_log!("RECV_UDP,{}", SocketAddrV4::new(
+            Ipv4Addr::new(data[3], data[4], data[5], data[6]), 
+        u16::from_be_bytes(data[7..9].try_into().unwrap())));
+        
         let local: SocketAddrV4 = SocketAddrV4::new(ipv4_hdr.get_dest_addr(), hdr.dest_port());
         let remote: SocketAddrV4 = SocketAddrV4::new(ipv4_hdr.get_src_addr(), hdr.src_port());
 

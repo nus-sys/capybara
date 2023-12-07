@@ -137,7 +137,7 @@ impl TcpMigPeer {
 
         // First packet that target receives.
         if hdr.stage == MigrationStage::PrepareMigration {
-            capy_profile!("prepare_ack");
+            // capy_profile!("prepare_ack");
 
             capy_log_mig!("******* MIGRATION REQUESTED *******");
             capy_log_mig!("PREPARE_MIG {}", remote);
@@ -215,7 +215,7 @@ impl TcpMigPeer {
 
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4), qd: QDesc) {
         {
-            capy_profile!("additional_delay");
+            // capy_profile!("additional_delay");
             for _ in 0..self.additional_mig_delay {
                 thread::yield_now();
             }
