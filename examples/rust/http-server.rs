@@ -162,7 +162,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     libos.push2(qd, RESPONSE.as_bytes()).expect("push success") */
     // UNCOMMENT FOR NORMAL RESPONSE.
 
-    // UNCOMMENT FOR QUEUE LENGTH RESPONSE.
+    // UNCOMMENT FOR RECV QUEUE LENGTH EVAL.
     static mut RESPONSE: Option<Vec<u8>> = None;
     let response = if let Some(response) = unsafe { RESPONSE.as_mut() } {
         response.as_mut_slice()
@@ -186,9 +186,9 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     let queue_len = libos.global_recv_queue_length() as u64;
     response[0..8].copy_from_slice(&queue_len.to_be_bytes());
     
-    server_log!("PUSH: ({}) {}", queue_len, response[8..].lines().next().unwrap_or(""));
+    server_log!("PUSH: ({}) {}", queue_len, std::str::from_utf8(&response[8..]).unwrap());
     libos.push2(qd, &response).expect("push success")
-    // UNCOMMENT FOR QUEUE LENGTH RESPONSE.
+    // UNCOMMENT FOR RECV QUEUE LENGTH EVAL.
 }
 
 #[inline(always)]
