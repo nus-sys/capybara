@@ -17,14 +17,14 @@ TCPDUMP_NODE = 'node8'
 ################## BUILD CONFIG #####################
 FEATURES = [
     'tcp-migration',
-    'manual-tcp-migration',
+    # 'manual-tcp-migration',
     # 'capy-log',
     #'capy-profile',
     # 'capy-time-log'
 ]
 
 ################## TEST CONFIG #####################
-NUM_BACKENDS = 2
+NUM_BACKENDS = 1
 SERVER_APP = 'http-server'
 # SERVER_APP = 'redis-server'
 # CLIENT_APP = 'wrk'
