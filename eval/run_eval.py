@@ -399,7 +399,47 @@ def parse_wrk_result(experiment_id):
     # print(result_str)
     return result_str
 
+def parse_recv_qlen(experiment_id):
+    print(f'PARSING {experiment_id} recv_qlen') 
+    
+    # Load the data without specifying column names
+    file_path = f'{DATA_PATH}/{experiment_id}.recv_qlen'
+    data = []
+    with open(file_path, 'r') as file:
+        for line in file:
+            values = line.strip().split(',')
+            data.append((int(values[0]), int(values[1]), int(values[2])))
 
+    # Step 2: Group the rows by the first column divided by 1000000
+    groups = {}
+    for row in data:
+        group_key = row[0] // 1000000
+        if group_key in groups:
+            groups[group_key].append(row)
+        else:
+            groups[group_key] = [row]
+    
+    # Step 3: Find the 99th percentile value among the existing values in each group
+    result_data = []
+    print(len(groups.items()))
+    for group_key, group_rows in groups.items():
+        group_rows.sort(key=lambda x: x[1])  # Sort by the second column
+        percentile_index = int(len(group_rows) * 0.99)
+        percentile_value = group_rows[percentile_index][1]
+        result_data.append((group_key, percentile_value))
+    # print(result_data)
+    # Step 4: Print the second and third column values of those 99th percentiles in each group
+    
+    # Write 99p_lat.txt
+    with open(f'{DATA_PATH}/{experiment_id}.99p_recv_qlen', 'w') as recv_qlen_file:
+        for group_key, percentile_value in result_data:
+            for row in groups[group_key]:
+                if row[1] == percentile_value:
+                    # print(f'{row[1]},{row[2]}')
+                    recv_qlen_file.write(f'{row[1]},{row[2]}\n')
+        
+
+    
 def run_eval():
     global experiment_id
     global final_result
@@ -562,6 +602,11 @@ def run_eval():
                                     time.sleep(3)
                                     parse_latency_trace(experiment_id)
 
+                                if EVAL_RECV_QLEN == True:
+                                    kill_procs()
+                                    time.sleep(3)
+                                    parse_recv_qlen(experiment_id)
+
                                 
 
             # task = host.run(cmd, return_output=True, quiet=False)
@@ -609,6 +654,8 @@ def run_compile():
 
 
 if __name__ == '__main__':
+    # parse_recv_qlen("20231208-110041.206937")
+    # exit(1)
     # parse_result()
     # parse_mig_latency("20231129-083149.755267")
     # exit()
