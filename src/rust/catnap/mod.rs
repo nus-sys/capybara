@@ -411,17 +411,17 @@ impl CatnapLibOS {
     }
 
     /// Waits for any operation to complete.
-    pub fn wait_any(&mut self, qts: &[QToken]) -> Result<(usize, demi_qresult_t), Fail> {
+    /* pub fn wait_any(&mut self, qts: &[QToken]) -> Result<(usize, demi_qresult_t), Fail> {
         #[cfg(feature = "profiler")]
         timer!("catnap::wait_any");
         trace!("wait_any(): qts={:?}", qts);
 
         let (i, qd, r): (usize, QDesc, OperationResult) = self.wait_any2(qts)?;
         Ok((i, pack_result(&self.runtime, r, qd, qts[i].into())))
-    }
+    } */
 
     /// Waits for any operation to complete.
-    pub fn wait_any2(&mut self, qts: &[QToken]) -> Result<(usize, QDesc, OperationResult), Fail> {
+    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
         #[cfg(feature = "profiler")]
         timer!("catnap::wait_any2");
         trace!("wait_any2() {:?}", qts);
@@ -429,9 +429,13 @@ impl CatnapLibOS {
         loop {
             // Poll first, so as to give pending operations a chance to complete.
             self.runtime.scheduler.poll();
-
+            let mut completed = 0;
             // Search for any operation that has completed.
             for (i, &qt) in qts.iter().enumerate() {
+                if completed == qrs.len() {
+                    break;
+                }
+
                 // Retrieve associated schedule handle.
                 let mut handle: SchedulerHandle = match self.runtime.scheduler.from_raw_handle(qt.into()) {
                     Some(handle) => handle,
@@ -441,12 +445,18 @@ impl CatnapLibOS {
                 // Found one, so extract the result and return.
                 if handle.has_completed() {
                     let (qd, r): (QDesc, OperationResult) = self.take_result(handle);
-                    return Ok((i, qd, r));
+                    qrs[completed] = (qd, r); // Store the completed handle result.
+                    indices[completed] = i; // Store the index of the result.
+                    completed += 1;
+                } else {
+                    // Return this operation to the scheduling queue by removing the associated key
+                    // (which would otherwise cause the operation to be freed).
+                    handle.take_key();
                 }
+            }
 
-                // Return this operation to the scheduling queue by removing the associated key
-                // (which would otherwise cause the operation to be freed).
-                handle.take_key();
+            if completed > 0 {
+                return Ok(completed);
             }
         }
     }

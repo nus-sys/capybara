@@ -145,7 +145,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     libos.push2(qd, response.as_bytes()).expect("push success") */
 
     // UNCOMMENT FOR NORMAL RESPONSE.
-    /* lazy_static! {
+    lazy_static! {
         static ref RESPONSE: String = {
             match std::fs::read_to_string("/var/www/demo/index.html") {
                 Ok(contents) => {
@@ -159,35 +159,35 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     }
     
     server_log!("PUSH: {}", RESPONSE.lines().next().unwrap_or(""));
-    libos.push2(qd, RESPONSE.as_bytes()).expect("push success") */
+    libos.push2(qd, RESPONSE.as_bytes()).expect("push success")
     // UNCOMMENT FOR NORMAL RESPONSE.
 
     // UNCOMMENT FOR RECV QUEUE LENGTH EVAL.
-    static mut RESPONSE: Option<Vec<u8>> = None;
-    let response = if let Some(response) = unsafe { RESPONSE.as_mut() } {
-        response.as_mut_slice()
-    } else {
-        let msg = match std::fs::read_to_string("/var/www/demo/index.html") {
-            Ok(contents) => {
-                format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
-            },
-            Err(_) => {
-                format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
-            },
-        };
-        let mut buf = vec![0u8; 8 + msg.len()];
-        buf[8..].copy_from_slice(msg.as_bytes());
-        unsafe { 
-            RESPONSE = Some(buf);
-            RESPONSE.as_mut().unwrap().as_mut_slice()
-        }
-    };
+    // static mut RESPONSE: Option<Vec<u8>> = None;
+    // let response = if let Some(response) = unsafe { RESPONSE.as_mut() } {
+    //     response.as_mut_slice()
+    // } else {
+    //     let msg = match std::fs::read_to_string("/var/www/demo/index.html") {
+    //         Ok(contents) => {
+    //             format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
+    //         },
+    //         Err(_) => {
+    //             format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
+    //         },
+    //     };
+    //     let mut buf = vec![0u8; 8 + msg.len()];
+    //     buf[8..].copy_from_slice(msg.as_bytes());
+    //     unsafe { 
+    //         RESPONSE = Some(buf);
+    //         RESPONSE.as_mut().unwrap().as_mut_slice()
+    //     }
+    // };
     
-    let queue_len = libos.global_recv_queue_length() as u64;
-    response[0..8].copy_from_slice(&queue_len.to_be_bytes());
+    // let queue_len = libos.global_recv_queue_length() as u64;
+    // response[0..8].copy_from_slice(&queue_len.to_be_bytes());
     
-    server_log!("PUSH: ({}) {}", queue_len, std::str::from_utf8(&response[8..]).unwrap());
-    libos.push2(qd, &response).expect("push success")
+    // server_log!("PUSH: ({}) {}", queue_len, std::str::from_utf8(&response[8..]).unwrap());
+    // libos.push2(qd, &response).expect("push success")
     // UNCOMMENT FOR RECV QUEUE LENGTH EVAL.
 }
 

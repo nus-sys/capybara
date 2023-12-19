@@ -67,21 +67,23 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
     # print(result + '\n\n')
     
     print('RUNNING BACKENDS')
-    tasks = []
-    host = pyrem.host.RemoteHost(BACKEND_NODE) 
-    cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl'] 
-    task = host.run(cmd, quiet=True)
-    pyrem.task.Parallel([task], aggregate=True).start(wait=False)
-    time.sleep(3)
-    print('be-dpdk-ctrl is running')
+    host = pyrem.host.RemoteHost(BACKEND_NODE)
+
+    if LIBOS == 'catnip': 
+        cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl'] 
+        task = host.run(cmd, quiet=True)
+        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+        time.sleep(3)
+        print('be-dpdk-ctrl is running')
 
     server_tasks = []
     for j in range(NUM_BACKENDS):
         if SERVER_APP == 'http-server':
             cmd = [f'cd {CAPYBARA_PATH} && \
+                taskset --cpu-list {j+1} \
                 sudo -E \
                 CAPY_LOG={CAPY_LOG} \
-                LIBOS=catnip \
+                LIBOS={LIBOS} \
                 RECV_QUEUE_THRESHOLD={RECV_QUEUE_THRESHOLD} \
                 {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
                 MTU=1500 \
@@ -516,7 +518,9 @@ def run_eval():
                                             --output=buckets \
                                             --rampup=0 \
                                             --exptid={DATA_PATH}/{experiment_id} \
-                                            > {DATA_PATH}/{experiment_id}.client'] # --loadshift=300000:2000000,600000:3000000 \
+                                            > {DATA_PATH}/{experiment_id}.client'] 
+                                        # --loadshift=300000:2000000,600000:3000000 \
+                                        # --zipf=0.9 \
                                 elif SERVER_APP == 'redis-server':
                                     cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                             10.0.1.8:10000 \
@@ -644,7 +648,7 @@ def run_compile():
         features += feat + ','
 
     if SERVER_APP == 'http-server':
-        return os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make all-examples-rust")
+        return os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-examples-rust")
     elif SERVER_APP == 'redis-server':
         clean = 'make clean-redis &&' if len(sys.argv) > 2 and sys.argv[2] == 'clean' else ''
         return os.system(f'cd {CAPYBARA_PATH} && {clean} make redis-server{mig}')
