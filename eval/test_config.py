@@ -13,8 +13,13 @@ PCAP_PATH = f'{LOCAL}/capybara-pcap'
 ################## CLUSTER CONFIG #####################
 ALL_NODES = ['node7', 'node8', 'node9']
 CLIENT_NODE = 'node7'
+FRONTEND_NODE = 'node8'
 BACKEND_NODE = 'node9'
 TCPDUMP_NODE = 'node8'
+NODE8_IP = '10.0.1.8'
+NODE8_MAC = '08:c0:eb:b6:e8:05'
+NODE9_IP = '10.0.1.9'
+NODE9_MAC = '08:c0:eb:b6:c5:ad'
 
 ################## BUILD CONFIG #####################
 LIBOS = 'catnap'#'catnip'
@@ -27,19 +32,17 @@ FEATURES = [
 ]
 
 ################## TEST CONFIG #####################
-NUM_BACKENDS = 2
-SERVER_APP = 'http-server'
-# SERVER_APP = 'redis-server'
-# CLIENT_APP = 'wrk'
+NUM_BACKENDS = 1
+SERVER_APP = 'http-server' # 'http-server', 'prism', 'redis-server'
+CLIENT_APP = 'caladan' # 'wrk', 'caladan'
 NUM_THREADS = [1] # for wrk load generator
-CLIENT_APP = 'caladan'
 REPEAT_NUM = 1
 RECV_QUEUE_THRESHOLD = 0
 MIG_DELAYS = [0] 
 MAX_STAT_MIGS = [0]#[5000, 10000, 15000] # set element to '' if you don't want to set this env var
 MIG_PER_N = [1]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
-CLIENT_PPS = [i for i in range(800000, 800000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
-NUM_CONNECTIONS = [100]
+CLIENT_PPS = [i for i in range(100, 100 + 1, 100)]#[i for i in range(100000, 1_300_001, 100000)]
+NUM_CONNECTIONS = [1]
 RUNTIME = 10
 TCPDUMP = False
 EVAL_MIG_LATENCY = False

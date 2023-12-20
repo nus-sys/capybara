@@ -36,6 +36,7 @@ def kill_procs():
     cmd = [f'sudo pkill -INT -e iokerneld ; \
             sudo pkill -INT -e synthetic ; \
             sudo pkill -INT -e dpdk-ctrl.elf ; \
+           sudo pkill -INT -e phttp-bench ; \
             sudo pkill -INT -e {SERVER_APP} ']
     # print(cmd)
     if TCPDUMP:
@@ -56,7 +57,12 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
     global experiment_id
     
     print('SETUP SWITCH')
-    cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
+    cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
+           /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
+    if SERVER_APP == 'prism':
+        cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
+           /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/prism/prism_setup.py"']
+
     result = subprocess.run(
         cmd,
         shell=True,
@@ -69,18 +75,37 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
     print('RUNNING BACKENDS')
     host = pyrem.host.RemoteHost(BACKEND_NODE)
 
-    if LIBOS == 'catnip': 
+    if SERVER_APP != 'prism' and LIBOS == 'catnip': 
         cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl'] 
         task = host.run(cmd, quiet=True)
         pyrem.task.Parallel([task], aggregate=True).start(wait=False)
         time.sleep(3)
         print('be-dpdk-ctrl is running')
+    elif SERVER_APP == 'prism': # run FE
+        fe_host = pyrem.host.RemoteHost(FRONTEND_NODE)
+        BE_ADDRs = f'{NODE9_IP}:10000'
+        for j in range(NUM_BACKENDS-1): 
+            BE_ADDRs = BE_ADDRs + f',{NODE9_IP}:1000{j+1}'
+        cmd = [f'taskset --cpu-list {1} \
+                sudo numactl -m0 phttp-bench-proxy \
+                --addr {NODE8_IP} --port 10000 --mac {NODE8_MAC} \
+                --ho-addr {NODE8_IP} --ho-port 10001 \
+                --sw-addr 10.0.1.7 --sw-port 18080 \
+                --backends {BE_ADDRs} \
+                --backlog 8192 --ho-backlog 64 \
+                --nworkers 1 \
+                > {DATA_PATH}/{experiment_id}.fe 2>&1']
+        task = fe_host.run(cmd, quiet=True)
+        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+        time.sleep(1)
+        print('Prism FE is running')
+        
 
     server_tasks = []
-    for j in range(NUM_BACKENDS):
+    for j in range(NUM_BACKENDS): 
         if SERVER_APP == 'http-server':
             cmd = [f'cd {CAPYBARA_PATH} && \
-                taskset --cpu-list {j+1} \
+                {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
                 sudo -E \
                 CAPY_LOG={CAPY_LOG} \
                 LIBOS={LIBOS} \
@@ -106,6 +131,16 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                     CONF=redis{j} \
                     {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
                     > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
+        elif SERVER_APP == 'prism':
+            cmd = [f'taskset --cpu-list {j+1} \
+                sudo numactl -m0 phttp-bench-backend \
+                --addr {NODE9_IP} --port 80 --mac {NODE9_MAC} \
+                --ho-addr {NODE9_IP} --ho-port 1000{j} \
+                --proxy-addr {NODE8_IP} --proxy-port 10001 \
+                --sw-addr 10.0.1.7 --sw-port 18080 \
+                --backlog 8192 --ho-backlog 64 \
+                --nworkers 1 \
+                > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
         else:
             print(f'Invalid server app: {SERVER_APP}')
             exit(1)
@@ -361,7 +396,7 @@ def parse_wrk_result(experiment_id):
         text = file.read()
 
     # Use regular expressions to extract relevant values
-    avg_latency_match = re.search(r"(\d+\.\d+)us\s", text)
+    avg_latency_match = re.search(r"(\d+\.\d+)(us|ms|s)\s", text)
     threads_match = re.search(r"(\d+)\s+threads", text)
     connections_match = re.search(r"(\d+)\s+connections", text)
     requests_sec_match = re.search(r"Requests/sec:\s+(\d+\.\d+)", text)
@@ -373,11 +408,13 @@ def parse_wrk_result(experiment_id):
         threads = threads_match.group(1)
         connections = connections_match.group(1)
         requests_per_sec = requests_sec_match.group(1)
+         
+        avg_lat = float(avg_latency_match.group(1)) * {'us': 1, 'ms': 1000, 's': 1000000}.get(avg_latency_match.group(2), 1)
         
-        result_str = f'{experiment_id}, {NUM_BACKENDS}, {connections}, {threads}, {requests_per_sec.split(".")[0]}'
+        result_str = f'{experiment_id}, {NUM_BACKENDS}, {int(connections)}, {threads}, {requests_per_sec.split(".")[0]}, {int(avg_lat)}'
 
         # Define a regular expression pattern to match the percentages and values
-        pattern = r'(\d+%)\s+(\d+\.\d+us)'
+        pattern = r'(\d+%)\s+(\d+\.\d+(?:us|ms|s))'
         # Find all matches in the text using the regular expression pattern
         matches = re.findall(pattern, text)
 
@@ -388,7 +425,15 @@ def parse_wrk_result(experiment_id):
         for match in matches:
             percentile, value = match
             latency_data[percentile] = value
-            result_str = result_str + f', {value.rstrip("us")}'
+            pattern = r"(\d+\.\d+)(us|ms|s)"
+            matches = re.search(pattern, value)
+            if matches:
+                percentiile_lat = float(matches.group(1)) * {'us': 1, 'ms': 1000, 's': 1000000}.get(matches.group(2), 1)
+            else:
+                print("PANIC: cannot find percentile latency")
+                exit(1)
+
+            result_str = result_str + f', {int(percentiile_lat)}'
         # Print the parsed data
         # for percentile, value in latency_data.items():
         #     print(f"{percentile}: {value}")
@@ -494,7 +539,7 @@ def run_eval():
                                     time.sleep(4)
                                     print('iokerneld is running')
                                 
-                                if SERVER_APP == 'http-server':
+                                if SERVER_APP == 'http-server' or SERVER_APP == 'prism':
                                     if CLIENT_APP == 'wrk':
                                         cmd = [f'sudo numactl -m0 {HOME}/wrk-tools/wrk/wrk \
                                             -t{num_thread} \
@@ -572,6 +617,8 @@ def run_eval():
                                             stderr=subprocess.STDOUT,
                                             check=True,
                                         ).stdout.decode()
+                                        if result == '':
+                                            result = '[RESULT] N/A\n'
                                         print('[RESULT]' + f'{experiment_id}, {NUM_BACKENDS}, {conn}, {mig_delay}, {max_stat_migs}, {mig_per_n},{result[len("[RESULT]"):]}' + '\n\n')
                                         final_result = final_result + f'{experiment_id}, {NUM_BACKENDS}, {conn}, {mig_delay}, {max_stat_migs}, {mig_per_n},{result[len("[RESULT]"):]}'
                                     except subprocess.CalledProcessError as e:
@@ -627,10 +674,14 @@ def run_eval():
 def exiting():
     global final_result
     print('EXITING')
-    print("\n\n\n\n\nID, #CONN, MIG_DELAY, TOTAL_#_MIG, MIG_PER_N, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc")
+    result_header = "ID, #BE, #CONN, MIG_DELAY, TOTAL_#_MIG, MIG_PER_N, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc"
+    if CLIENT_APP == 'wrk':
+        result_header = "ID, #BE, #CONN, #THREAD, AVG, p50, p75, p90, p99"
+        
+    print(f'\n\n\n\n\n{result_header}')
     print(final_result)
     with open(f'{DATA_PATH}/result.txt', "w") as file:
-        file.write("ID, #CONN, MIG_DELAY, TOTAL_#_MIG, MIG_PER_N, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc\n")
+        file.write(f'{result_header}')
         file.write(final_result)
     kill_procs()
 
