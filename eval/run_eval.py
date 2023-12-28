@@ -117,7 +117,7 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
                 MIG_DELAY={int(mig_delay/10) * 76} \
-                MAX_STAT_MIGS={int(max_stat_migs) if j == 0 else 0} \
+                MAX_STAT_MIGS={int(max_stat_migs)} \
                 MIG_PER_N={int(mig_per_n)} \
                 CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
@@ -351,11 +351,11 @@ def parse_latency_trace(experiment_id):
             columns = line.strip().split(",")
             # print(columns[0], columns[1])
 
-            ms = int(int( (int(columns[0]) / 1000000) / 10 ) * 10);
-            if ms in clusters:
-                clusters[ms].append(int(columns[1]))
+            window = int(int( (int(columns[0]) / 1000000) / 10 ) * 10);
+            if window in clusters:
+                clusters[window].append(int(columns[1]))
             else:
-                clusters[ms] = [int(columns[1])]
+                clusters[window] = [int(columns[1])]
     
     # Sort the dictionary by keys
     sorted_clusters = dict(sorted(clusters.items()))
@@ -387,6 +387,31 @@ def parse_latency_trace(experiment_id):
         for key, percentile_99 in percentiles_99:
             p99_file.write(f"{key},{percentile_99}\n") 
 
+def parse_request_vs_time(experiment_id):
+    print(f'PARSING {experiment_id} request_vs_time') 
+    
+    clusters = {}
+    file_path = f'{DATA_PATH}/{experiment_id}.latency_trace'
+    with open(file_path, "r") as file:
+        # Iterate through each line in the file
+        for line in file:            
+            columns = line.strip().split(",")
+            # print(columns[0], columns[1])
+
+            # window = int(int( (int(columns[0]) / 1000000) / 10 ) * 10);
+            window = int(int(columns[0]) / 1000000)
+            if window in clusters:
+                clusters[window] += 1
+            else:
+                clusters[window] = 1 
+    
+    # Sort the dictionary by keys
+    sorted_clusters = dict(sorted(clusters.items()))
+
+    
+    with open(f'{DATA_PATH}/{experiment_id}.requests_vs_time', 'w') as rvt_file:
+        for key, reqs in sorted_clusters.items():
+            rvt_file.write(f"{key},{reqs}\n")
 
 def parse_wrk_result(experiment_id):
     import re
@@ -508,20 +533,25 @@ def run_eval():
                                         f'NUM_BACKENDS: {NUM_BACKENDS}\n'
                                         f'SERVER_APP: {SERVER_APP}\n'
                                         f'CLIENT_APP: {CLIENT_APP}\n'
+                                        f'NUM_THREAD: {num_thread}\n'
                                         f'REPEAT: {repeat}\n'
                                         f'RECV_QUEUE_THRESHOLD: {RECV_QUEUE_THRESHOLD}\n'
                                         f'MIG_DELAY: {mig_delay}\n'
                                         f'MAX_STAT_MIGS: {max_stat_migs}\n'
                                         f'MIG_PER_N: {mig_per_n}\n'
                                         f'RATE: {pps}\n'
+                                        f'LOADSHIFTS: {LOADSHIFTS}\n'
+                                        f'ZIPF_ALPHA: {ZIPF_ALPHA}\n'
+                                        f'ONOFF: {ONOFF}\n'
                                         f'NUM_CONNECTIONS: {conn}\n'
                                         f'RUNTIME: {RUNTIME}\n'
-                                        f'RUN ID: {experiment_id}\n'
                                         f'TCPDUMP: {TCPDUMP}\n'
                                         f'EVAL_MIG_LATENCY: {EVAL_MIG_LATENCY}\n'
                                         f'EVAL_POLL_INTERVAL: {EVAL_POLL_INTERVAL}\n'
                                         f'EVAL_LATENCY_TRACE: {EVAL_LATENCY_TRACE}\n'
-                                        f'NUM_THREAD: {num_thread}\n'
+                                        f'EVAL_RECV_QLEN: {EVAL_RECV_QLEN}\n'
+                                        f'EVAL_REQS_VS_TIME: {EVAL_REQS_VS_TIME}\n'
+                                        f'RUN ID: {experiment_id}\n'
                                         )
                                 
 
@@ -536,7 +566,7 @@ def run_eval():
                                     cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
                                     task = host.run(cmd, quiet=True)
                                     pyrem.task.Parallel([task], aggregate=True).start(wait=False)
-                                    time.sleep(4)
+                                    time.sleep(3)
                                     print('iokerneld is running')
                                 
                                 if SERVER_APP == 'http-server' or SERVER_APP == 'prism':
@@ -560,12 +590,13 @@ def run_eval():
                                             --threads={conn} \
                                             --runtime={RUNTIME} \
                                             --discard_pct=10 \
-                                            --output=buckets \
+                                            --output=trace \
                                             --rampup=0 \
+                                            {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
+                                            {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
+                                            {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
                                             --exptid={DATA_PATH}/{experiment_id} \
-                                            > {DATA_PATH}/{experiment_id}.client'] 
-                                        # --loadshift=300000:2000000,600000:3000000 \
-                                        # --zipf=0.9 \
+                                            > {DATA_PATH}/{experiment_id}.client']
                                 elif SERVER_APP == 'redis-server':
                                     cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                             10.0.1.8:10000 \
@@ -658,6 +689,10 @@ def run_eval():
                                     time.sleep(3)
                                     parse_recv_qlen(experiment_id)
 
+                                if EVAL_REQS_VS_TIME == True:
+                                    kill_procs()
+                                    time.sleep(3)
+                                    parse_request_vs_time(experiment_id)
                                 
 
             # task = host.run(cmd, return_output=True, quiet=False)
