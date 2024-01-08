@@ -137,7 +137,7 @@ impl TcpMigPeer {
 
         // First packet that target receives.
         if hdr.stage == MigrationStage::PrepareMigration {
-            capy_profile!("prepare_ack");
+            // capy_profile!("prepare_ack");
 
             capy_log_mig!("******* MIGRATION REQUESTED *******");
             capy_log_mig!("PREPARE_MIG {}", remote);
@@ -182,7 +182,7 @@ impl TcpMigPeer {
         match status {
             TcpmigReceiveStatus::PrepareMigrationAcked(..) => (),
             TcpmigReceiveStatus::StateReceived(ref state, _) => {
-                capy_profile_merge_previous!("migrate_ack");
+                // capy_profile_merge_previous!("migrate_ack");
 
                 // Push user data into queue.
                 /* if let Some(data) = user_data {
@@ -215,7 +215,7 @@ impl TcpMigPeer {
 
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4), qd: QDesc) {
         {
-            capy_profile!("additional_delay");
+            // capy_profile!("additional_delay");
             for _ in 0..self.additional_mig_delay {
                 thread::yield_now();
             }
@@ -267,7 +267,10 @@ impl TcpMigPeer {
                 active.buffer_packet(tcp_hdr, data);
                 Ok(())
             },
-            None => Err((tcp_hdr, data)),
+            None => {
+                capy_log_mig!("trying to buffer, but there is no corresponding active migration");
+                Err((tcp_hdr, data))
+            },
         }
     }
 

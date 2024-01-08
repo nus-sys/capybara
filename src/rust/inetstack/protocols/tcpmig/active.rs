@@ -119,7 +119,7 @@ impl ActiveMigration {
             MigrationStage::None => {
                 match hdr.stage {
                     MigrationStage::PrepareMigration => {
-                        capy_profile_merge_previous!("prepare_ack");
+                        // capy_profile_merge_previous!("prepare_ack");
 
                         // Decide if migration should be accepted or not and send corresponding segment.
 
@@ -159,7 +159,7 @@ impl ActiveMigration {
             MigrationStage::PrepareMigrationAck => {
                 match hdr.stage {
                     MigrationStage::ConnectionState => {
-                        capy_profile!("migrate_ack");
+                        // capy_profile!("migrate_ack");
 
                         // Handle fragmentation.
                         let (hdr, buf) = match self.defragmenter.defragment(hdr, buf) {

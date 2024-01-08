@@ -71,6 +71,8 @@ use crate::runtime::{
         ETH_RSS_NONFRAG_IPV4_TCP,
         RTE_ETHER_TYPE_IPV4,
         rte_ipv4_hdr,
+        rte_eth_stats,
+        rte_eth_stats_get,
     },
     network::{
         config::{
@@ -601,6 +603,49 @@ impl DPDKRuntime {
             println!("UDP Flow (port: {:?} => queue: {:?}) created: {:?}", port, queue_action.index, udp_flow);
         }
         }
+    }
+
+    pub fn dpdk_print_eth_stats() {
+        eprintln!("dpdk_print_eth_stats");
+        let port: u16 = unsafe { rte_eth_find_next_owned_by(0, RTE_ETH_DEV_NO_OWNER as u64) as u16 };
+        
+        let mut stats: rte_eth_stats = rte_eth_stats {
+            ipackets: 0,
+            opackets: 0,
+            ibytes: 0,
+            obytes: 0,
+            imissed: 7,
+            ierrors: 0,
+            oerrors: 0,
+            rx_nombuf: 0,
+            q_ipackets: [0; 16],
+            q_opackets: [0; 16],
+            q_ibytes: [0; 16],
+            q_obytes: [0; 16],
+            q_errors: [0; 16],
+        };
+        let ret = unsafe { rte_eth_stats_get(port, &mut stats) };
+        if ret != 0 {
+            eprintln!("dpdk: error getting eth stats");
+        }
+
+        println!(
+            "eth stats for port {}",
+            port
+        );
+        println!(
+            "RX-packets: {} RX-dropped: {} RX-bytes: {}",
+            stats.ipackets, stats.imissed, stats.ibytes
+        );
+        println!(
+            "TX-packets: {} TX-bytes: {}",
+            stats.opackets, stats.obytes
+        );
+        println!(
+            "RX-error: {} TX-error: {} RX-mbuf-fail: {}",
+            stats.ierrors, stats.oerrors, stats.rx_nombuf
+        );
+
     }
     
 }

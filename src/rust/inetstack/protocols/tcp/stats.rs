@@ -15,7 +15,7 @@ use crate::{capy_log_mig, capy_log};
 
 const BUCKET_SIZE_LOG2: usize = 3;
 
-const ROLLING_AVG_WINDOW_LOG2: usize = 3;
+const ROLLING_AVG_WINDOW_LOG2: usize = 7;
 const ROLLING_AVG_WINDOW: usize = 1 << ROLLING_AVG_WINDOW_LOG2;
 
 pub const MAX_EXTRACTED_CONNECTIONS: usize = 20;
@@ -43,11 +43,11 @@ pub struct Stats {
 
 #[derive(Debug)]
 struct BucketList {
-    /// Index 0: Connections with queue length 1-9. (0-length connections are not stored)
-    /// 
-    /// Index 1: Connections with queue length 10-19.
-    /// 
-    /// Index 2: Connections with queue length 20-29, and so on.
+    /// Index i: Connections with queue length from (2^BUCKET_SIZE_LOG2) * i to (2^BUCKET_SIZE_LOG2) * (i+1) - 1. 
+    ///
+    /// i.e., bucket_index = recv_queue_len >> BUCKET_SIZE_LOG2
+    ///
+    /// NOTE: 0 length connections are not stored
     buckets: Vec<Vec<StatsHandle>>,
 }
 

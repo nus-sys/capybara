@@ -225,6 +225,11 @@ impl CatnipLibOS {
     pub fn sgafree(&self, sga: demi_sgarray_t) -> Result<(), Fail> {
         self.rt.free_sgarray(sga)
     }
+
+    /// Releases a scatter-gather array.
+    pub fn dpdk_print_eth_stats() {
+        DPDKRuntime::dpdk_print_eth_stats();
+    }
 }
 
 //==============================================================================

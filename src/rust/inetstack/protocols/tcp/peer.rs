@@ -363,7 +363,7 @@ impl TcpPeer {
 
         let socket: Socket = Socket::Established { local, remote };
 
-        // capy_log!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
+        // eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
 
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         match inner.sockets.insert(new_qd, socket) {
@@ -626,18 +626,20 @@ impl Inner {
     }
 
     fn receive(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
+        capy_log!("\n\n[RX]");
+        
         let (mut tcp_hdr, data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
         debug!("TCP received {:?}", tcp_hdr);
-
         let local = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
         let remote = SocketAddrV4::new(ip_hdr.get_src_addr(), tcp_hdr.src_port);
+        capy_log!("{:?} => {:?}", remote, local);
+        capy_log!("SERVER RECEIVE TCP seq_num: {}", tcp_hdr.seq_num);
 
         if remote.ip().is_broadcast() || remote.ip().is_multicast() || remote.ip().is_unspecified() {
             return Err(Fail::new(EINVAL, "invalid address type"));
         }
         let key = (local, remote);
 
-        capy_log!("\n\n[RX] {:?} => {:?}", remote, local);
         if let Some(s) = self.established.get(&key) {
             /* activate this for recv_queue_len vs mig_lat eval */
             // let is_data_empty = data.is_empty();
@@ -671,6 +673,8 @@ impl Inner {
         }
         if let Some(s) = self.connecting.get_mut(&key) {
             debug!("Routing to connecting connection: {:?}", key);
+            capy_log!("Routing to connecting connection: {:?}", key);
+        
             s.receive(&tcp_hdr);
             return Ok(());
         }
@@ -691,11 +695,13 @@ impl Inner {
         let (local, _) = key;
         if let Some(s) = self.passive.get_mut(&local) {
             debug!("Routing to passive connection: {:?}", local);
+            capy_log!("Routing to passive connection: {:?}", local);
             return s.receive(ip_hdr, &tcp_hdr);
         }
 
         // The packet isn't for an open port; send a RST segment.
         debug!("Sending RST for {:?}, {:?}", local, remote);
+        capy_log!("Sending RST for {:?}, {:?}", local, remote);
         self.send_rst(&local, &remote)?;
         Ok(())
     }
@@ -932,6 +938,7 @@ impl Inner {
 
         // Receive all target-buffered packets into the CB.
         for (mut hdr, data) in buffered {
+            capy_log_mig!("start receiving target-buffered packets into the CB");
             cb.receive(&mut hdr, data);
         }
 
@@ -1071,12 +1078,12 @@ pub mod state {
             let state = get_state();
 
             let state = {
-                capy_profile!("serialise");
+                // capy_profile!("serialise");
                 state.serialize()
             };
 
             let segment = {
-                capy_profile!("segment creation");
+                // capy_profile!("segment creation");
                 create_segment(state)
             };
 
@@ -1085,7 +1092,7 @@ pub mod state {
 
             let mut fragments = Vec::with_capacity(count);
             {
-                capy_profile!("total fragment");
+                // capy_profile!("total fragment");
                 for e in segment.fragments() {
                     fragments.push((e.tcpmig_hdr, e.data));
                 }
@@ -1096,11 +1103,11 @@ pub mod state {
             let mut i = 0;
             let mut segment = None;
             {
-                capy_profile!("total defragment");
+                // capy_profile!("total defragment");
                 for (hdr, buf) in fragments {
                     i += 1;
                     if let Some(seg) = {
-                        capy_profile!("defragment");
+                        // capy_profile!("defragment");
                         defragmenter.defragment(hdr, buf)
                     } {
                         segment = Some(seg);
@@ -1111,7 +1118,7 @@ pub mod state {
             
             let (hdr, buf) = segment.unwrap();
             let state = {
-                capy_profile!("deserialise");
+                // capy_profile!("deserialise");
                 TcpState::deserialize(buf)
             };
             assert_eq!(state, get_state());

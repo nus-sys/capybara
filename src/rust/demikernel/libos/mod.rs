@@ -28,6 +28,7 @@ use crate::{
         QToken,
     }
 };
+use std::os::raw::c_void;
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -280,5 +281,9 @@ impl LibOS {
     pub fn capylog_dump<W: std::io::Write>(dump: &mut W) {
         crate::capy_profile_dump!(dump);
         crate::capy_time_log_dump!(dump);
+    }
+
+    pub fn dpdk_print_eth_stats() {
+        CatnipLibOS::dpdk_print_eth_stats();
     }
 }

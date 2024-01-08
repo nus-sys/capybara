@@ -254,11 +254,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
             .parse()
             .expect("MIG_PER_N must be a i32");
     ctrlc::set_handler(move || {
-        // println!("Received Ctrl-C signal. Total requests processed: {}", request_count);
+        eprintln!("Received Ctrl-C signal.");
+        LibOS::dpdk_print_eth_stats();
         LibOS::capylog_dump(&mut std::io::stderr().lock());
         std::process::exit(0);
     }).expect("Error setting Ctrl-C handler");
-
     // unsafe { START_TIME = Some(Instant::now()); }
 
     let libos_name: LibOSName = LibOSName::from_env().unwrap().into();

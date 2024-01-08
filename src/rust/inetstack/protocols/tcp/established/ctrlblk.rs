@@ -919,7 +919,7 @@ impl ControlBlock {
                 0
             };
             capy_log!("[TX] {} => {}: // {} bytes", 
-                                        self.local.ip(), self.remote.ip(), len);
+                                        self.local, self.remote, len);
         }
         let segment = TcpSegment {
             ethernet2_hdr: Ethernet2Header::new(remote_link_addr, self.local_link_addr, EtherType2::Ipv4),
