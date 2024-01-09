@@ -17,8 +17,10 @@
 #define MIGRATION_SIGNATURE 0xCAFEDEAD
 #define HEARTBEAT_SIGNATURE 0xCAFECAFE
 
-#define FE_MAC 0xb8cef62a2f95
-#define FE_IP 0x0a000101
+// #define FE_MAC 0xb8cef62a2f95
+// #define FE_IP 0x0a000101
+#define FE_MAC 0x08c0ebb6e805
+#define FE_IP 0x0a000108
 #define FE_PORT 10000 
 
 #define BE_MAC 0x08c0ebb6c5ad
