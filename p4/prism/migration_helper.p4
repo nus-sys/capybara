@@ -78,7 +78,8 @@ control MigrationRequestIdentifier32b(
         }
         size = 16;
         const entries = {
-            (2, 0) : exec_write_value();
+            (0, 0) : exec_write_value();
+            (2, _) : exec_check_block_entry();
             (1, _) : exec_delete_value();
             (5, _) : exec_check_value();
             (3, _) : exec_check_block_entry();
@@ -166,7 +167,8 @@ control MigrationRequestIdentifier16b(
         }
         size = 16;
         const entries = {
-            (2, 0) : exec_write_value();
+            (0, 0) : exec_write_value();
+            (2, _) : exec_check_block_entry();
             (1, _) : exec_delete_value();
             (5, _) : exec_check_value();
             (3, _) : exec_check_block_entry();

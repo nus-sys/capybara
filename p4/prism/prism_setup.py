@@ -142,7 +142,7 @@ class prism():
         except:
             pass
         self.p4.IngressDeparser.migration_digest.callback_register(self.learning_migration)
-        # print("Done")
+        print("Done")
         
 
         # Enable aging on SMAC
