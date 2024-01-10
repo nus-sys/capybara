@@ -470,7 +470,8 @@ impl ControlBlock {
         if seg_len > 0 {
             seg_end = seg_start + SeqNumber::from(seg_len - 1);
         }
-
+        capy_log!("seg_len: {}", seg_len);
+            
         let receive_next: SeqNumber = self.receiver.receive_next.get();
 
         let after_receive_window: SeqNumber = receive_next + SeqNumber::from(self.get_receive_window_size());
@@ -730,7 +731,7 @@ impl ControlBlock {
         // We can only process in-order data (or FIN).  Check for out-of-order segment.
         if seg_start != receive_next {
             debug!("Received out-of-order segment");
-            capy_log!("Out-of-order // seg_start: {}, receive_next: {}", seg_start, receive_next);
+            capy_log!("Out-of-order // seg_start: {}, receive_next: {}, hdr.ack: {}, seg_len: {}", seg_start, receive_next, header.ack, seg_len);
             // This segment is out-of-order.  If it carries data, and/or a FIN, we should store it for later processing
             // after the "hole" in the sequence number space has been filled.
             if seg_len > 0 {
@@ -749,7 +750,10 @@ impl ControlBlock {
                         // Sending an ACK here is only a "MAY" according to the RFCs, but helpful for fast retransmit.
                         self.send_ack();
                     },
-                    state => warn!("Ignoring data received after FIN (in state {:?}).", state),
+                    state => {
+                        warn!("Ignoring data received after FIN (in state {:?}).", state);
+                        capy_log!("Ignoring data received after FIN (in state {:?}).", state);
+                    },
                 }
             }
 
@@ -1105,6 +1109,7 @@ impl ControlBlock {
 
         // Insert the new segment into the correct position.
         out_of_order.insert(action_index, (new_start, buf));
+        capy_log!("Out-of-order queue: {:?}", out_of_order);
 
         // If the out-of-order store now contains too many entries, delete the later entries.
         // ToDo: The out-of-order store is already limited (in size) by our receive window, while the below check

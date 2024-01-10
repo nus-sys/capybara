@@ -766,7 +766,7 @@ impl InetStack {
             }
             for pkt in batch {
                 if let Err(e) = self.do_receive(pkt) {
-                    panic!("Dropped packet: {:?}", e);
+                    warn!("Dropped packet: {:?}", e);
                 }
                 // TODO: This is a workaround for https://github.com/demikernel/inetstack/issues/149.
                 self.scheduler.poll();
