@@ -275,14 +275,8 @@ impl TcpMigPeer {
     }
 
     /// Returns the buffered packets for the migrated connection.
-    pub fn close_active_migration(&mut self, remote: SocketAddrV4) -> Vec<(TcpHeader, Buffer)> {
-        match self.active_migrations.remove(&remote) {
-            Some(mut active) => {
-                active.take_buffered_packets()
-            },
-
-            None => panic!("No active migration for remote {remote}"),
-        }
+    pub fn close_active_migration(&mut self, remote: SocketAddrV4) -> Option<Vec<(TcpHeader, Buffer)>> {
+        self.active_migrations.remove(&remote).map(|mut active| active.take_buffered_packets())
     }
 
     pub fn take_incoming_user_data(&mut self, remote: SocketAddrV4) -> Option<Buffer> {

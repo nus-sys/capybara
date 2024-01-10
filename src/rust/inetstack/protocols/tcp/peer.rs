@@ -358,10 +358,11 @@ impl TcpPeer {
         #[cfg(feature = "tcp-migration")]
         {
             // Process buffered packets.
-            let buffered = inner.tcpmig.close_active_migration(remote);
-            for (mut hdr, data) in buffered {
-                capy_log_mig!("start receiving target-buffered packets into the CB");
-                cb.receive(&mut hdr, data);
+            if let Some(buffered) = inner.tcpmig.close_active_migration(remote) {
+                for (mut hdr, data) in buffered {
+                    capy_log_mig!("start receiving target-buffered packets into the CB");
+                    cb.receive(&mut hdr, data);
+                }
             }
             
             cb.enable_stats(&mut inner.stats);
