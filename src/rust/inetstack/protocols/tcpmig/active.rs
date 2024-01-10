@@ -186,9 +186,9 @@ impl ActiveMigration {
                         self.send(hdr, empty_buffer());
 
                         // Take the buffered packets.
-                        let pkts = std::mem::take(&mut self.recv_queue);
+                        // let pkts = std::mem::take(&mut self.recv_queue);
                         
-                        return Ok(TcpmigReceiveStatus::StateReceived(state, pkts));
+                        return Ok(TcpmigReceiveStatus::StateReceived(state));
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE"))
                 }
@@ -260,6 +260,10 @@ impl ActiveMigration {
 
     pub fn buffer_packet(&mut self, tcp_hdr: TcpHeader, data: Buffer) {
         self.recv_queue.push((tcp_hdr, data));
+    }
+
+    pub fn take_buffered_packets(&mut self) -> Vec<(TcpHeader, Buffer)> {
+        std::mem::take(&mut self.recv_queue)
     }
 
     /// Sends a TCPMig segment from local to remote.

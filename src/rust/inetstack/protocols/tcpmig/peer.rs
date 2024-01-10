@@ -55,7 +55,7 @@ use crate::capy_log_mig;
 pub enum TcpmigReceiveStatus {
     Ok,
     PrepareMigrationAcked(QDesc),
-    StateReceived(TcpState, Vec<(TcpHeader, Buffer)>),
+    StateReceived(TcpState),
     MigrationCompleted,
 }
 
@@ -181,7 +181,7 @@ impl TcpMigPeer {
         let status = active.process_packet(ipv4_hdr, hdr, buf)?;
         match status {
             TcpmigReceiveStatus::PrepareMigrationAcked(..) => (),
-            TcpmigReceiveStatus::StateReceived(ref state, _) => {
+            TcpmigReceiveStatus::StateReceived(ref state) => {
                 // capy_profile_merge_previous!("migrate_ack");
 
                 // Push user data into queue.
@@ -193,7 +193,7 @@ impl TcpMigPeer {
                 capy_log_mig!("======= MIGRATING IN STATE ({}, {}) =======", conn.0, conn.1);
 
                 // Remove active migration.
-                entry.remove();
+                // entry.remove();
             },
             TcpmigReceiveStatus::MigrationCompleted => {
                 // Remove active migration.
@@ -271,6 +271,17 @@ impl TcpMigPeer {
                 capy_log_mig!("trying to buffer, but there is no corresponding active migration");
                 Err((tcp_hdr, data))
             },
+        }
+    }
+
+    /// Returns the buffered packets for the migrated connection.
+    pub fn close_active_migration(&mut self, remote: SocketAddrV4) -> Vec<(TcpHeader, Buffer)> {
+        match self.active_migrations.remove(&remote) {
+            Some(mut active) => {
+                active.take_buffered_packets()
+            },
+
+            None => panic!("No active migration for remote {remote}"),
         }
     }
 

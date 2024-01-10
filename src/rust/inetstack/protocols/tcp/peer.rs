@@ -356,7 +356,16 @@ impl TcpPeer {
 
         // Enable stats tracking.
         #[cfg(feature = "tcp-migration")]
-        cb.enable_stats(&mut inner.stats);
+        {
+            // Process buffered packets.
+            let buffered = inner.tcpmig.close_active_migration(remote);
+            for (mut hdr, data) in buffered {
+                capy_log_mig!("start receiving target-buffered packets into the CB");
+                cb.receive(&mut hdr, data);
+            }
+            
+            cb.enable_stats(&mut inner.stats);
+        }
 
         let established: EstablishedSocket = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
         let key: (SocketAddrV4, SocketAddrV4) = (local, remote);
@@ -883,8 +892,8 @@ impl Inner {
                     self.tcpmig.send_tcp_state(state);
                 }
             },
-            TcpmigReceiveStatus::StateReceived(state, buffered) => {
-                self.migrate_in_connection(state, buffered)?;
+            TcpmigReceiveStatus::StateReceived(state) => {
+                self.migrate_in_connection(state)?;
             },
         };
         Ok(())
@@ -921,7 +930,7 @@ impl Inner {
         Ok(TcpState::new(cb.as_ref().into()))
     }
 
-    fn migrate_in_connection(&mut self, state: TcpState, buffered: Vec<(TcpHeader, Buffer)>) -> Result<(), Fail> {
+    fn migrate_in_connection(&mut self, state: TcpState) -> Result<(), Fail> {
         // TODO: Handle user data from the state.
 
         // Convert state to control block.
@@ -937,10 +946,10 @@ impl Inner {
         );
 
         // Receive all target-buffered packets into the CB.
-        for (mut hdr, data) in buffered {
+        /* for (mut hdr, data) in buffered {
             capy_log_mig!("start receiving target-buffered packets into the CB");
             cb.receive(&mut hdr, data);
-        }
+        } */
 
         match self.passive.get_mut(&cb.get_local()) {
             Some(passive) => passive.push_migrated_in(cb),
