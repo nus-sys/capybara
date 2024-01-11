@@ -52,6 +52,7 @@ const ROOT: &str = "/var/www/demo";
 const BUFSZ: usize = 4096;
 
 static mut START_TIME: Option<Instant> = None;
+static mut SERVER_PORT: u16 = 0;
 
 //=====================================================================================
 
@@ -175,16 +176,18 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     //             format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
     //         },
     //     };
-    //     let mut buf = vec![0u8; 8 + msg.len()];
-    //     buf[8..].copy_from_slice(msg.as_bytes());
+    //     let mut buf = vec![0u8; 10 + msg.len()];
+    //     buf[10..].copy_from_slice(msg.as_bytes());
     //     unsafe { 
     //         RESPONSE = Some(buf);
     //         RESPONSE.as_mut().unwrap().as_mut_slice()
     //     }
     // };
     
+    // response[0..2].copy_from_slice(unsafe{&SERVER_PORT.to_be_bytes()});
+    
     // let queue_len = libos.global_recv_queue_length() as u64;
-    // response[0..8].copy_from_slice(&queue_len.to_be_bytes());
+    // response[2..10].copy_from_slice(&queue_len.to_be_bytes());
     
     // server_log!("PUSH: ({}) {}", queue_len, std::str::from_utf8(&response[8..]).unwrap());
     // libos.push2(qd, &response).expect("push success")
@@ -247,6 +250,7 @@ struct ConnectionState {
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
+    unsafe{ SERVER_PORT = local.port() };
     let mut request_count = 0;
     let mut queue_length_vec: Vec<(usize, usize)> = Vec::new();
     let migration_per_n: i32 = env::var("MIG_PER_N")
