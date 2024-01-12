@@ -200,18 +200,12 @@ impl Stats {
 
     pub fn poll(&mut self) {
         let mut i = 0;
-        let mut f = false;
         while i < self.handles.len() {
             let inner = self.handles[i].inner.as_ref();
 
             // This handle is disabled, remove it.
             let queue_len = match inner.queue_len.get() {
-                Stat::MarkedForDisable(len) => {
-                    if !f {
-                        f = true;
-                        //capy_log_mig!("{:#?}", self);
-                    }
-    
+                Stat::MarkedForDisable(len) => {    
                     capy_log!("Disable stats for {:?}", inner.conn);
     
                     let position = inner.bucket_list_position.get();
@@ -239,10 +233,6 @@ impl Stats {
 
             // This handle was updated.
             if let Some(queue_len_to_update) = inner.queue_len_to_update.take() {
-                if !f {
-                    f = true;
-                    //capy_log_mig!("{:#?}", self.buckets);
-                }
                 // Only update if the new value is different from the old value.
                 if queue_len_to_update != queue_len {
                     capy_log!("Update stats for {:?}", inner.conn);
@@ -262,12 +252,6 @@ impl Stats {
 
         // Update rolling average of global queue length.
         self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
-
-        if f {
-            capy_log_mig!("global queue len = {}", self.global_recv_queue_length);
-            capy_log_mig!("avg global queue len = {}", self.avg_global_recv_queue_length.get());
-            //capy_log_mig!("{:#?}", &self.buckets);
-        }
     }
 }
 
