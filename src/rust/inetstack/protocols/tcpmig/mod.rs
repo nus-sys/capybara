@@ -28,6 +28,10 @@ pub enum MigrationStage {
     PrepareMigrationAck,
     ConnectionState,
     ConnectionStateAck,
+
+    // Heartbeat Protocol.
+    HeartbeatUpdate = 12,
+    HeartbeatResponse = 13,
 }
 
 #[derive(Default)]
@@ -58,6 +62,10 @@ impl TryFrom<u8> for MigrationStage {
             3 => Ok(PrepareMigrationAck),
             4 => Ok(ConnectionState),
             5 => Ok(ConnectionStateAck),
+
+            12 => Ok(HeartbeatUpdate),
+            13 => Ok(HeartbeatResponse),
+
             e => Err(e),
         }
     }

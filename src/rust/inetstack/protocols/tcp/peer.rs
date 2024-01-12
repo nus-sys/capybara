@@ -863,7 +863,12 @@ impl TcpPeer {
     }
 
     pub fn poll_stats(&mut self) {
-        self.inner.borrow_mut().stats.poll();
+        let mut inner = self.inner.borrow_mut();
+        inner.stats.poll();
+
+        // Send heartbeat.
+        let queue_len = inner.stats.avg_global_recv_queue_length();
+        inner.tcpmig.send_heartbeat(queue_len);
     }
 
     #[cfg(not(feature = "manual-tcp-migration"))]
@@ -895,6 +900,9 @@ impl Inner {
             },
             TcpmigReceiveStatus::StateReceived(state) => {
                 self.migrate_in_connection(state)?;
+            },
+            TcpmigReceiveStatus::HeartbeatResponse(global_queue_len_sum) => {
+                self.stats.update_threshold(global_queue_len_sum);
             },
         };
         Ok(())

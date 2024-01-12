@@ -213,7 +213,8 @@ impl ActiveMigration {
                 capy_log_mig!("Received someting after sending CONN_STATE_ACK");
             },
 
-            MigrationStage::Rejected => unreachable!("Target should not receive a packet after rejecting origin."),
+            MigrationStage::Rejected => panic!("Target should not receive a packet after rejecting origin."),
+            MigrationStage::HeartbeatUpdate | MigrationStage::HeartbeatResponse => panic!("Heartbeat is not an active migration"),
         };
         Ok(TcpmigReceiveStatus::Ok)
     }

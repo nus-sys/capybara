@@ -6,6 +6,7 @@
 //==============================================================================
 
 use super::constants::*;
+use super::segment::TcpMigSegment;
 use super::{segment::TcpMigHeader, active::ActiveMigration};
 use crate::{
     inetstack::protocols::{
@@ -57,10 +58,9 @@ pub enum TcpmigReceiveStatus {
     PrepareMigrationAcked(QDesc),
     StateReceived(TcpState),
     MigrationCompleted,
-}
 
-struct HeartbeatData {
-    last_heartbeat_instant: Instant,
+    // Heartbeat protocol.
+    HeartbeatResponse(usize),
 }
 
 /// TCPMig Peer
@@ -73,9 +73,6 @@ pub struct TcpMigPeer {
     /// Local IPv4 address.
     local_ipv4_addr: Ipv4Addr,
 
-    // Only if this is on a backend server.
-    heartbeat: Option<HeartbeatData>,
-
     /// Connections being actively migrated in/out.
     /// 
     /// key = remote.
@@ -84,6 +81,8 @@ pub struct TcpMigPeer {
     incoming_user_data: HashMap<SocketAddrV4, Buffer>,
 
     self_udp_port: u16,
+
+    heartbeat_message: Box<TcpMigSegment>,
 
     /// for testing
     additional_mig_delay: u32,
@@ -107,13 +106,23 @@ impl TcpMigPeer {
             rt: rt.clone(),
             local_link_addr,
             local_ipv4_addr,
-            heartbeat: match std::env::var("IS_FRONTEND") {
-                Ok(val) if val == "1" => None,
-                _ => Some(HeartbeatData::new())
-            },
             active_migrations: HashMap::new(),
             incoming_user_data: HashMap::new(),
             self_udp_port: SELF_UDP_PORT, // TEMP
+
+            heartbeat_message: Box::new(TcpMigSegment::new(
+                Ethernet2Header::new(FRONTEND_MAC, local_link_addr, EtherType2::Ipv4),
+                Ipv4Header::new(local_ipv4_addr, FRONTEND_IP, IpProtocol::UDP),
+                TcpMigHeader::new(
+                    SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0),
+                    SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0),
+                    4, 
+                    MigrationStage::HeartbeatUpdate,
+                    SELF_UDP_PORT, 
+                    FRONTEND_PORT
+                ),
+                Buffer::Heap(DataBuffer::new(4).unwrap()),
+            )),
 
             // for testing
             additional_mig_delay: env::var("MIG_DELAY")
@@ -134,6 +143,12 @@ impl TcpMigPeer {
         capy_log_mig!("\n\n[RX] TCPMig");
 
         let remote = hdr.client;
+
+        // Heartbeat response from switch.
+        if hdr.stage == MigrationStage::HeartbeatResponse {
+            let global_queue_len_sum = u32::from_be_bytes(buf[0..4].try_into().unwrap());
+            return Ok(TcpmigReceiveStatus::HeartbeatResponse(global_queue_len_sum.try_into().expect("heartbeat u32 to usize failed")));
+        }
 
         // First packet that target receives.
         if hdr.stage == MigrationStage::PrepareMigration {
@@ -208,6 +223,7 @@ impl TcpMigPeer {
                 capy_log_mig!("CONN_STATE_ACK ({})\n=======  MIGRATION COMPLETE! =======\n\n", remote);
             },
             TcpmigReceiveStatus::Ok => (),
+            TcpmigReceiveStatus::HeartbeatResponse(..) => panic!("heartbeat not handled earlier"),
         };
 
         Ok(status)
@@ -283,38 +299,10 @@ impl TcpMigPeer {
         self.incoming_user_data.remove(&remote)
     }
 
-    pub fn queue_length_heartbeat(&mut self) {
-        todo!("heartbeat")
-        /* let queue_len: usize = self.stats.global_recv_queue_length() as usize;
-        if queue_len > self.recv_queue_length_threshold{
-            return;
-        }
-        if let Some(heartbeat) = self.heartbeat.as_mut() { 
-            let now = Instant::now();
-            if now - heartbeat.last_heartbeat_instant > HEARTBEAT_INTERVAL {
-                heartbeat.last_heartbeat_instant = now;
-
-                // BAD: Cache DataBuffer.
-                let mut data = HEARTBEAT_MAGIC.to_be_bytes().to_vec();
-                data.extend_from_slice(&queue_len.to_be_bytes());
-
-                let segment = UdpDatagram::new(
-                    Ethernet2Header::new(FRONTEND_MAC, self.local_link_addr, EtherType2::Ipv4),
-                    Ipv4Header::new(self.local_ipv4_addr, FRONTEND_IP, IpProtocol::UDP),
-                    UdpHeader::new(self.self_udp_port, FRONTEND_PORT),
-                    Buffer::Heap(DataBuffer::from_slice(&data)),
-                    false,
-                );
-
-                self.rt.transmit(Box::new(segment));
-            }
-        } */
-    }
-}
-
-impl HeartbeatData {
-    fn new() -> Self {
-        Self { last_heartbeat_instant: Instant::now() }
+    pub fn send_heartbeat(&mut self, queue_len: usize) {
+        let queue_len: u32 = queue_len.try_into().expect("Queue len bigger than 4 billion");
+        self.heartbeat_message.data[0..4].copy_from_slice(&queue_len.to_be_bytes());
+        self.rt.transmit(self.heartbeat_message.clone());
     }
 }
 
