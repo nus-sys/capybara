@@ -192,7 +192,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     // let timestamp: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
     // response[6..14].copy_from_slice(&timestamp.to_be_bytes());
     
-    // server_log!("PUSH: ({}) {}", queue_len, std::str::from_utf8(&response[8..]).unwrap());
+    // server_log!("PUSH: ({}) {}", queue_len, std::str::from_utf8(&response[14..]).unwrap());
     // libos.push2(qd, &response).expect("push success")
     // UNCOMMENT FOR RECV QUEUE LENGTH EVAL.
 }
