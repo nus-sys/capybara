@@ -176,8 +176,8 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     //             format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
     //         },
     //     };
-    //     let mut buf = vec![0u8; 10 + msg.len()];
-    //     buf[10..].copy_from_slice(msg.as_bytes());
+    //     let mut buf = vec![0u8; 14 + msg.len()];
+    //     buf[14..].copy_from_slice(msg.as_bytes());
     //     unsafe { 
     //         RESPONSE = Some(buf);
     //         RESPONSE.as_mut().unwrap().as_mut_slice()
@@ -186,8 +186,11 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     
     // response[0..2].copy_from_slice(unsafe{&SERVER_PORT.to_be_bytes()});
     
-    // let queue_len = libos.global_recv_queue_length() as u64;
-    // response[2..10].copy_from_slice(&queue_len.to_be_bytes());
+    // let queue_len: u32 = libos.global_recv_queue_length().try_into().expect("queue length is over 4 billion");
+    // response[2..6].copy_from_slice(&queue_len.to_be_bytes());
+
+    // let timestamp: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
+    // response[6..14].copy_from_slice(&timestamp.to_be_bytes());
     
     // server_log!("PUSH: ({}) {}", queue_len, std::str::from_utf8(&response[8..]).unwrap());
     // libos.push2(qd, &response).expect("push success")

@@ -15,7 +15,7 @@ pub(crate) const CLEAR: &'static str = "\x1B[0m";
 //==============================================================================
 
 #[allow(unused)]
-static mut DATA: Option<Vec<(NaiveTime, ArrayVec<u8, 128>)>> = None;
+static mut DATA: Option<Vec<(i64, ArrayVec<u8, 128>)>> = None;
 
 //==============================================================================
 // Macros
@@ -65,7 +65,7 @@ pub(crate) fn __write_time_log_data<W: std::io::Write>(w: &mut W) -> std::io::Re
     eprintln!("\n[CAPYLOG] dumping time log data");
     let data = data();
     for (time, msg) in data.iter() {
-        write!(w, "{},{}\n", time, std::str::from_utf8(&msg).unwrap())?;
+        write!(w, "[{} ns] {}\n", time, std::str::from_utf8(&msg).unwrap())?;
     }
     Ok(())
 }
@@ -80,11 +80,11 @@ pub(crate) fn __push_time_log(args: std::fmt::Arguments) {
     if let Err(e) = std::io::Write::write_fmt(&mut buf, args) {
         panic!("capy_time_log failed: {}", e);
     }
-    data.push((chrono::Local::now().time(), buf));
+    data.push((chrono::Local::now().timestamp_nanos(), buf));
 }
 
 #[allow(unused)]
-fn data() -> &'static mut Vec<(NaiveTime, ArrayVec<u8, 128>)> {
+fn data() -> &'static mut Vec<(i64, ArrayVec<u8, 128>)> {
     unsafe { DATA.as_mut().expect("capy-time-log not initialised") }
 }
 
