@@ -15,7 +15,6 @@ use crate::{
         },
     },
 };
-use super::super::MigrationStage;
 use ::byteorder::{
     ByteOrder,
     NetworkEndian,
@@ -35,7 +34,6 @@ pub const MAGIC_NUMBER: u32 = 0xCAFEDEAD;
 
 const FLAG_LOAD_BIT: u8 = 0;
 const FLAG_NEXT_FRAGMENT: u8 = 1;
-const FLAG_HEARTBEAT: u8 = 2;
 const STAGE_BIT_SHIFT: u8 = 4;
 
 //==============================================================================
@@ -67,7 +65,6 @@ const STAGE_BIT_SHIFT: u8 = 4;
 //  Bit number      Flag
 //  0               LOAD - Instructs the switch to load the entry into the migration tables.
 //  1               NEXT_FRAGMENT - Whether there is a fragment after this.
-//  2               HEARTBEAT - Whether this is a packet for the heartbeat protocol.
 //  4-7             Migration Stage.
 //  
 
@@ -82,12 +79,26 @@ pub struct TcpMigHeader {
 
     pub flag_load: bool,
     pub flag_next_fragment: bool,
-    pub flag_heartbeat: bool,
 
     pub stage: MigrationStage,
 
     source_udp_port: u16,
     dest_udp_port: u16,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrationStage {
+    None = 0, // TcpMigHeader's flag cannot be 0, so p4 program checks this to filter out non-TCPMig packets
+    Rejected,
+    PrepareMigration,
+    PrepareMigrationAck,
+    ConnectionState,
+    ConnectionStateAck,
+
+    // Heartbeat Protocol.
+    HeartbeatUpdate = 12,
+    HeartbeatResponse = 13,
 }
 
 //==============================================================================
@@ -107,7 +118,6 @@ impl TcpMigHeader {
             fragment_offset: 0,
             flag_load: false,
             flag_next_fragment: false,
-            flag_heartbeat: false,
             stage,
             source_udp_port,
             dest_udp_port,
@@ -170,7 +180,6 @@ impl TcpMigHeader {
         let flags = hdr_buf[26];
         let flag_load = (flags & (1 << FLAG_LOAD_BIT)) != 0;
         let flag_next_fragment = (flags & (1 << FLAG_NEXT_FRAGMENT)) != 0;
-        let flag_heartbeat = (flags & (1 << FLAG_HEARTBEAT)) != 0;
 
         let stage = (flags & 0xF0) >> STAGE_BIT_SHIFT;
 
@@ -192,7 +201,6 @@ impl TcpMigHeader {
             fragment_offset,
             flag_load,
             flag_next_fragment,
-            flag_heartbeat,
             stage,
             source_udp_port,
             dest_udp_port,
@@ -237,7 +245,6 @@ impl TcpMigHeader {
     fn serialize_flags_and_stage(&self) -> u8 {
         (if self.flag_load {1} else {0} << FLAG_LOAD_BIT)
         | (if self.flag_next_fragment {1} else {0} << FLAG_NEXT_FRAGMENT)
-        | (if self.flag_heartbeat {1} else {0} << FLAG_HEARTBEAT)
         | ((self.stage as u8) << STAGE_BIT_SHIFT)
     }
 
@@ -258,6 +265,37 @@ impl TcpMigHeader {
         .chain(data_chunks_rem.chunks_exact(2))
         .fold(0, |sum: u16, e| sum.wrapping_add(NetworkEndian::read_u16(e)))
         .wrapping_neg()
+    }
+}
+
+//======================================================================================================================
+// Standard Library Trait Implementations
+//======================================================================================================================
+
+impl From<MigrationStage> for u8 {
+    fn from(value: MigrationStage) -> Self {
+        value as u8
+    }
+}
+
+impl TryFrom<u8> for MigrationStage {
+    type Error = u8;
+
+    fn try_from(value: u8) -> Result<Self, u8> {
+        use MigrationStage::*;
+        match value {
+            0 => Ok(Rejected),
+            1 => Ok(None),
+            2 => Ok(PrepareMigration),
+            3 => Ok(PrepareMigrationAck),
+            4 => Ok(ConnectionState),
+            5 => Ok(ConnectionStateAck),
+
+            12 => Ok(HeartbeatUpdate),
+            13 => Ok(HeartbeatResponse),
+
+            e => Err(e),
+        }
     }
 }
 

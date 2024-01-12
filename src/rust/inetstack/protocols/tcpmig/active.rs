@@ -5,10 +5,15 @@
 // Imports
 //==============================================================================
 
-use super::{segment::{
-    TcpMigHeader,
-    TcpMigSegment, TcpMigDefragmenter,
-}, MigrationStage, TcpmigReceiveStatus};
+use super::{
+    segment::{
+        TcpMigHeader,
+        TcpMigSegment,
+        TcpMigDefragmenter,
+        MigrationStage,
+    },
+    TcpmigReceiveStatus
+};
 use crate::{
     inetstack::protocols::{
             ethernet2::{

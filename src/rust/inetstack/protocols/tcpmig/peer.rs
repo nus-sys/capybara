@@ -14,7 +14,7 @@ use crate::{
             tcp::{
                 segment::TcpHeader, peer::state::TcpState,
             },
-            tcpmig::MigrationStage,
+            tcpmig::segment::MigrationStage,
             ethernet2::{EtherType2, Ethernet2Header},
             ip::IpProtocol,
             udp::{UdpDatagram, UdpHeader},
