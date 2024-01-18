@@ -146,54 +146,59 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     libos.push2(qd, response.as_bytes()).expect("push success") */
 
     // UNCOMMENT FOR NORMAL RESPONSE.
-    lazy_static! {
-        static ref RESPONSE: String = {
-            match std::fs::read_to_string("/var/www/demo/index.html") {
-                Ok(contents) => {
-                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
-                },
-                Err(_) => {
-                    format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
-                },
-            }
-        };
-    }
+    // lazy_static! {
+    //     static ref RESPONSE: String = {
+    //         match std::fs::read_to_string("/var/www/demo/index.html") {
+    //             Ok(contents) => {
+    //                 format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
+    //             },
+    //             Err(_) => {
+    //                 format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
+    //             },
+    //         }
+    //     };
+    // }
     
-    server_log!("PUSH: {}", RESPONSE.lines().next().unwrap_or(""));
-    libos.push2(qd, RESPONSE.as_bytes()).expect("push success")
+    // server_log!("PUSH: {}", RESPONSE.lines().next().unwrap_or(""));
+    // libos.push2(qd, RESPONSE.as_bytes()).expect("push success")
     // UNCOMMENT FOR NORMAL RESPONSE.
 
     // UNCOMMENT FOR RECV QUEUE LENGTH EVAL.
-    // static mut RESPONSE: Option<Vec<u8>> = None;
-    // let response = if let Some(response) = unsafe { RESPONSE.as_mut() } {
-    //     response.as_mut_slice()
-    // } else {
-    //     let msg = match std::fs::read_to_string("/var/www/demo/index.html") {
-    //         Ok(contents) => {
-    //             format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
-    //         },
-    //         Err(_) => {
-    //             format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
-    //         },
-    //     };
-    //     let mut buf = vec![0u8; 14 + msg.len()];
-    //     buf[14..].copy_from_slice(msg.as_bytes());
-    //     unsafe { 
-    //         RESPONSE = Some(buf);
-    //         RESPONSE.as_mut().unwrap().as_mut_slice()
-    //     }
-    // };
+    static mut RESPONSE: Option<Vec<u8>> = None;
+    let response = if let Some(response) = unsafe { RESPONSE.as_mut() } {
+        response.as_mut_slice()
+    } else {
+        let msg = match std::fs::read_to_string("/var/www/demo/index.html") {
+            Ok(contents) => {
+                format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
+            },
+            Err(_) => {
+                format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
+            },
+        };
+        let mut buf = vec![0u8; 14 + msg.len()];
+        buf[14..].copy_from_slice(msg.as_bytes());
+        unsafe { 
+            RESPONSE = Some(buf);
+            RESPONSE.as_mut().unwrap().as_mut_slice()
+        }
+    };
     
-    // response[0..2].copy_from_slice(unsafe{&SERVER_PORT.to_be_bytes()});
+    response[0..2].copy_from_slice(unsafe{&SERVER_PORT.to_be_bytes()});
     
-    // let queue_len: u32 = libos.global_recv_queue_length().try_into().expect("queue length is over 4 billion");
-    // response[2..6].copy_from_slice(&queue_len.to_be_bytes());
+    #[cfg(feature = "tcp-migration")]
+    let queue_len: u32 = libos.global_recv_queue_length().try_into().expect("queue length is over 4 billion");
+    #[cfg(not(feature = "manual-tcp-migration"))]
+    let queue_len: u32 = 0;
+    
 
-    // let timestamp: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
-    // response[6..14].copy_from_slice(&timestamp.to_be_bytes());
+    response[2..6].copy_from_slice(&queue_len.to_be_bytes());
+
+    let timestamp: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
+    response[6..14].copy_from_slice(&timestamp.to_be_bytes());
     
-    // server_log!("PUSH: ({}) {}", queue_len, std::str::from_utf8(&response[14..]).unwrap());
-    // libos.push2(qd, &response).expect("push success")
+    server_log!("PUSH: ({}) {}", queue_len, std::str::from_utf8(&response[14..]).unwrap());
+    libos.push2(qd, &response).expect("push success")
     // UNCOMMENT FOR RECV QUEUE LENGTH EVAL.
 }
 

@@ -11,11 +11,11 @@ DATA_PATH = f'{HOME}/capybara-data'
 PCAP_PATH = f'{LOCAL}/capybara-pcap'
 
 ################## CLUSTER CONFIG #####################
-ALL_NODES = ['node7', 'node8', 'node9']
+ALL_NODES = ['node1', 'node7', 'node8', 'node9']
 CLIENT_NODE = 'node7'
 FRONTEND_NODE = 'node8'
 BACKEND_NODE = 'node9'
-TCPDUMP_NODE = 'node8'
+TCPDUMP_NODE = 'node1'
 NODE8_IP = '10.0.1.8'
 NODE8_MAC = '08:c0:eb:b6:e8:05'
 NODE9_IP = '10.0.1.9'
@@ -32,28 +32,29 @@ FEATURES = [
 ]
 
 ################## TEST CONFIG #####################
-NUM_BACKENDS = 1
+NUM_BACKENDS = 2
 SERVER_APP = 'http-server' # 'http-server', 'prism', 'redis-server'
 CLIENT_APP = 'caladan' # 'wrk', 'caladan'
 NUM_THREADS = [1] # for wrk load generator
 REPEAT_NUM = 1
 RECV_QUEUE_THRESHOLD = 20
-MIG_DELAYS = [0] 
+MIG_DELAYS = [0]
 MAX_STAT_MIGS = [100000]#[5000, 10000, 15000] # set element to '' if you don't want to set this env var
-MIG_PER_N = [1]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
-CLIENT_PPS = [i for i in range(500000, 500000 + 1, 100)]#[i for i in range(100000, 1_300_001, 100000)]
-LOADSHIFTS = '' # 800000:2000000,1100000:1,700000:2000000
-ZIPF_ALPHA = '' # 0.9
-ONOFF = '0' # '0', '1'
-NUM_CONNECTIONS = [1]
+MIG_PER_N = [2]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
+CLIENT_PPS = [i for i in range(300000, 300000 + 1, 100)]#[i for i in range(100000, 1_300_001, 100000)]
+LOADSHIFTS = '650000:100000,650000:100000,650000:100000,650000:100000,650000:100000' # 800000:2000000,1100000:1,700000:2000000
+ZIPF_ALPHA = '0.9' # 0.9
+ONOFF = '1' # '0', '1'
+NUM_CONNECTIONS = [100]
 RUNTIME = 10
 TCPDUMP = False
 EVAL_MIG_LATENCY = False
 EVAL_POLL_INTERVAL = False
-EVAL_LATENCY_TRACE = False
+EVAL_LATENCY_TRACE = True
 EVAL_RECV_QLEN = False
 EVAL_REQS_VS_TIME = True
-CAPY_LOG = 'n'
+EVAL_SERVER_TSTAMP = True
+CAPY_LOG = '' # 'all', 'mig'
 
 #####################
 # build command: run_eval.py [build [clean]]

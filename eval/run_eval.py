@@ -37,6 +37,7 @@ def kill_procs():
             sudo pkill -INT -e synthetic ; \
             sudo pkill -INT -e dpdk-ctrl.elf ; \
            sudo pkill -INT -e phttp-bench ; \
+           sudo pkill -INT -f tcpdump ; \
             sudo pkill -INT -e {SERVER_APP} ']
     # print(cmd)
     if TCPDUMP:
@@ -117,7 +118,6 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
                 MIG_DELAY={int(mig_delay/10) * 76} \
-                MAX_STAT_MIGS={int(max_stat_migs)} \
                 MIG_PER_N={int(mig_per_n)} \
                 CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
@@ -151,10 +151,10 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
     print(f'{NUM_BACKENDS} backends are running')
 
 def run_tcpdump(experiment_id):
-    print(f'RUNNING TCPDUMP to node8:{PCAP_PATH}/{experiment_id}.pcap')
+    print(f'RUNNING TCPDUMP to {TCPDUMP_NODE}:{PCAP_PATH}/{experiment_id}.pcap')
     
     host = pyrem.host.RemoteHost(TCPDUMP_NODE)
-    cmd = [f'sudo tcpdump -i ens85f1 -w {PCAP_PATH}/{experiment_id}.pcap']
+    cmd = [f'sudo tcpdump --time-stamp-precision=nano -i ens1f1 -w {PCAP_PATH}/{experiment_id}.pcap']
     task = host.run(cmd, quiet=False)
     pyrem.task.Parallel([task], aggregate=True).start(wait=False)
     
@@ -352,6 +352,7 @@ def parse_latency_trace(experiment_id):
             # print(columns[0], columns[1])
 
             window = int(int( (int(columns[0]) / 1000000) / 10 ) * 10);
+            # window = int(int(columns[0]) / 1000000)
             if window in clusters:
                 clusters[window].append(int(columns[1]))
             else:
@@ -391,7 +392,11 @@ def parse_request_vs_time(experiment_id):
     print(f'PARSING {experiment_id} request_vs_time') 
     
     clusters = {}
+    clusters_odd = {}
+    clusters_even = {}
+    
     file_path = f'{DATA_PATH}/{experiment_id}.latency_trace'
+    
     with open(file_path, "r") as file:
         # Iterate through each line in the file
         for line in file:            
@@ -400,17 +405,34 @@ def parse_request_vs_time(experiment_id):
 
             # window = int(int( (int(columns[0]) / 1000000) / 10 ) * 10);
             window = int(int(columns[0]) / 1000000)
+            if window not in clusters:
+                clusters[window] = 0
+            if window not in clusters_odd:
+                clusters_odd[window] = 0
+            if window not in clusters_even:
+                clusters_even[window] = 0
+            
             if window in clusters:
                 clusters[window] += 1
-            else:
-                clusters[window] = 1 
+                if int(int(columns[2])) % 2 == 0:
+                    clusters_even[window] += 1
+                else:
+                    clusters_odd[window] += 1
     
     # Sort the dictionary by keys
     sorted_clusters = dict(sorted(clusters.items()))
+    sorted_clusters_odd = dict(sorted(clusters_odd.items()))
+    sorted_clusters_even = dict(sorted(clusters_even.items()))
 
     
     with open(f'{DATA_PATH}/{experiment_id}.requests_vs_time', 'w') as rvt_file:
         for key, reqs in sorted_clusters.items():
+            rvt_file.write(f"{key},{reqs}\n")
+    with open(f'{DATA_PATH}/{experiment_id}.requests_vs_time_odd', 'w') as rvt_file:
+        for key, reqs in sorted_clusters_odd.items():
+            rvt_file.write(f"{key},{reqs}\n")
+    with open(f'{DATA_PATH}/{experiment_id}.requests_vs_time_even', 'w') as rvt_file:
+        for key, reqs in sorted_clusters_even.items():
             rvt_file.write(f"{key},{reqs}\n")
 
 def parse_wrk_result(experiment_id):
@@ -511,6 +533,106 @@ def parse_recv_qlen(experiment_id):
                     recv_qlen_file.write(f'{row[1]},{row[2]}\n')
         
 
+def parse_server_tstamp(experiment_id):
+    print(f'PARSING {experiment_id} server tstamp') 
+    
+    # Load the data without specifying column names
+    file_path = f'{DATA_PATH}/{experiment_id}.recv_qlen'
+    data = []
+    with open(file_path, 'r') as file:
+        for line in file:
+            values = line.strip().split(',')
+            data.append((int(values[0]), int(values[1]), int(values[2]), int(values[3]), int(values[4])))
+
+    # clienttime_numreq_99p
+    clienttime_overall = {}
+    clienttime_per_server = {}
+    servertime_overall = {}
+    servertime_per_server = {}
+    for row in data:
+        server_port = row[3]
+
+        if server_port not in clienttime_per_server:
+            clienttime_per_server[server_port] = {}
+
+        if server_port not in servertime_per_server:
+            servertime_per_server[server_port] = {}
+
+        clienttime_key = row[0] // 1000000
+        servertime_key = row[4] // 1000000
+
+        if clienttime_key not in clienttime_overall:
+            clienttime_overall[clienttime_key] = []
+        if clienttime_key not in clienttime_per_server[server_port]: 
+            clienttime_per_server[server_port][clienttime_key] = []
+
+        if servertime_key not in servertime_overall:
+            servertime_overall[servertime_key] = []
+        if servertime_key not in servertime_per_server[server_port]: 
+            servertime_per_server[server_port][servertime_key] = []
+
+        clienttime_overall[clienttime_key].append(row)
+        clienttime_per_server[server_port][clienttime_key].append(row)
+        
+        servertime_overall[servertime_key].append(row)
+        servertime_per_server[server_port][servertime_key].append(row)
+        
+    clienttime_result = {}
+    for ms_key, group_rows in clienttime_overall.items():
+        group_rows.sort(key=lambda x: x[1])  # Sort by the latency
+        percentile_index = int(len(group_rows) * 0.99)
+        percentile_value = group_rows[percentile_index][1]
+        clienttime_result[ms_key] = (len(group_rows), percentile_value)
+    sorted_result = dict(sorted(clienttime_result.items())) # Sort the dictionary by keys
+    with open(f'{DATA_PATH}/{experiment_id}.clienttime_numreq_99p', 'w') as result_file:
+        for clienttime, (num_reqs, lat_99p) in sorted_result.items():
+            result_file.write(f'{clienttime},{num_reqs},{lat_99p}\n')
+
+
+    clienttime_per_server_result = {}
+    for server_port, server_groups in clienttime_per_server.items():
+        clienttime_per_server_result[server_port] = {}
+        for ms_key, group_rows in server_groups.items():
+            group_rows.sort(key=lambda x: x[1])  # Sort by the second column
+            percentile_index = int(len(group_rows) * 0.99)
+            percentile_value = group_rows[percentile_index][1]
+            clienttime_per_server_result[server_port][ms_key] = (len(group_rows), percentile_value)
+    for server_port, result in clienttime_per_server_result.items():
+        sorted_result = dict(sorted(result.items())) # Sort the dictionary by keys
+        with open(f'{DATA_PATH}/{experiment_id}.clienttime_numreq_99p_{server_port}', 'w') as result_file:
+            for clienttime, (num_reqs, lat_99p) in sorted_result.items():
+                result_file.write(f'{clienttime},{num_reqs},{lat_99p}\n')
+    
+    
+    servertime_result = {}
+    for ms_key, group_rows in servertime_overall.items():
+        group_rows.sort(key=lambda x: x[1])  # Sort by the latency
+        percentile_index = int(len(group_rows) * 0.99)
+        percentile_value = group_rows[percentile_index][1]
+        servertime_result[ms_key] = (len(group_rows), percentile_value)
+    sorted_result = dict(sorted(servertime_result.items())) # Sort the dictionary by keys
+    with open(f'{DATA_PATH}/{experiment_id}.servertime_numreq_99p', 'w') as result_file:
+        for servertime, (num_reqs, lat_99p) in sorted_result.items():
+            result_file.write(f'{servertime},{num_reqs},{lat_99p}\n')
+
+
+    servertime_per_server_result = {}
+    for server_port, server_groups in servertime_per_server.items():
+        servertime_per_server_result[server_port] = {}
+        for ms_key, group_rows in server_groups.items():
+            group_rows.sort(key=lambda x: x[1])  # Sort by the second column
+            percentile_index = int(len(group_rows) * 0.99)
+            percentile_value = group_rows[percentile_index][1]
+            servertime_per_server_result[server_port][ms_key] = (len(group_rows), percentile_value)
+    for server_port, result in servertime_per_server_result.items():
+        sorted_result = dict(sorted(result.items())) # Sort the dictionary by keys
+        with open(f'{DATA_PATH}/{experiment_id}.servertime_numreq_99p_{server_port}', 'w') as result_file:
+            for servertime, (num_reqs, lat_99p) in sorted_result.items():
+                result_file.write(f'{servertime},{num_reqs},{lat_99p}\n')
+    
+    
+        
+
     
 def run_eval():
     global experiment_id
@@ -525,7 +647,7 @@ def run_eval():
                 for mig_per_n in MIG_PER_N:
                     for pps in CLIENT_PPS:
                         for conn in NUM_CONNECTIONS:
-                            for num_thread in NUM_THREADS:    
+                            for num_thread in NUM_THREADS:
                                 kill_procs()
                                 experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
                                 
@@ -693,6 +815,14 @@ def run_eval():
                                     kill_procs()
                                     time.sleep(3)
                                     parse_request_vs_time(experiment_id)
+
+
+                                if EVAL_SERVER_TSTAMP == True:
+                                    kill_procs()
+                                    time.sleep(3)
+                                    parse_server_tstamp(experiment_id)
+
+                                    
                                 
 
             # task = host.run(cmd, return_output=True, quiet=False)
