@@ -24,11 +24,12 @@ NODE9_MAC = '08:c0:eb:b6:c5:ad'
 ################## BUILD CONFIG #####################
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
-    # 'tcp-migration',
+    'tcp-migration',
     # 'manual-tcp-migration',
     # 'capy-log',
     # 'capy-profile',
-    # 'capy-time-log'
+    # 'capy-time-log',
+    # 'recv-queue-eval',
 ]
 
 ################## TEST CONFIG #####################

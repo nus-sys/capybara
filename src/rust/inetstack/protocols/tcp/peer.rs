@@ -64,6 +64,7 @@ use ::libc::{
     ENOTSUP,
     EOPNOTSUPP,
 };
+use num_traits::ToBytes;
 use ::rand::{
     prelude::SmallRng,
     Rng,
@@ -154,6 +155,9 @@ pub struct Inner {
     stats: Stats,
     #[cfg(feature = "tcp-migration")]
     tcpmig_poll_state: Rc<TcpmigPollState>,
+
+    #[cfg(feature = "recv-queue-eval")]
+    listening_port: u16,
 }
 
 pub struct TcpPeer {
@@ -221,6 +225,11 @@ impl TcpPeer {
 
     pub fn bind(&self, qd: QDesc, mut addr: SocketAddrV4) -> Result<(), Fail> {
         let mut inner: RefMut<Inner> = self.inner.borrow_mut();
+
+        #[cfg(feature = "recv-queue-eval")]
+        {
+            inner.listening_port = addr.port();
+        }
 
         // Check if address is already bound.
         for (_, socket) in &inner.sockets {
@@ -632,13 +641,16 @@ impl Inner {
             stats: Stats::new(),
             #[cfg(feature = "tcp-migration")]
             tcpmig_poll_state,
+
+            #[cfg(feature = "recv-queue-eval")]
+            listening_port: 0,
         }
     }
 
     fn receive(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         capy_log!("\n\n[RX]");
         
-        let (mut tcp_hdr, data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
+        let (mut tcp_hdr, mut data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
         debug!("TCP received {:?}", tcp_hdr);
         let local = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
         let remote = SocketAddrV4::new(ip_hdr.get_src_addr(), tcp_hdr.src_port);
@@ -654,6 +666,24 @@ impl Inner {
             /* activate this for recv_queue_len vs mig_lat eval */
             // let is_data_empty = data.is_empty();
             /* activate this for recv_queue_len vs mig_lat eval */
+
+            #[cfg(feature = "recv-queue-eval")]
+            {
+                let data: &mut [u8] = &mut data;
+                data[0..2].copy_from_slice(&self.listening_port.to_be_bytes());
+
+                let connection_count: u16 = self.established.len().try_into().expect("connection count > u16::MAX");
+                data[2..4].copy_from_slice(&connection_count.to_be_bytes());
+
+                #[cfg(feature = "tcp-migration")]
+                let queue_len: u32 = self.stats.global_recv_queue_length().try_into().expect("queue length is over 4 billion");
+                #[cfg(not(feature = "tcp-migration"))]
+                let queue_len: u32 = 0;
+                data[4..8].copy_from_slice(&queue_len.to_be_bytes());
+
+                let timestamp: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
+                data[8..16].copy_from_slice(&timestamp.to_be_bytes());
+            }
 
             debug!("Routing to established connection: {:?}", key);
             s.receive(&mut tcp_hdr,data);
