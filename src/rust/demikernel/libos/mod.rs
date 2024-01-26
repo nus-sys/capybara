@@ -28,7 +28,7 @@ use crate::{
         QToken,
     }
 };
-use std::os::raw::c_void;
+use std::{cell::RefCell, os::raw::c_void, rc::Rc};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -253,14 +253,10 @@ impl LibOS {
 }
 
 #[cfg(feature = "tcp-migration")]
-impl LibOS {
-    /// Returns the data received if `qd` is a migrated connection and data was sent with it.
-    pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<crate::runtime::memory::Buffer>, Fail> {
-        match self {
-            LibOS::NetworkLibOS(libos) => libos.take_migrated_data(qd),
-        }
-    }
+use crate::inetstack::protocols::tcpmig::ApplicationState;
 
+#[cfg(feature = "tcp-migration")]
+impl LibOS {
     #[cfg(feature = "manual-tcp-migration")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         match self {
@@ -271,6 +267,18 @@ impl LibOS {
     pub fn global_recv_queue_length(&self) -> usize {
         match self {
             LibOS::NetworkLibOS(libos) => libos.global_recv_queue_length(),
+        }
+    }
+
+    pub fn register_application_state(&mut self, qd: QDesc, state: Rc<RefCell<dyn ApplicationState>>) {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.register_application_state(qd, state)
+        }
+    }
+
+    pub fn get_migrated_application_state<T: ApplicationState + 'static>(&mut self, qd: QDesc) -> Option<Rc<RefCell<T>>> {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.get_migrated_application_state(qd)
         }
     }
 }

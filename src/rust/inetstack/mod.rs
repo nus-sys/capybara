@@ -54,6 +54,7 @@ use ::libc::{
     ENOTSUP,
 };
 
+use std::cell::RefCell;
 use ::std::{
     any::Any,
     convert::TryFrom,
@@ -72,7 +73,7 @@ use ::std::{
 use crate::timer;
 
 #[cfg(feature = "tcp-migration")]
-use protocols::tcpmig::TcpmigPollState;
+use protocols::tcpmig::{TcpmigPollState, ApplicationState};
 
 use crate::capy_log;
 
@@ -849,10 +850,6 @@ impl InetStack {
         }
     }
 
-    pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<Buffer>, Fail> {
-        self.ipv4.tcp.take_migrated_data(qd)
-    }
-
     #[cfg(feature = "manual-tcp-migration")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         self.ipv4.tcp.initiate_migration(qd)
@@ -860,5 +857,13 @@ impl InetStack {
 
     pub fn global_recv_queue_length(&self) -> usize {
         self.ipv4.tcp.global_recv_queue_length()
+    }
+
+    pub fn register_application_state(&mut self, qd: QDesc, state: Rc<RefCell<dyn ApplicationState>>) {
+        self.ipv4.tcp.register_application_state(qd, state);
+    }
+
+    pub fn get_migrated_application_state<T: ApplicationState + 'static>(&mut self, qd: QDesc) -> Option<Rc<RefCell<T>>> {
+        self.ipv4.tcp.get_migrated_application_state(qd)
     }
 }

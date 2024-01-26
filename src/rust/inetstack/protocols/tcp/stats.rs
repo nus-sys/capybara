@@ -35,7 +35,6 @@ pub struct Stats {
     handles: Vec<StatsHandle>,
     
     /// Global recv queue length threshold above which migration is triggered.
-    #[cfg(not(feature = "manual-tcp-migration"))]
     threshold: usize,
     /// TEMP TEST: Max number of connections to migrate for this test.
     max_migrations: Option<i32>,
@@ -123,7 +122,6 @@ impl Stats {
             buckets: BucketList::new(),
             handles: Vec::new(),
             
-            #[cfg(not(feature = "manual-tcp-migration"))]
             threshold: std::env::var("RECV_QUEUE_THRESHOLD").expect("No RECV_QUEUE_THRESHOLD specified")
                 .parse().expect("RECV_QUEUE_THRESHOLD should be a number"),
 

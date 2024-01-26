@@ -14,6 +14,7 @@ use crate::runtime::{
     QDesc,
     QToken,
 };
+use std::{cell::RefCell, rc::Rc};
 use ::std::{
     net::SocketAddrV4,
     time::SystemTime,
@@ -28,6 +29,9 @@ use crate::catnap::CatnapLibOS;
 use crate::catnip::CatnipLibOS;
 #[cfg(feature = "catpowder-libos")]
 use crate::catpowder::CatpowderLibOS;
+
+#[cfg(feature = "tcp-migration")]
+use crate::inetstack::protocols::tcpmig::ApplicationState;
 
 //======================================================================================================================
 // Exports
@@ -372,19 +376,6 @@ impl NetworkLibOS {
 
 #[cfg(feature = "tcp-migration")]
 impl NetworkLibOS {
-    pub fn take_migrated_data(&mut self, _qd: QDesc) -> Result<Option<crate::runtime::memory::Buffer>, Fail> {
-        match self {
-            #[cfg(feature = "catpowder-libos")]
-            NetworkLibOS::Catpowder(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
-            #[cfg(feature = "catnap-libos")]
-            NetworkLibOS::Catnap(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
-            #[cfg(feature = "catcollar-libos")]
-            NetworkLibOS::Catcollar(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
-            #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.take_migrated_data(_qd),
-        }
-    }
-
     #[cfg(feature = "manual-tcp-migration")]
     pub fn initiate_migration(&mut self, _qd: QDesc) -> Result<(), Fail> {
         match self {
@@ -409,6 +400,32 @@ impl NetworkLibOS {
             NetworkLibOS::Catcollar(_) => panic!("TCP migration only supported for catnip"),
             #[cfg(feature = "catnip-libos")]
             NetworkLibOS::Catnip(libos) => libos.global_recv_queue_length(),
+        }
+    }
+
+    pub fn register_application_state(&mut self, qd: QDesc, state: Rc<RefCell<dyn ApplicationState>>) {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.register_application_state(qd, state),
+        }
+    }
+
+    pub fn get_migrated_application_state<T: ApplicationState + 'static>(&mut self, qd: QDesc) -> Option<Rc<RefCell<T>>> {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.get_migrated_application_state(qd)
         }
     }
 }

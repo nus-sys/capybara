@@ -97,7 +97,7 @@ use state::TcpState;
 #[cfg(feature = "tcp-migration")]
 use crate::inetstack::protocols::{
     tcp::stats::Stats,
-    tcpmig::{TcpMigPeer, TcpmigPollState}
+    tcpmig::{TcpMigPeer, TcpmigPollState, ApplicationState}
 };
 
 #[cfg(feature = "profiler")]
@@ -874,24 +874,6 @@ impl TcpPeer {
         /* NON-CONCURRENT MIGRATION */
     }
 
-    pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<Buffer>, Fail> {
-        let mut inner = self.inner.borrow_mut();
-        let remote = match inner.sockets.get(&qd) {
-            None => {
-                debug!("No entry in `sockets` for fd: {:?}", qd);
-                return Err(Fail::new(EBADF, "socket does not exist"));
-            },
-            Some(Socket::Established { remote, .. }) => {
-                *remote
-            },
-            Some(..) => {
-                return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
-            },
-        };
-
-        Ok(inner.tcpmig.take_incoming_user_data(remote))
-    }
-
     pub fn poll_stats(&mut self) {
         let mut inner = self.inner.borrow_mut();
         inner.stats.poll();
@@ -908,6 +890,26 @@ impl TcpPeer {
 
     pub fn global_recv_queue_length(&self) -> usize {
         self.inner.borrow().stats.global_recv_queue_length()
+    }
+
+    pub fn register_application_state(&mut self, qd: QDesc, state: Rc<RefCell<dyn ApplicationState>>) {
+        let mut inner = self.inner.borrow_mut();
+        let remote = match inner.sockets.get(&qd) {
+            Some(Socket::Established { remote, .. }) => *remote,
+            Some(..) => panic!("unsupported socket variant for migration"), // return Err(Fail::new(EBADF, "unsupported socket variant for migration")),
+            None => panic!("socket does not exist"), // return Err(Fail::new(EBADF, "socket does not exist")),
+        };
+        inner.tcpmig.register_application_state(remote, state);
+    }
+
+    pub fn get_migrated_application_state<T: ApplicationState + 'static>(&mut self, qd: QDesc) -> Option<Rc<RefCell<T>>> {
+        let mut inner = self.inner.borrow_mut();
+        let remote = match inner.sockets.get(&qd) {
+            Some(Socket::Established { remote, .. }) => *remote,
+            Some(..) => panic!("unsupported socket variant for migration"), // return Err(Fail::new(EBADF, "unsupported socket variant for migration")),
+            None => panic!("socket does not exist"), // return Err(Fail::new(EBADF, "socket does not exist")),
+        };
+        inner.tcpmig.get_migrated_application_state(remote)
     }
 }
 
@@ -1005,9 +1007,9 @@ impl Inner {
 
 #[cfg(feature = "tcp-migration")]
 pub mod state {
-    use std::net::SocketAddrV4;
+    use std::{cell::RefCell, net::SocketAddrV4, rc::Rc};
 
-    use crate::{inetstack::protocols::tcp::established::ControlBlockState, runtime::memory::{Buffer, DataBuffer}};
+    use crate::{capy_log_mig, inetstack::protocols::{tcp::established::ControlBlockState, tcpmig::{ApplicationState, MigratedApplicationState}}, runtime::memory::{Buffer, DataBuffer}};
 
     pub trait Serialize {
         /// Serializes into the buffer and returns its unused part.
@@ -1020,9 +1022,9 @@ pub mod state {
         fn deserialize_from(buf: &mut Buffer) -> Self;
     }
 
-    #[derive(Debug, PartialEq, Eq)]
     pub struct TcpState {
-        pub cb: ControlBlockState
+        pub cb: ControlBlockState,
+        pub app_state: MigratedApplicationState,
     }
 
     impl Serialize for TcpState {
@@ -1033,7 +1035,7 @@ pub mod state {
 
     impl TcpState {
         pub fn new(cb: ControlBlockState) -> Self {
-            Self { cb }
+            Self { cb, app_state: MigratedApplicationState::None }
         }
 
         pub fn remote(&self) -> SocketAddrV4 {
@@ -1055,19 +1057,51 @@ pub mod state {
         pub fn serialize(&self) -> Buffer {
             let mut buf = Buffer::Heap(DataBuffer::new(self.serialized_size()).unwrap());
             let remaining = self.cb.serialize_into(&mut buf);
-            assert!(remaining.is_empty());
+
+            match &self.app_state {
+                MigratedApplicationState::Registered(state) if state.borrow().serialized_size() == 0 => {
+                    remaining[0] = 0;
+                },
+                MigratedApplicationState::Registered(state) => {
+                    remaining[0] = 1;
+                    state.borrow().serialize(&mut remaining[1..]);
+                },
+                MigratedApplicationState::None | MigratedApplicationState::MigratedIn(..) => {
+                    remaining[0] = 0;
+                },
+            }
+
             buf
         }
 
         pub fn deserialize(mut buf: Buffer) -> Self {
             let cb = ControlBlockState::deserialize_from(&mut buf);
-            Self { cb }
+            let app_state = if buf[0] == 0 { MigratedApplicationState::None }
+            else {
+                buf.adjust(1);
+                MigratedApplicationState::MigratedIn(buf)
+            };
+            Self { cb, app_state }
+        }
+
+        pub fn add_app_state(&mut self, app_state: Rc<RefCell<dyn ApplicationState>>) {
+            self.app_state = MigratedApplicationState::Registered(app_state);
         }
 
         fn serialized_size(&self) -> usize {
-            self.cb.serialized_size()
+            self.cb.serialized_size() + 1 + match &self.app_state {
+                MigratedApplicationState::Registered(state) => state.borrow().serialized_size(),
+                MigratedApplicationState::None | MigratedApplicationState::MigratedIn(..) => 0,
+            }
         }
     }
+
+    impl PartialEq for TcpState {
+        fn eq(&self, other: &Self) -> bool {
+            self.cb == other.cb
+        }
+    }
+    impl Eq for TcpState {}
 
     #[cfg(test)]
     mod test {
@@ -1076,7 +1110,7 @@ pub mod state {
         use crate::{
             runtime::memory::{Buffer, DataBuffer},
             inetstack::protocols::{
-                tcpmig::segment::{TcpMigSegment, TcpMigHeader, TcpMigDefragmenter},
+                tcpmig::{segment::{TcpMigSegment, TcpMigHeader, TcpMigDefragmenter}, MigratedApplicationState},
                 ethernet2::Ethernet2Header, ipv4::Ipv4Header
             },
             capy_profile, capy_profile_dump, MacAddress
@@ -1093,7 +1127,7 @@ pub mod state {
         }
 
         fn get_state() -> TcpState {
-            TcpState { cb: super::super::super::established::test_get_control_block_state() }
+            TcpState { cb: super::super::super::established::test_get_control_block_state(), app_state: MigratedApplicationState::None }
         }
 
         fn get_header() -> TcpMigHeader {

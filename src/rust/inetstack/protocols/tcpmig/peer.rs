@@ -5,7 +5,7 @@
 // Imports
 //==============================================================================
 
-use super::constants::*;
+use super::{constants::*, ApplicationState};
 use super::segment::TcpMigSegment;
 use super::{segment::TcpMigHeader, active::ActiveMigration};
 use crate::{
@@ -31,6 +31,7 @@ use crate::{
     capy_profile, capy_profile_merge_previous, capy_time_log,
 };
 
+use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::time::Instant;
 use ::std::{
@@ -83,9 +84,20 @@ pub struct TcpMigPeer {
     self_udp_port: u16,
 
     heartbeat_message: Box<TcpMigSegment>,
+    
+    /// key: remote addr
+    application_state: HashMap<SocketAddrV4, MigratedApplicationState>,
 
     /// for testing
     additional_mig_delay: u32,
+}
+
+#[derive(Default)]
+pub enum MigratedApplicationState {
+    #[default]
+    None,
+    Registered(Rc<RefCell<dyn ApplicationState>>),
+    MigratedIn(Buffer),
 }
 
 //======================================================================================================================
@@ -123,6 +135,8 @@ impl TcpMigPeer {
                 ),
                 Buffer::Heap(DataBuffer::new(4).unwrap()),
             )),
+
+            application_state: HashMap::new(),
 
             // for testing
             additional_mig_delay: env::var("MIG_DELAY")
@@ -186,17 +200,17 @@ impl TcpMigPeer {
         }
 
         let mut entry = match self.active_migrations.entry(remote) {
-            Entry::Vacant(..) => panic!("no such active migration"),
+            Entry::Vacant(..) => panic!("no such active migration: {:#?}", hdr),
             Entry::Occupied(entry) => entry,
         };
         let active = entry.get_mut();
 
 
         capy_log_mig!("Active migration {:?}", remote);
-        let status = active.process_packet(ipv4_hdr, hdr, buf)?;
+        let mut status = active.process_packet(ipv4_hdr, hdr, buf)?;
         match status {
             TcpmigReceiveStatus::PrepareMigrationAcked(..) => (),
-            TcpmigReceiveStatus::StateReceived(ref state) => {
+            TcpmigReceiveStatus::StateReceived(ref mut state) => {
                 // capy_profile_merge_previous!("migrate_ack");
 
                 // Push user data into queue.
@@ -206,6 +220,14 @@ impl TcpMigPeer {
 
                 let conn = state.connection();
                 capy_log_mig!("======= MIGRATING IN STATE ({}, {}) =======", conn.0, conn.1);
+
+                match state.app_state {
+                    MigratedApplicationState::MigratedIn(..) => {
+                        capy_log_mig!("Received app state from migration");
+                        self.application_state.insert(conn.1, std::mem::take(&mut state.app_state));
+                    },
+                    _ => (),
+                }
 
                 // Remove active migration.
                 // entry.remove();
@@ -266,8 +288,17 @@ impl TcpMigPeer {
         active.initiate_migration();
     }
 
-    pub fn send_tcp_state(&mut self, state: TcpState) {
+    pub fn send_tcp_state(&mut self, mut state: TcpState) {
         let remote = state.remote();
+
+        match self.application_state.remove(&remote) {
+            Some(MigratedApplicationState::Registered(app_state)) => {
+                capy_log_mig!("Adding application state");
+                state.add_app_state(app_state)
+            },
+            _ => (),
+        }
+
         let active = self.active_migrations.get_mut(&remote).unwrap();
         active.send_connection_state(state);
 
@@ -295,14 +326,25 @@ impl TcpMigPeer {
         self.active_migrations.remove(&remote).map(|mut active| active.take_buffered_packets())
     }
 
-    pub fn take_incoming_user_data(&mut self, remote: SocketAddrV4) -> Option<Buffer> {
-        self.incoming_user_data.remove(&remote)
-    }
-
     pub fn send_heartbeat(&mut self, queue_len: usize) {
         let queue_len: u32 = queue_len.try_into().expect("Queue len bigger than 4 billion");
         self.heartbeat_message.data[0..4].copy_from_slice(&queue_len.to_be_bytes());
-        self.rt.transmit(self.heartbeat_message.clone());
+        // self.rt.transmit(self.heartbeat_message.clone());
+    }
+
+    pub fn register_application_state(&mut self, remote: SocketAddrV4, state: Rc<RefCell<dyn ApplicationState>>) {
+        self.application_state.insert(remote, MigratedApplicationState::Registered(state));
+    }
+
+    pub fn get_migrated_application_state<T: ApplicationState + 'static>(&mut self, remote: SocketAddrV4) -> Option<Rc<RefCell<T>>> {
+        let state = match self.application_state.remove(&remote) {
+            Some(MigratedApplicationState::MigratedIn(state)) => T::deserialize(&state),
+            _ => return None,
+        };
+
+        let state = Rc::new(RefCell::new(state));
+        self.application_state.insert(remote, MigratedApplicationState::Registered(state.clone()));
+        Some(state)
     }
 }
 

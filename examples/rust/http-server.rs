@@ -14,7 +14,7 @@ use ::demikernel::{
     QToken,
 };
 
-use std::{collections::{HashMap, HashSet, hash_map::Entry}, time::Instant};
+use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map::Entry}, rc::Rc, time::Instant};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -24,7 +24,10 @@ use ::std::{
 use ctrlc;
 
 #[cfg(feature = "tcp-migration")]
-use demikernel::demikernel::bindings::demi_print_queue_length_log;
+use demikernel::{
+    inetstack::protocols::tcpmig::ApplicationState,
+    demikernel::bindings::demi_print_queue_length_log
+};
 
 #[cfg(feature = "profiler")]
 use ::demikernel::perftools::profiler;
@@ -113,6 +116,25 @@ impl Buffer {
         self.head = self.data_size();
         self.tail = 0;
         Ok(())
+    }
+}
+
+#[cfg(feature = "tcp-migration")]
+impl ApplicationState for Buffer {
+    fn serialized_size(&self) -> usize {
+        self.data_size()
+    }
+
+    fn serialize(&self, buf: &mut [u8]) {
+        buf.copy_from_slice(self.get_data());
+    }
+
+    fn deserialize(buf: &[u8]) -> Self where Self: Sized {
+        let mut buffer = Buffer::new();
+        let data_size = buf.len();
+        buffer.get_empty_buf()[0..data_size].copy_from_slice(buf);
+        buffer.push_data(data_size);
+        buffer
     }
 }
 
@@ -244,8 +266,7 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
 
 
 struct ConnectionState {
-    buffer: Buffer,
-    qts: usize,
+    buffer: Rc<RefCell<Buffer>>,
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
@@ -316,19 +337,19 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
-                    let buffer = {
-                        let mut buffer = Buffer::new();
-
-                        #[cfg(feature = "tcp-migration")]
-                        if let Some(data) = libos.take_migrated_data(new_qd).expect("take_migrated_data failed") {
-                            server_log!("Received migrated data ({} bytes)", data.len());
-
-                            buffer.get_empty_buf()[..data.len()].copy_from_slice(&data);
-                            buffer.push_data(data.len());
-                        }
-
+                    #[cfg(feature = "tcp-migration")]
+                    let buffer = if let Some(data) = libos.get_migrated_application_state::<Buffer>(new_qd) {
+                        server_log!("BUFFER LOG: Received migrated app data ({} bytes)", data.borrow().data_size());
+                        data
+                    } else {
+                        server_log!("BUFFER LOG: No migrated app data, creating new Buffer");
+                        let buffer = Rc::new(RefCell::new(Buffer::new()));
+                        libos.register_application_state(new_qd, buffer.clone());
                         buffer
                     };
+
+                    #[cfg(not(feature = "tcp-migration"))]
+                    let buffer = Rc::new(RefCell::new(Buffer::new()));
 
                     // Pop from new_qd
                     /* comment out this for recv_queue_len vs mig_lat eval */
@@ -342,7 +363,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                     connstate.insert(new_qd, ConnectionState {
                         buffer,
-                        qts: 1
                     });
                     
                     #[cfg(feature = "manual-tcp-migration")]
@@ -361,10 +381,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                     let mut state = connstate.get_mut(&qd).unwrap();
                     
-                    let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
+                    let sent = push_data_and_run(&mut libos, qd, &mut state.buffer.borrow_mut(), &recvbuf, &mut qts);
 
                     //server_log!("Issued PUSH => {} pushes pending", state.pushing);
-                    server_log!("Issued PUSH");
+                    server_log!("Issued {sent} PUSHes");
                     
                     
                     #[cfg(feature = "manual-tcp-migration")]
@@ -377,6 +397,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             server_log!("Issued POP");
                         } else {
                             server_log!("Should be migrated (no POP issued)");
+                            server_log!("BUFFER DATA SIZE = {}", state.buffer.borrow().data_size());
                             libos.initiate_migration(qd).unwrap();
                             entry.remove();
 
