@@ -28,8 +28,8 @@ FEATURES = [
     # 'manual-tcp-migration',
     # 'capy-log',
     # 'capy-profile',
-    # 'capy-time-log',
-    # 'recv-queue-eval',
+    'capy-time-log',
+    'server-reply-analysis',
 ]
 
 ################## TEST CONFIG #####################
@@ -40,22 +40,23 @@ NUM_THREADS = [1] # for wrk load generator
 REPEAT_NUM = 1
 RECV_QUEUE_THRESHOLD = 20
 MIG_DELAYS = [0]
-MAX_STAT_MIGS = [100000]#[5000, 10000, 15000] # set element to '' if you don't want to set this env var
+MAX_STAT_MIGS = [0]#[5000, 10000, 15000] # set element to '' if you don't want to set this env var
 MIG_PER_N = [2]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
-CLIENT_PPS = [i for i in range(300000, 300000 + 1, 100)]#[i for i in range(100000, 1_300_001, 100000)]
-LOADSHIFTS = '650000:100000,650000:100000,650000:100000,650000:100000,650000:100000' # 800000:2000000,1100000:1,700000:2000000
-ZIPF_ALPHA = '0.9' # 0.9
-ONOFF = '1' # '0', '1'
+CLIENT_PPS = [i for i in range(300, 300 + 1, 100)]#[i for i in range(100000, 1_300_001, 100000)]
+LOADSHIFTS =  '450000:1000,750000:4000,750000:4000,450000:1000' #'650000:100000,650000:100000,650000:100000,650000:100000,650000:100000' 
+ZIPF_ALPHA = '1.2' # 0.9
+ONOFF = '0' # '0', '1'
 NUM_CONNECTIONS = [100]
-RUNTIME = 10
+RUNTIME = 1
 TCPDUMP = False
 EVAL_MIG_LATENCY = False
 EVAL_POLL_INTERVAL = False
 EVAL_LATENCY_TRACE = True
 EVAL_RECV_QLEN = False
 EVAL_REQS_VS_TIME = True
-EVAL_SERVER_TSTAMP = True
-CAPY_LOG = '' # 'all', 'mig'
+EVAL_SERVER_REPLY = True
+EVAL_RPS_SIGNAL = True
+CAPY_LOG = 'all' # 'all', 'mig'
 
 #####################
 # build command: run_eval.py [build [clean]]

@@ -34,7 +34,7 @@ final_result = ''
 
 def kill_procs():
     cmd = [f'sudo pkill -INT -e iokerneld ; \
-            sudo pkill -INT -e synthetic ; \
+            sudo pkill -INT -f synthetic ; \
             sudo pkill -INT -e dpdk-ctrl.elf ; \
            sudo pkill -INT -e phttp-bench ; \
            sudo pkill -INT -f tcpdump ; \
@@ -178,13 +178,14 @@ def parse_mig_latency(experiment_id):
     print(f'PARSING {experiment_id} migration latency') 
     
     # host = pyrem.host.RemoteHost(TCPDUMP_NODE)
-    start_printing = False
+    
     
     clusters = {}
     for i in [0, 1]:
         file_path = f'{DATA_PATH}/{experiment_id}.be{i}'
         with open(file_path, "r") as file:
             # Iterate through each line in the file
+            start_printing = False
             for line in file:
                 # Check if the line contains the target string
                 if "[CAPYLOG] dumping time log data" in line:
@@ -294,7 +295,7 @@ def parse_poll_interval(experiment_id):
     print(f'PARSING {experiment_id} poll_interval') 
     
     # host = pyrem.host.RemoteHost(TCPDUMP_NODE)
-    start_printing = False
+    
     
     clusters = {}
     prev_ns = 0
@@ -303,6 +304,7 @@ def parse_poll_interval(experiment_id):
         file_path = f'{DATA_PATH}/{experiment_id}.be{i}'
         with open(file_path, "r") as file:
             # Iterate through each line in the file
+            start_printing = False
             for line in file:
                 # Check if the line contains the target string
                 if "[CAPYLOG] dumping time log data" in line:
@@ -351,7 +353,8 @@ def parse_latency_trace(experiment_id):
             columns = line.strip().split(",")
             # print(columns[0], columns[1])
 
-            window = int(int( (int(columns[0]) / 1000000) / 10 ) * 10);
+            # window = int(int( (int(columns[0]) / 1000000) / 10 ) * 10)
+            window = int(int(columns[0]) / 1000000)
             # window = int(int(columns[0]) / 1000000)
             if window in clusters:
                 clusters[window].append(int(columns[1]))
@@ -533,16 +536,52 @@ def parse_recv_qlen(experiment_id):
                     recv_qlen_file.write(f'{row[1]},{row[2]}\n')
         
 
-def parse_server_tstamp(experiment_id):
-    print(f'PARSING {experiment_id} server tstamp') 
+def parse_server_reply(experiment_id):
+    print(f'PARSING {experiment_id} server reply') 
     
     # Load the data without specifying column names
-    file_path = f'{DATA_PATH}/{experiment_id}.recv_qlen'
+    file_path = f'{DATA_PATH}/{experiment_id}.server_reply'
     data = []
     with open(file_path, 'r') as file:
         for line in file:
             values = line.strip().split(',')
-            data.append((int(values[0]), int(values[1]), int(values[2]), int(values[3]), int(values[4])))
+            if int(values[2]) != 10000 and int(values[2]) != 10001:
+                continue;
+            data.append((int(values[0]), int(values[1]), int(values[2]), int(values[3]), int(values[4]), int(values[5])))
+
+    ########### for raw server timestamp plotting ###########
+    
+    # cmd = f"ssh node9 \"awk -F, '(\\$3 == 10000 || \\$3 == 10001) {{print \\$0}}' {file_path} | sort -t, -k2,2n | awk -F, 'NR==1{{min=\\$2}} {{OFS=\\\",\\\"; \\$2=\\$2-min; print}}' > {file_path}_sorted\""
+    cmd = f"ssh node9 \"awk -F, '(\\$3 == 10000 || \\$3 == 10001) {{print \\$0}}' {file_path} | sort -t, -k2,2n > {file_path}_sorted\""
+    
+    print("Executing command:", cmd)  # For debugging
+
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=True,
+    ).stdout.decode()
+    if result != '':
+        print("RESULT: " + result + '\n\n')
+
+    cmd = f"ssh node9 \"awk -F, '{{ if (\\$3 == 10000) print > \\\"{file_path}_10000\\\"; else if (\\$3 == 10001) print > \\\"{file_path}_10001\\\" }}' {file_path}_sorted\""
+
+    print("Executing command:", cmd)  # For debugging
+
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=True,
+    ).stdout.decode()
+    if result != '':
+        print("RESULT: " + result + '\n\n')
+
+        
+    ########### for raw server timestamp plotting ###########
 
     # clienttime_numreq_99p
     clienttime_overall = {}
@@ -550,7 +589,7 @@ def parse_server_tstamp(experiment_id):
     servertime_overall = {}
     servertime_per_server = {}
     for row in data:
-        server_port = row[3]
+        server_port = row[2]
 
         if server_port not in clienttime_per_server:
             clienttime_per_server[server_port] = {}
@@ -559,7 +598,7 @@ def parse_server_tstamp(experiment_id):
             servertime_per_server[server_port] = {}
 
         clienttime_key = row[0] // 1000000
-        servertime_key = row[4] // 1000000
+        servertime_key = row[1] // 1000000
 
         if clienttime_key not in clienttime_overall:
             clienttime_overall[clienttime_key] = []
@@ -579,9 +618,9 @@ def parse_server_tstamp(experiment_id):
         
     clienttime_result = {}
     for ms_key, group_rows in clienttime_overall.items():
-        group_rows.sort(key=lambda x: x[1])  # Sort by the latency
+        group_rows.sort(key=lambda x: x[3])  # Sort by the latency
         percentile_index = int(len(group_rows) * 0.99)
-        percentile_value = group_rows[percentile_index][1]
+        percentile_value = group_rows[percentile_index][3]
         clienttime_result[ms_key] = (len(group_rows), percentile_value)
     sorted_result = dict(sorted(clienttime_result.items())) # Sort the dictionary by keys
     with open(f'{DATA_PATH}/{experiment_id}.clienttime_numreq_99p', 'w') as result_file:
@@ -593,22 +632,24 @@ def parse_server_tstamp(experiment_id):
     for server_port, server_groups in clienttime_per_server.items():
         clienttime_per_server_result[server_port] = {}
         for ms_key, group_rows in server_groups.items():
-            group_rows.sort(key=lambda x: x[1])  # Sort by the second column
+            group_rows.sort(key=lambda x: x[3])  # Sort by the latency
             percentile_index = int(len(group_rows) * 0.99)
-            percentile_value = group_rows[percentile_index][1]
-            clienttime_per_server_result[server_port][ms_key] = (len(group_rows), percentile_value)
+            percentile_value = group_rows[percentile_index][3]
+            recv_qlen = group_rows[percentile_index][4]
+            conn_count = group_rows[percentile_index][5]
+            clienttime_per_server_result[server_port][ms_key] = (len(group_rows), percentile_value, recv_qlen, conn_count)
     for server_port, result in clienttime_per_server_result.items():
         sorted_result = dict(sorted(result.items())) # Sort the dictionary by keys
-        with open(f'{DATA_PATH}/{experiment_id}.clienttime_numreq_99p_{server_port}', 'w') as result_file:
-            for clienttime, (num_reqs, lat_99p) in sorted_result.items():
-                result_file.write(f'{clienttime},{num_reqs},{lat_99p}\n')
+        with open(f'{DATA_PATH}/{experiment_id}.clienttime_numreq_99p_recvqlen_numconn_{server_port}', 'w') as result_file:
+            for clienttime, (num_reqs, lat_99p, recv_qlen, conn_count) in sorted_result.items():
+                result_file.write(f'{clienttime},{num_reqs},{lat_99p},{recv_qlen},{conn_count}\n')
     
     
     servertime_result = {}
     for ms_key, group_rows in servertime_overall.items():
-        group_rows.sort(key=lambda x: x[1])  # Sort by the latency
+        group_rows.sort(key=lambda x: x[3])  # Sort by the latency
         percentile_index = int(len(group_rows) * 0.99)
-        percentile_value = group_rows[percentile_index][1]
+        percentile_value = group_rows[percentile_index][3]
         servertime_result[ms_key] = (len(group_rows), percentile_value)
     sorted_result = dict(sorted(servertime_result.items())) # Sort the dictionary by keys
     with open(f'{DATA_PATH}/{experiment_id}.servertime_numreq_99p', 'w') as result_file:
@@ -620,18 +661,50 @@ def parse_server_tstamp(experiment_id):
     for server_port, server_groups in servertime_per_server.items():
         servertime_per_server_result[server_port] = {}
         for ms_key, group_rows in server_groups.items():
-            group_rows.sort(key=lambda x: x[1])  # Sort by the second column
+            group_rows.sort(key=lambda x: x[3])  # Sort by the latency
             percentile_index = int(len(group_rows) * 0.99)
-            percentile_value = group_rows[percentile_index][1]
-            servertime_per_server_result[server_port][ms_key] = (len(group_rows), percentile_value)
+            percentile_value = group_rows[percentile_index][3]
+            recv_qlen = group_rows[percentile_index][4]
+            conn_count = group_rows[percentile_index][5]
+            servertime_per_server_result[server_port][ms_key] = (len(group_rows), percentile_value, recv_qlen, conn_count)
     for server_port, result in servertime_per_server_result.items():
         sorted_result = dict(sorted(result.items())) # Sort the dictionary by keys
-        with open(f'{DATA_PATH}/{experiment_id}.servertime_numreq_99p_{server_port}', 'w') as result_file:
-            for servertime, (num_reqs, lat_99p) in sorted_result.items():
-                result_file.write(f'{servertime},{num_reqs},{lat_99p}\n')
+        with open(f'{DATA_PATH}/{experiment_id}.servertime_numreq_99p_recvqlen_numconn_{server_port}', 'w') as result_file:
+            for servertime, (num_reqs, lat_99p, recv_qlen, conn_count) in sorted_result.items():
+                result_file.write(f'{servertime},{num_reqs},{lat_99p},{recv_qlen},{conn_count}\n')
     
     
-        
+def parse_rps_signal(experiment_id):
+    print(f'PARSING {experiment_id} RPS SIGNAL') 
+    
+    
+    
+    
+    for i in [0, 1]:
+        file_path = f'{DATA_PATH}/{experiment_id}.be{i}'
+        with open(file_path, "r") as file:
+            # Iterate through each line in the file
+            start_printing = False
+            final_result = ''
+            for line in file:
+                if "[CAPYLOG] dumping time log data" in line:
+                    start_printing = True
+                    continue 
+
+                # Check if we should print the line
+                if start_printing:
+                    columns = line.strip().split(",")
+                    if columns[1] != 'RPS_SIGNAL':
+                        continue
+
+                    time_str = columns[0]
+                    sum_rps = columns[2]
+                    individual_rps = columns[3]
+                    
+                    final_result = final_result + time_str + ',' + sum_rps + ',' + individual_rps + "\n"
+        with open(f'{DATA_PATH}/{experiment_id}.be{i}_rps_signal', 'w') as file:
+            # Write the content to the file
+            file.write(final_result)
 
     
 def run_eval():
@@ -782,46 +855,34 @@ def run_eval():
                                         # Handle any other unexpected exceptions
                                         print("EXPERIMENT FAILED\n\n")
                                 
+                                kill_procs()
+                                time.sleep(3)
                                 if TCPDUMP == True:
-                                    time.sleep(3)
-                                    kill_procs()
                                     parse_tcpdump(experiment_id)
-                                    
-                                    print("Parsing pcap file is done, finishing test here.\n\n")
+                                    # print("Parsing pcap file is done, finishing test here.\n\n")
 
-                                    exit()
+                                    # exit()
 
                                 if EVAL_MIG_LATENCY == True:
-                                    kill_procs()
-                                    time.sleep(5)
                                     parse_mig_latency(experiment_id)
 
                                 if EVAL_POLL_INTERVAL == True:
-                                    kill_procs()
-                                    time.sleep(5)
                                     parse_poll_interval(experiment_id)
                                 
                                 if EVAL_LATENCY_TRACE == True:
-                                    kill_procs()
-                                    time.sleep(3)
                                     parse_latency_trace(experiment_id)
 
                                 if EVAL_RECV_QLEN == True:
-                                    kill_procs()
-                                    time.sleep(3)
                                     parse_recv_qlen(experiment_id)
 
                                 if EVAL_REQS_VS_TIME == True:
-                                    kill_procs()
-                                    time.sleep(3)
                                     parse_request_vs_time(experiment_id)
 
+                                if EVAL_SERVER_REPLY == True:
+                                    parse_server_reply(experiment_id)
 
-                                if EVAL_SERVER_TSTAMP == True:
-                                    kill_procs()
-                                    time.sleep(3)
-                                    parse_server_tstamp(experiment_id)
-
+                                if EVAL_RPS_SIGNAL == True:
+                                    parse_rps_signal(experiment_id)
                                     
                                 
 

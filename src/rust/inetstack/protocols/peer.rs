@@ -120,6 +120,11 @@ impl Peer {
                     return self.tcp.receive_tcpmig(&header, payload);
                 }
 
+                #[cfg(feature = "tcp-migration")]
+                if TcpMigHeader::is_rps_signal(&payload) {
+                    return self.tcp.receive_rps_signal(&header, payload);
+                }
+
                 self.udp.do_receive(&header, payload)
             },
         }

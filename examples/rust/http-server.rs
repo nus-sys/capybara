@@ -167,7 +167,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     server_log!("PUSH: {}", response.lines().next().unwrap_or(""));
     libos.push2(qd, response.as_bytes()).expect("push success") */    
 
-    #[cfg(not(feature = "recv-queue-eval"))]
+    #[cfg(not(feature = "server-reply-analysis"))]
     {
         lazy_static! {
             static ref RESPONSE: String = {
@@ -186,7 +186,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         libos.push2(qd, RESPONSE.as_bytes()).expect("push success")
     }
 
-    #[cfg(feature = "recv-queue-eval")]
+    #[cfg(feature = "server-reply-analysis")]
     {
         static mut RESPONSE: Option<Vec<u8>> = None;
         let response = if let Some(response) = unsafe { RESPONSE.as_mut() } {
@@ -210,7 +210,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         
         // Assume request has been overwritten with statistics.
         response[0..16].copy_from_slice(&data[0..16]);
-        server_log!("PUSH: ({}) {}", queue_len, std::str::from_utf8(&response[16..]).unwrap());
+        server_log!("PUSH: ({}) {}", u32::from_be_bytes(data[4..8].try_into().unwrap()), std::str::from_utf8(&response[16..]).unwrap());
         libos.push2(qd, &response).expect("push success")
     }
 }

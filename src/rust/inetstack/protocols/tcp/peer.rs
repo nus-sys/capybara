@@ -92,6 +92,11 @@ use ::std::{
     time::Duration,
 };
 
+use ::byteorder::{
+    ByteOrder,
+    NetworkEndian,
+};
+
 #[cfg(feature = "tcp-migration")]
 use state::TcpState;
 #[cfg(feature = "tcp-migration")]
@@ -156,7 +161,7 @@ pub struct Inner {
     #[cfg(feature = "tcp-migration")]
     tcpmig_poll_state: Rc<TcpmigPollState>,
 
-    #[cfg(feature = "recv-queue-eval")]
+    #[cfg(feature = "server-reply-analysis")]
     listening_port: u16,
 }
 
@@ -226,7 +231,7 @@ impl TcpPeer {
     pub fn bind(&self, qd: QDesc, mut addr: SocketAddrV4) -> Result<(), Fail> {
         let mut inner: RefMut<Inner> = self.inner.borrow_mut();
 
-        #[cfg(feature = "recv-queue-eval")]
+        #[cfg(feature = "server-reply-analysis")]
         {
             inner.listening_port = addr.port();
         }
@@ -412,7 +417,7 @@ impl TcpPeer {
         if inner.established.insert(key, established).is_some() {
             panic!("duplicate queue descriptor in established sockets table");
         }
-        capy_time_log!("CONN_ESTABLISHED,({})", remote);
+        // capy_time_log!("CONN_ESTABLISHED,({})", remote);
         Poll::Ready(Ok(new_qd))
     }
 
@@ -642,7 +647,7 @@ impl Inner {
             #[cfg(feature = "tcp-migration")]
             tcpmig_poll_state,
 
-            #[cfg(feature = "recv-queue-eval")]
+            #[cfg(feature = "server-reply-analysis")]
             listening_port: 0,
         }
     }
@@ -655,7 +660,7 @@ impl Inner {
         let local = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
         let remote = SocketAddrV4::new(ip_hdr.get_src_addr(), tcp_hdr.src_port);
         capy_log!("{:?} => {:?}", remote, local);
-        capy_log!("SERVER RECEIVE TCP seq_num: {}", tcp_hdr.seq_num);
+        capy_log!("SERVER RECEIVE TCP seq_num: {}, data length: {}", tcp_hdr.seq_num, data.len());
 
         if remote.ip().is_broadcast() || remote.ip().is_multicast() || remote.ip().is_unspecified() {
             return Err(Fail::new(EINVAL, "invalid address type"));
@@ -667,22 +672,24 @@ impl Inner {
             // let is_data_empty = data.is_empty();
             /* activate this for recv_queue_len vs mig_lat eval */
 
-            #[cfg(feature = "recv-queue-eval")]
+            #[cfg(feature = "server-reply-analysis")]
             {
-                let data: &mut [u8] = &mut data;
-                data[0..2].copy_from_slice(&self.listening_port.to_be_bytes());
+                if data.len() >= 16 {
+                    let data: &mut [u8] = &mut data;
+                    data[0..2].copy_from_slice(&self.listening_port.to_be_bytes());
 
-                let connection_count: u16 = self.established.len().try_into().expect("connection count > u16::MAX");
-                data[2..4].copy_from_slice(&connection_count.to_be_bytes());
+                    let connection_count: u16 = self.established.len().try_into().expect("connection count > u16::MAX");
+                    data[2..4].copy_from_slice(&connection_count.to_be_bytes());
 
-                #[cfg(feature = "tcp-migration")]
-                let queue_len: u32 = self.stats.global_recv_queue_length().try_into().expect("queue length is over 4 billion");
-                #[cfg(not(feature = "tcp-migration"))]
-                let queue_len: u32 = 0;
-                data[4..8].copy_from_slice(&queue_len.to_be_bytes());
+                    #[cfg(feature = "tcp-migration")]
+                    let queue_len: u32 = self.stats.global_recv_queue_length().try_into().expect("queue length is over 4 billion");
+                    #[cfg(not(feature = "tcp-migration"))]
+                    let queue_len: u32 = 0;
+                    data[4..8].copy_from_slice(&queue_len.to_be_bytes());
 
-                let timestamp: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
-                data[8..16].copy_from_slice(&timestamp.to_be_bytes());
+                    let timestamp: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
+                    data[8..16].copy_from_slice(&timestamp.to_be_bytes());
+                }
             }
 
             debug!("Routing to established connection: {:?}", key);
@@ -815,6 +822,22 @@ impl TcpPeer {
         self.inner.borrow_mut().receive_tcpmig(ip_hdr, buf)
     }
 
+    pub fn receive_rps_signal(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
+        let sum = NetworkEndian::read_u32(&buf[12..16]);
+        let individual = NetworkEndian::read_u32(&buf[16..20]);
+        
+        if sum != 0{
+            // eprintln!("sum: {}, individual: {}", sum, individual);
+            capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
+            #[cfg(not(feature = "manual-tcp-migration"))]
+            if sum > 100 && individual as f32 > sum as f32 * 0.65 {
+                let conn = self.one_connection_to_migrate();
+                self.initiate_migration(conn);
+            }
+        }
+        Ok(())
+    }
+
     pub fn migrate_out_and_send(&mut self, qd: QDesc) {
         let mut inner = self.inner.borrow_mut();
         let state = inner.migrate_out_connection(qd).unwrap();
@@ -859,7 +882,7 @@ impl TcpPeer {
         inner.established.get(&conn).expect("connection not in established table")
             .cb.disable_stats();
 
-        capy_time_log!("INIT_MIG,({})", conn.1);
+        // capy_time_log!("INIT_MIG,({})", conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
         Ok(())
 
@@ -880,7 +903,12 @@ impl TcpPeer {
 
         // Send heartbeat.
         let queue_len = inner.stats.avg_global_recv_queue_length();
-        inner.tcpmig.send_heartbeat(queue_len);
+        // inner.tcpmig.send_heartbeat(queue_len);
+    }
+
+    #[cfg(not(feature = "manual-tcp-migration"))]
+    pub fn one_connection_to_migrate(&mut self) -> (SocketAddrV4, SocketAddrV4) {
+        self.inner.borrow_mut().stats.one_connection_to_migrate()
     }
 
     #[cfg(not(feature = "manual-tcp-migration"))]

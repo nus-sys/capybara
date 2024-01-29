@@ -145,8 +145,24 @@ impl Stats {
 
         let global_queue_len_avg = global_queue_len_sum / SERVER_COUNT;
         
-        // Set threshold to 1.125 * global_queue_len_sum.
-        self.threshold = global_queue_len_avg + (global_queue_len_avg >> 3);
+        #[cfg(not(feature = "manual-tcp-migration"))]{
+            // Set threshold to 1.125 * global_queue_len_sum.
+            self.threshold = global_queue_len_avg + (global_queue_len_avg >> 3);
+        }
+    }
+
+    /// Choose a random connection to migrate.
+    #[cfg(not(feature = "manual-tcp-migration"))]
+    pub fn one_connection_to_migrate(&mut self) -> (SocketAddrV4, SocketAddrV4) {
+        // eprintln!("one_connection_to_migrate");
+        let handle = &self.handles[0];
+        self.global_recv_queue_length -= handle.inner.queue_len.get().expect_enabled("bucket list stat not enabled");
+        let conn = handle.inner.conn;
+        self.handles.swap_remove(0);
+        
+        self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
+
+        conn
     }
 
     /// Extracts connections so that the global recv queue length goes below the threshold.

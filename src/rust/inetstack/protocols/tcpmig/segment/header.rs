@@ -29,8 +29,10 @@ use std::net::{SocketAddrV4, Ipv4Addr};
 
 /// Size of a TCPMig header (in bytes).
 pub const TCPMIG_HEADER_SIZE: usize = 28;
+pub const RPS_SIGNAL_HEADER_SIZE: usize = 20;
 
 pub const MAGIC_NUMBER: u32 = 0xCAFEDEAD;
+pub const RPS_SIGNAL_SIGNATURE: u32 = 0xABCDABCD;
 
 const FLAG_LOAD_BIT: u8 = 0;
 const FLAG_NEXT_FRAGMENT: u8 = 1;
@@ -137,6 +139,11 @@ impl TcpMigHeader {
     pub fn is_tcpmig(buf: &[u8]) -> bool {
         buf.len() >= TCPMIG_HEADER_SIZE &&
             NetworkEndian::read_u32(&buf[8..12]) == MAGIC_NUMBER
+    }
+
+    pub fn is_rps_signal(buf: &[u8]) -> bool {
+        buf.len() >= RPS_SIGNAL_HEADER_SIZE &&
+            NetworkEndian::read_u32(&buf[8..12]) == RPS_SIGNAL_SIGNATURE
     }
 
     /// Returns the size of the TcpMigration header (in bytes).

@@ -1109,7 +1109,7 @@ impl ControlBlock {
 
         // Insert the new segment into the correct position.
         out_of_order.insert(action_index, (new_start, buf));
-        capy_log!("Out-of-order queue: {:?}", out_of_order);
+        // capy_log!("Out-of-order queue: {:?}", out_of_order);
 
         // If the out-of-order store now contains too many entries, delete the later entries.
         // ToDo: The out-of-order store is already limited (in size) by our receive window, while the below check

@@ -65,7 +65,7 @@ pub(crate) fn __write_time_log_data<W: std::io::Write>(w: &mut W) -> std::io::Re
     eprintln!("\n[CAPYLOG] dumping time log data");
     let data = data();
     for (time, msg) in data.iter() {
-        write!(w, "[{} ns] {}\n", time, std::str::from_utf8(&msg).unwrap())?;
+        write!(w, "{},{}\n", time, std::str::from_utf8(&msg).unwrap())?;
     }
     Ok(())
 }
