@@ -28,3 +28,5 @@ tags.*
 
 # rust
 Cargo.lock
+
+p4/includes/p4include/*

@@ -1,3 +1,17 @@
+action remove_pktgen_hdr(){
+    hdr.ethernet.setValid();
+    hdr.pktgen_timer_header.setInvalid();
+    hdr.remaining_ethernet.setInvalid();
+
+    hdr.ethernet.src_mac = hdr.remaining_ethernet.src_mac;
+    hdr.ethernet.dst_mac = 0xffffffffffff;
+    hdr.ethernet.ether_type = ETHERTYPE_IPV4;
+}
+
+action multicast(MulticastGroupId_t mcast_grp) {
+    ig_tm_md.mcast_grp_a = mcast_grp;
+}
+
 action send(PortId_t port) {
     meta.egress_port = port;
     ig_tm_md.ucast_egress_port = port;

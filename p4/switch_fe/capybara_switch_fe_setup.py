@@ -138,12 +138,12 @@ class capybara_switch_fe():
         # print("Done")
 
         # Enable migration learning
-        print("Initializing learning on TCP migration ... ", end='', flush=True)
-        try:
-            self.p4.IngressDeparser.migration_digest.callback_deregister()
-        except:
-            pass
-        self.p4.IngressDeparser.migration_digest.callback_register(self.learning_migration)
+        # print("Initializing learning on TCP migration ... ", end='', flush=True)
+        # try:
+        #     self.p4.IngressDeparser.migration_digest.callback_deregister()
+        # except:
+        #     pass
+        # self.p4.IngressDeparser.migration_digest.callback_register(self.learning_migration)
         # print("Done")
         
 
@@ -259,19 +259,29 @@ sl2 = capybara_switch_fe(default_ttl=10000)
 sl2.setup()
 set_bcast([24, 32, 36])
 
+bfrt.pre.node.entry(MULTICAST_NODE_ID=10000, MULTICAST_RID=10000,
+    MULTICAST_LAG_ID=[], DEV_PORT=[24]).push()
+bfrt.pre.node.entry(MULTICAST_NODE_ID=10001, MULTICAST_RID=10001,
+    MULTICAST_LAG_ID=[], DEV_PORT=[24]).push()
+bfrt.pre.mgid.entry(MGID=2, MULTICAST_NODE_ID=[10000, 10001],
+        MULTICAST_NODE_L1_XID_VALID=[False, False],
+            MULTICAST_NODE_L1_XID=[0, 0]).push()
+
 
 # p4.Ingress.min_workload_mac_hi32.reg.mod(REGISTER_INDEX=0, f1=0x08c0ebb6)
 # p4.Ingress.min_workload_mac_lo16.reg.mod(REGISTER_INDEX=0, f1=0xc5ad)
 # p4.Ingress.min_workload_ip.reg.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.9'))
 # p4.Ingress.min_workload_port.reg.mod(REGISTER_INDEX=0, f1=10001)
 
-
+for i in range(65536):
+    p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = i % num_backends)
 
 for i in range(num_backends):
     p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
     p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xc5ad)
     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.9'))
-    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + 0)
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + i)
+
 
 
 port_mirror_setup_file="/home/singtel/inho/Capybara/capybara/p4/includes/setup_port_mirror.py" # <== To Modify and Add

@@ -9,7 +9,7 @@ control MigrationRequestIdentifier32b(
     in my_ingress_metadata_t meta,
     out bit<1> discriminator_out) {
 
-    Register< value32b_t, index_t >(register_size) reg;
+    Register< value32b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value32b_t register_value, out bit<1> is_written) {
             if(register_value == 0 || register_value == hdr.prism_req_base.peer_addr){
@@ -98,7 +98,7 @@ control MigrationRequestIdentifier16b(
     in my_ingress_metadata_t meta,
     out bit<1> discriminator_out) {
 
-    Register< value16b_t, index_t >(register_size) reg;
+    Register< value16b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value16b_t register_value, out bit<1> is_written) {
             if(register_value == 0 || register_value == hdr.prism_req_base.peer_port){
@@ -187,7 +187,7 @@ control MigrationReplyIdentifier32b(
     in my_ingress_metadata_t meta,
     out bit<1> discriminator_out) {
 
-    Register< value32b_t, index_t >(register_size) reg;
+    Register< value32b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value32b_t register_value, out bit<1> is_written) {
             if(register_value == 0){
@@ -261,7 +261,7 @@ control MigrationReplyIdentifier16b(
     in my_ingress_metadata_t meta,
     out bit<1> discriminator_out) {
 
-    Register< value16b_t, index_t >(register_size) reg;
+    Register< value16b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value16b_t register_value, out bit<1> is_written) {
             if(register_value == 0){
@@ -335,7 +335,7 @@ control MigrationRequest32b0(
     in my_ingress_metadata_t meta,
     out value32b_t return_value) {
 
-    Register< value32b_t, index_t >(register_size) reg;
+    Register< value32b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value32b_t register_value, out bit<1> null) {
             register_value = value;
@@ -396,7 +396,7 @@ control MigrationRequest16b0(
     in my_ingress_metadata_t meta,
     out value16b_t return_value) {
 
-    Register< value16b_t, index_t >(register_size) reg;
+    Register< value16b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value16b_t register_value, out bit<1> null) {
             register_value = value;
@@ -457,7 +457,7 @@ control MigrationReply32b0(
     in my_ingress_metadata_t meta,
     out value32b_t return_value) {
 
-    Register< value32b_t, index_t >(register_size) reg;
+    Register< value32b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value32b_t register_value, out bit<1> null) {
             register_value = value;
@@ -518,7 +518,7 @@ control MigrationReply16b0(
     in my_ingress_metadata_t meta,
     out value16b_t return_value) {
 
-    Register< value16b_t, index_t >(register_size) reg;
+    Register< value16b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value16b_t register_value, out bit<1> null) {
             register_value = value;
@@ -579,7 +579,7 @@ control MigrationRequest32b1(
     in my_ingress_metadata_t meta,
     out value32b_t return_value) {
 
-    Register< value32b_t, index_t >(register_size) reg;
+    Register< value32b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value32b_t register_value, out bit<1> null) {
             register_value = value;
@@ -640,7 +640,7 @@ control MigrationRequest16b1(
     in my_ingress_metadata_t meta,
     out value16b_t return_value) {
 
-    Register< value16b_t, index_t >(register_size) reg;
+    Register< value16b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value16b_t register_value, out bit<1> null) {
             register_value = value;
@@ -701,7 +701,7 @@ control MigrationReply32b1(
     in my_ingress_metadata_t meta,
     out value32b_t return_value) {
 
-    Register< value32b_t, index_t >(register_size) reg;
+    Register< value32b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value32b_t register_value, out bit<1> null) {
             register_value = value;
@@ -762,7 +762,7 @@ control MigrationReply16b1(
     in my_ingress_metadata_t meta,
     out value16b_t return_value) {
 
-    Register< value16b_t, index_t >(register_size) reg;
+    Register< value16b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_value = {
         void apply(inout value16b_t register_value, out bit<1> null) {
             register_value = value;
@@ -823,7 +823,7 @@ control Blocker0(
     in my_ingress_metadata_t meta,
     out bit<1> return_value) {
 
-    Register< bit<1>, index_t >(register_size) reg;
+    Register< bit<1>, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< bit<1>, index_t, bit<1> >(reg) block = {
         void apply(inout bit<1> register_value, out bit<1> null) {
             register_value = 1;
@@ -882,7 +882,7 @@ control Blocker1(
     in my_ingress_metadata_t meta,
     out bit<1> return_value) {
 
-    Register< bit<1>, index_t >(register_size) reg;
+    Register< bit<1>, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< bit<1>, index_t, bit<1> >(reg) block = {
         void apply(inout bit<1> register_value, out bit<1> null) {
             register_value = 1;

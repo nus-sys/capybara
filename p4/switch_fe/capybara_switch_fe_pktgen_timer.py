@@ -4,6 +4,8 @@ MINSIZE = 60
 DEV_ID = 0
 PKTGEN_PIPE_PORT = 68
 ETHERTYPE_PKTGEN = 0x7777
+UDP_DSTPORT_PKTGEN = 7777
+RPS_SIGNAL_SIGNATURE = 0xABCDABCD
 
 def make_port(pipe, local_port):
     assert pipe >= 0 and pipe < 4
@@ -11,20 +13,26 @@ def make_port(pipe, local_port):
     return pipe << 7 | local_port
 
 
-class CapybaraSignal(Packet):
+class rps_signal(Packet):
    fields_desc = [ 
-                    BitField("field_one", 0, 32),
-                    BitField("field_two", 0, 32),
+                    BitField("signature", 0, 32),
+                    BitField("sum", 0, 32),
+                    BitField("individual", 0, 32),
                 ]
 
 pktgen.enable( make_port(0,68)) # port 68 on logic pipeline 1
 
 #pkt = simple_eth_packet(pktlen=pktlen, eth_dst=DST_MAC_ADDR, eth_type=ETHERTYPE_PKTGEN)
-pkt = (Ether(dst="ff:ff:ff:ff:ff:ff", src="00:06:07:08:09:0a", type=ETHERTYPE_PKTGEN)/ # 14
-     IP(src="20.0.0.151", dst="20.0.0.255")/ # 20
-     UDP(sport=2222, dport=22222, chksum=0)/ # 8 
-     CapybaraSignal()) 
+pkt = (Ether(src="08:c0:eb:b6:e8:05", dst="ff:ff:ff:ff:ff:ff", type=ETHERTYPE_PKTGEN)/ # 14
+     IP(src="10.0.1.8", dst="10.0.1.9")/ # 20
+     UDP(sport=22222, dport=UDP_DSTPORT_PKTGEN, chksum=0)/ # 8 
+     rps_signal(signature=RPS_SIGNAL_SIGNATURE)) 
 # pkt = pkt/("1" * (pktlen - len(pkt)))
+
+if len(pkt) < MINSIZE:
+    diff = MINSIZE - len(pkt)
+    append_payload = b"\x00" * diff
+    pkt = pkt/append_payload
 
 pktgen.write_pkt_buffer( 0, len(pkt)-6, str(pkt)[6:], sess_hdl=sess_hdl, dev_tgt=dev_pipe(0))
 
@@ -37,7 +45,7 @@ app_cfg.batch_count= 0
 app_cfg.pkt_count= 0
 app_cfg.pattern_key= 0
 app_cfg.pattern_msk= 0
-app_cfg.timer= 3000000000 # nanoseconds
+app_cfg.timer= 1000000 # nanoseconds
 app_cfg.ibg= 1
 app_cfg.ibg_jitter= 0
 app_cfg.ipg= 0

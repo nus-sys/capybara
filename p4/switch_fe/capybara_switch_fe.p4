@@ -7,7 +7,11 @@
 /******  G L O B A L   I N G R E S S   M E T A D A T A  *********/
 
 struct my_ingress_headers_t {
-    bridged_meta_h bridged_meta; // <== To Add
+    bridged_meta_h              bridged_meta; // <== To Add
+    
+    pktgen_timer_header_t       pktgen_timer_header;
+    remaining_ethernet_h        remaining_ethernet;
+
     ethernet_h                  ethernet;
     ipv4_h                      ipv4;
     tcp_h                       tcp;
@@ -95,7 +99,23 @@ parser IngressParser(
         meta.result13 = 0;
         
         
-        transition parse_ethernet;
+        transition select(pkt.lookahead<bit<112>>()[15:0]) {
+            ETHERTYPE_PKTGEN: parse_pktgen;
+            default: parse_ethernet;
+        }
+    }
+
+    state parse_pktgen {
+        pkt.extract(hdr.pktgen_timer_header);
+        transition parse_remaining_ethernet;
+    }
+
+    state parse_remaining_ethernet {
+        pkt.extract(hdr.remaining_ethernet);
+        transition select(hdr.remaining_ethernet.ether_type){
+            ETHERTYPE_PKTGEN: parse_ipv4;
+            default: accept;
+        }
     }
 
     state parse_ethernet {
@@ -129,7 +149,7 @@ parser IngressParser(
     state parse_tcp {
         pkt.extract(hdr.tcp);
 
-        /* Calculate Payload checksum */
+        /* Calculate Payload _m */
         tcp_checksum.subtract({
             hdr.tcp.src_port,
             hdr.tcp.dst_port,
@@ -204,19 +224,19 @@ control Ingress(
             init=32w0xFFFFFFFF, xor=32w0xFFFFFFFF)) hash;
     
 
-    Register< index_t, _> (32w1) counter; // value, key
-    RegisterAction<index_t, _, index_t>(counter) counter_update = {
+    Register< index_t, _> (TWO_POWER_SIXTEEN) reg_be_idx; // value, key
+    RegisterAction<index_t, _, index_t>(reg_be_idx) get_be_idx = {
         void apply(inout index_t val, out index_t rv) {
             rv = val;
-            if(val == NUM_BACKENDS-1){
-                val = 0;
-            }else{
-                val = val + 1;    
-            }
+            // if(val == NUM_BACKENDS-1){
+            //     val = 0;
+            // }else{
+            //     val = val + 1;    
+            // }
         }
     };
 
-    Register< value32b_t, index_t >(register_size) backend_mac_hi32;
+    Register< value32b_t, index_t >(TWO_POWER_SIXTEEN) backend_mac_hi32;
     RegisterAction< value32b_t, index_t, value32b_t >(backend_mac_hi32) read_backend_mac_hi32 = {
         void apply(inout value32b_t register_value, out value32b_t rv) {
             rv = register_value;
@@ -226,7 +246,7 @@ control Ingress(
         meta.owner_mac[47:16] = read_backend_mac_hi32.execute(meta.backend_idx);
     }
 
-    Register< value16b_t, index_t >(register_size) backend_mac_lo16;
+    Register< value16b_t, index_t >(TWO_POWER_SIXTEEN) backend_mac_lo16;
     RegisterAction< value16b_t, index_t, value16b_t >(backend_mac_lo16) read_backend_mac_lo16 = {
         void apply(inout value16b_t register_value, out value16b_t rv) {
             rv = register_value;
@@ -236,7 +256,7 @@ control Ingress(
         meta.owner_mac[15:0] = read_backend_mac_lo16.execute(meta.backend_idx);
     }
 
-    Register< value32b_t, index_t >(register_size) backend_ip;
+    Register< value32b_t, index_t >(TWO_POWER_SIXTEEN) backend_ip;
     RegisterAction< value32b_t, index_t, value32b_t >(backend_ip) read_backend_ip = {
         void apply(inout value32b_t register_value, out value32b_t rv) {
             rv = register_value;
@@ -247,7 +267,7 @@ control Ingress(
     }
 
 
-    Register< value16b_t, index_t >(register_size) backend_port;
+    Register< value16b_t, index_t >(TWO_POWER_SIXTEEN) backend_port;
     RegisterAction< value16b_t, index_t, value16b_t >(backend_port) read_backend_port = {
         void apply(inout value16b_t register_value, out value16b_t rv) {
             rv = register_value;
@@ -332,8 +352,16 @@ control Ingress(
         //     min_workload_ip.apply(0, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
         //     min_workload_port.apply(0, hdr.udp.src_port, meta, hdr.udp.dst_port);
 
-        // }else 
-        if(hdr.ipv4.isValid()){
+        // }else
+         
+        if(hdr.pktgen_timer_header.isValid()){
+            remove_pktgen_hdr();
+            hdr.udp.checksum = 0;
+            send(PIPE_0_RECIRC);
+        }else if(ig_intr_md.ingress_port == PIPE_0_RECIRC){
+            multicast(2);
+        }
+        else if(hdr.ipv4.isValid()){
             bit<16> hash1;
             bit<16> hash2;
             bit<1> holder_1b_00;
@@ -350,7 +378,7 @@ control Ingress(
                     meta.client_ip = hdr.ipv4.src_ip;
                     meta.client_port = hdr.tcp.src_port;
 
-                    meta.backend_idx = counter_update.execute(0);
+                    meta.backend_idx = get_be_idx.execute(meta.client_port);
                     exec_read_backend_mac_hi32();
                     exec_read_backend_mac_lo16();
                     exec_read_backend_ip();
@@ -398,11 +426,14 @@ control Ingress(
             
             tbl_reply_rewrite.apply();
 
-            blocker0.apply(hash1, meta, ig_dprsr_md.drop_ctl[0:0]);
+            // blocker0.apply(hash1, meta, ig_dprsr_md.drop_ctl[0:0]);
+            l2_forwarding.apply();
+        }else{
+            l2_forwarding.apply();
         }
 
 
-        l2_forwarding.apply();
+        
     }
     
 
@@ -527,26 +558,38 @@ control IngressDeparser(packet_out pkt,
 /***********************  H E A D E R S  ************************/
 
 struct my_egress_headers_t {
-    ethernet_h   ethernet;
+    ethernet_h          ethernet;
+    ipv4_h              ipv4;
+    tcp_h               tcp;
+    udp_h               udp;
+    rps_signal_h        rps_signal;
 }
 
 /********  G L O B A L   E G R E S S   M E T A D A T A  *********/
 
 struct my_egress_metadata_t {
+    port_mirror_meta_t  port_mirror_meta; // <== To Add
+    
+    bit<8>              active_reg_idx;
+    bit<8>              snapshot_reg_idx;
+    bit<16>             tcp_hdr_len;
 }
 
 /***********************  P A R S E R  **************************/
 
 parser EgressParser(packet_in        pkt,
     /* User */
-    out my_ingress_headers_t          hdr,
-    out my_ingress_metadata_t         meta,
+    out my_egress_headers_t          hdr,
+    out my_egress_metadata_t         meta,
     /* Intrinsic */
     out egress_intrinsic_metadata_t  eg_intr_md)
 {
     PortMirroringEgressParser() port_mirror_parser; // <== To Add
     /* This is a mandatory state, required by Tofino Architecture */
     state start {
+        meta.active_reg_idx = 0;
+        meta.snapshot_reg_idx = 0;
+        meta.tcp_hdr_len = 0;
         pkt.extract(eg_intr_md);
         port_mirror_parser.apply(pkt, meta.port_mirror_meta); // <== To Add 
         transition parse_ethernet;
@@ -555,8 +598,36 @@ parser EgressParser(packet_in        pkt,
     state parse_ethernet {
         pkt.extract(hdr.ethernet);
         transition select(hdr.ethernet.ether_type) {
+            ETHERTYPE_IPV4:  parse_ipv4;
             default: accept;
         }
+    }
+
+    state parse_ipv4 {
+        pkt.extract(hdr.ipv4);
+        transition select(hdr.ipv4.protocol){
+            IP_PROTOCOL_TCP: parse_tcp;
+            IP_PROTOCOL_UDP: parse_udp;
+            default: accept;
+        }
+    }
+
+    state parse_tcp {
+        pkt.extract(hdr.tcp);
+        // meta.tcp_hdr_len[5:2] = hdr.tcp.data_offset;
+        transition accept;
+    }
+
+    state parse_udp {
+        pkt.extract(hdr.udp);
+        transition select(pkt.lookahead<bit<32>>()) {
+            RPS_SIGNAL_SIGNATURE: parse_rps_signal;
+            default: accept;
+        }
+    }
+    state parse_rps_signal {
+        pkt.extract(hdr.rps_signal);
+        transition accept;
     }
 }
 
@@ -564,8 +635,8 @@ parser EgressParser(packet_in        pkt,
 
 control Egress(
     /* User */
-    inout my_ingress_headers_t                          hdr,
-    inout my_ingress_metadata_t                         meta,
+    inout my_egress_headers_t                          hdr,
+    inout my_egress_metadata_t                         meta,
     /* Intrinsic */
     in    egress_intrinsic_metadata_t                  eg_intr_md,
     in    egress_intrinsic_metadata_from_parser_t      eg_prsr_md,
@@ -573,9 +644,163 @@ control Egress(
     inout egress_intrinsic_metadata_for_output_port_t  eg_oport_md)
 {
     PortMirroringEgress() port_mirroring_egress; // <== To Add
+    
+    // bit<1> value register does not allow conditional statement because it uses a different (simpler) ALU
+    // so I use bit<8> to workaround.
+    Register<bit<8>, _> (32w1) reg_active; 
+    RegisterAction<bit<8>, _, bit<8>>(reg_active) update_active_reg_idx = {
+        void apply(inout bit<8> val, out bit<8> return_val) {
+            if(val == 0){
+                val = 1;
+            }else {
+                val = 0;
+            }
+            return_val = val;
+        }
+    };
+    action exec_update_active_reg_idx(){
+        meta.active_reg_idx = update_active_reg_idx.execute(0);
+    }
+    RegisterAction<bit<8>, _, bit<8>>(reg_active) read_active_reg_idx = {
+        void apply(inout bit<8> val, out bit<8> return_val) {
+            return_val = val;
+        }
+    };
+    action exec_read_active_reg_idx(){
+        meta.active_reg_idx = read_active_reg_idx.execute(0);
+    }
+    RegisterAction<bit<8>, _, bit<8>>(reg_active) read_snapshot_reg_idx = {
+        void apply(inout bit<8> val, out bit<8> return_val) {
+            if(val == 0){
+                return_val = 1;
+            }else {
+                return_val = 0;
+            }
+        }
+    };
+    action exec_read_snapshot_reg_idx(){
+        meta.snapshot_reg_idx = read_snapshot_reg_idx.execute(0);
+    }
+
+    Register<bit<16>, bit<8>> (32w256) reg_rid_to_svrport; 
+    RegisterAction<bit<16>, _, bit<16>>(reg_rid_to_svrport) convert_rid_to_svrport = {
+        void apply(inout bit<16> val, out bit<16> return_val) {
+            return_val = val;
+        }
+    };
+    action exec_convert_rid_to_svrport(){
+        hdr.udp.dst_port = convert_rid_to_svrport.execute(eg_intr_md.egress_rid);
+    }
+
+
+    Register<bit<32>, _> (32w2) reg_sum_rps;
+    RegisterAction<bit<32>, _, bit<32>>(reg_sum_rps) init_reg_sum_rps = {
+        void apply(inout bit<32> val) {
+            val = 0;
+        }
+    };
+    action exec_init_reg_sum_rps(){
+        init_reg_sum_rps.execute(meta.active_reg_idx);
+    }
+    RegisterAction<bit<32>, _, bit<32>>(reg_sum_rps) read_reg_sum_rps = {
+        void apply(inout bit<32> val, out bit<32> return_val) {
+            return_val = val;
+        }
+    };
+    action exec_read_reg_sum_rps(){
+        hdr.rps_signal.sum = read_reg_sum_rps.execute(meta.snapshot_reg_idx);
+    }
+    RegisterAction<bit<32>, _, bit<32>>(reg_sum_rps) add_reg_sum_rps = {
+        void apply(inout bit<32> val) {
+            val = val + 1;
+        }
+    };
+    action exec_add_reg_sum_rps(){
+        add_reg_sum_rps.execute(meta.active_reg_idx);
+    }
+
+    Register<bit<32>, bit<16>> (TWO_POWER_SIXTEEN) reg_individual_rps_0;
+    RegisterAction<bit<32>, bit<16>, bit<32>>(reg_individual_rps_0) read_reg_individual_rps_0 = {
+        void apply(inout bit<32> val, out bit<32> return_val) {
+            return_val = val;
+            val = 0;
+        }
+    };
+    action exec_read_reg_individual_rps_0(){
+        hdr.rps_signal.individual = read_reg_individual_rps_0.execute(hdr.udp.dst_port);
+    }
+    RegisterAction<bit<32>, bit<16>, bit<32>>(reg_individual_rps_0) add_reg_individual_rps_0 = {
+        void apply(inout bit<32> val) {
+            val = val + 1;
+        }
+    };
+    action exec_add_reg_individual_rps_0(){
+        add_reg_individual_rps_0.execute(hdr.tcp.dst_port);
+    }
+
+    Register<bit<32>, bit<16>> (TWO_POWER_SIXTEEN) reg_individual_rps_1;
+    RegisterAction<bit<32>, bit<16>, bit<32>>(reg_individual_rps_1) read_reg_individual_rps_1 = {
+        void apply(inout bit<32> val, out bit<32> return_val) {
+            return_val = val;
+            val = 0;
+        }
+    };
+    action exec_read_reg_individual_rps_1(){
+        hdr.rps_signal.individual = read_reg_individual_rps_1.execute(hdr.udp.dst_port);
+    }
+    RegisterAction<bit<32>, bit<16>, bit<32>>(reg_individual_rps_1) add_reg_individual_rps_1 = {
+        void apply(inout bit<32> val) {
+            val = val + 1;
+        }
+    };
+    action exec_add_reg_individual_rps_1(){
+        add_reg_individual_rps_1.execute(hdr.tcp.dst_port);
+    }
+
+
+    // table tbl_individual_rps { 
+    //     key = {
+    //         meta.snapshot_reg_idx : exact;
+    //     }
+    //     actions = {
+    //         exec_read_reg_individual_rps_0;
+    //         exec_read_reg_individual_rps_1;
+    //         NoAction;
+    //     }
+    //     const entries = {
+    //         0 : exec_read_reg_individual_rps_0();
+    //         1 : exec_read_reg_individual_rps_1();
+    //     }
+    //     size = 16;
+    // }
+
     apply {
         port_mirroring_egress.apply(hdr.ethernet.src_mac, meta.port_mirror_meta, eg_intr_md.egress_port,
                         eg_prsr_md.global_tstamp, eg_dprsr_md.mirror_type); // <== To Add
+        
+        if(eg_intr_md.egress_port == PIPE_0_RECIRC){
+            exec_update_active_reg_idx();
+            exec_init_reg_sum_rps();
+        }else if(hdr.rps_signal.isValid()){
+            hdr.udp.dst_port = eg_intr_md.egress_rid;
+            exec_read_snapshot_reg_idx();
+            exec_read_reg_sum_rps();
+            if(meta.snapshot_reg_idx == 0){
+                exec_read_reg_individual_rps_0();
+            }else{
+                exec_read_reg_individual_rps_1();
+            }
+            // tbl_individual_rps.apply();
+        }else if(hdr.tcp.isValid() && hdr.tcp.flags[1:1] != 1 && hdr.ipv4.total_len != 40 && eg_intr_md.egress_port == 24){
+            
+            exec_read_active_reg_idx();
+            exec_add_reg_sum_rps();
+            if(meta.active_reg_idx == 0){
+                exec_add_reg_individual_rps_0();
+            }else{
+                exec_add_reg_individual_rps_1();
+            }
+        }
     }
 }
 
@@ -583,8 +808,8 @@ control Egress(
 
 control EgressDeparser(packet_out pkt,
     /* User */
-    inout my_ingress_headers_t                       hdr,
-    in    my_ingress_metadata_t                      meta,
+    inout my_egress_headers_t                       hdr,
+    in    my_egress_metadata_t                      meta,
     /* Intrinsic */
     in    egress_intrinsic_metadata_for_deparser_t  eg_dprsr_md)
 {
