@@ -153,16 +153,19 @@ impl Stats {
 
     /// Choose a random connection to migrate.
     #[cfg(not(feature = "manual-tcp-migration"))]
-    pub fn one_connection_to_migrate(&mut self) -> (SocketAddrV4, SocketAddrV4) {
-        // eprintln!("one_connection_to_migrate");
-        let handle = &self.handles[0];
-        self.global_recv_queue_length -= handle.inner.queue_len.get().expect_enabled("bucket list stat not enabled");
-        let conn = handle.inner.conn;
-        self.handles.swap_remove(0);
-        
-        self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
+    pub fn connections_to_proactively_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
+        // eprintln!("connections_to_proactively_migrate");
+        let mut conns = ArrayVec::new();
 
-        conn
+        for i in 0..1 { 
+            let handle = &self.handles[0];
+            self.global_recv_queue_length -= handle.inner.queue_len.get().expect_enabled("bucket list stat not enabled");
+            conns.push(handle.inner.conn);
+            
+            self.handles.swap_remove(0);
+            self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
+        }
+        Some(conns)
     }
 
     /// Extracts connections so that the global recv queue length goes below the threshold.

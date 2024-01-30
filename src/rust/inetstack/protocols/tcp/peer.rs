@@ -831,8 +831,11 @@ impl TcpPeer {
             capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
             #[cfg(not(feature = "manual-tcp-migration"))]
             if sum > 100 && individual as f32 > sum as f32 * 0.65 {
-                let conn = self.one_connection_to_migrate();
-                self.initiate_migration(conn);
+                if let Some(conns_to_migrate) = self.connections_to_proactively_migrate() {
+                    for conn in conns_to_migrate {
+                        self.initiate_migration(conn);
+                    }
+                }
             }
         }
         Ok(())
@@ -907,8 +910,8 @@ impl TcpPeer {
     }
 
     #[cfg(not(feature = "manual-tcp-migration"))]
-    pub fn one_connection_to_migrate(&mut self) -> (SocketAddrV4, SocketAddrV4) {
-        self.inner.borrow_mut().stats.one_connection_to_migrate()
+    pub fn connections_to_proactively_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
+        self.inner.borrow_mut().stats.connections_to_proactively_migrate()
     }
 
     #[cfg(not(feature = "manual-tcp-migration"))]
