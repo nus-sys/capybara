@@ -126,17 +126,25 @@ pub struct Receiver {
     recv_queue: RefCell<VecDeque<Buffer>>,
 
     #[cfg(feature = "tcp-migration")]
-    stats: StatsHandle,
+    recv_queue_stats: StatsHandle,
+    #[cfg(feature = "tcp-migration")]
+    rps_stats: StatsHandle,
 }
 
 impl Receiver {
-    pub fn new(reader_next: SeqNumber, receive_next: SeqNumber, #[cfg(feature = "tcp-migration")] stats: StatsHandle) -> Self {
+    pub fn new(
+        reader_next: SeqNumber, receive_next: SeqNumber,
+        #[cfg(feature = "tcp-migration")] recv_queue_stats: StatsHandle,
+        #[cfg(feature = "tcp-migration")] rps_stats: StatsHandle,
+    ) -> Self {
         Self {
             reader_next: Cell::new(reader_next),
             receive_next: Cell::new(receive_next),
             recv_queue: RefCell::new(VecDeque::with_capacity(RECV_QUEUE_SZ)),
             #[cfg(feature = "tcp-migration")]
-            stats,
+            recv_queue_stats,
+            #[cfg(feature = "tcp-migration")]
+            rps_stats,
         }
     }
 
@@ -147,7 +155,7 @@ impl Receiver {
         capy_log!("Ready, take the segment ==> len(recv_queue): {}", recv_queue.len());
 
         #[cfg(feature = "tcp-migration")]
-        self.stats.set(recv_queue.len());
+        self.recv_queue_stats.set(recv_queue.len());
 
         self.reader_next
             .set(self.reader_next.get() + SeqNumber::from(buf.len() as u32));
@@ -161,7 +169,10 @@ impl Receiver {
         recv_queue.push_back(buf);
 
         #[cfg(feature = "tcp-migration")]
-        self.stats.set(recv_queue.len());
+        {
+            self.recv_queue_stats.set(recv_queue.len());
+            self.rps_stats.increment();
+        }
 
         self.receive_next
             .set(self.receive_next.get() + SeqNumber::from(buf_len as u32));
@@ -268,7 +279,9 @@ impl ControlBlock {
         let sender = Sender::new(sender_seq_no, sender_window_size, sender_window_scale, sender_mss);
 
         #[cfg(feature = "tcp-migration")]
-        let stats = StatsHandle::new((local, remote));
+        let recv_queue_stats = StatsHandle::new((local, remote));
+        #[cfg(feature = "tcp-migration")]
+        let rps_stats = StatsHandle::new((local, remote));
 
         Self {
             local,
@@ -288,7 +301,11 @@ impl ControlBlock {
             waker: RefCell::new(None),
             out_of_order: RefCell::new(VecDeque::new()),
             out_of_order_fin: Cell::new(Option::None),
-            receiver: Receiver::new(receiver_seq_no, receiver_seq_no, #[cfg(feature = "tcp-migration")] stats),
+            receiver: Receiver::new(
+                receiver_seq_no, receiver_seq_no,
+                #[cfg(feature = "tcp-migration")] recv_queue_stats,
+                #[cfg(feature = "tcp-migration")] rps_stats,
+            ),
             user_is_done_sending: Cell::new(false),
             cc: cc_constructor(sender_mss, sender_seq_no, congestion_control_options),
             retransmit_deadline: WatchedValue::new(None),
@@ -1201,12 +1218,14 @@ use super::super::stats::Stats;
 
 #[cfg(feature = "tcp-migration")]
 impl ControlBlock {
-    pub fn enable_stats(&self, stats: &mut Stats) {
-        self.receiver.stats.enable(stats, self.receiver.recv_queue.borrow().len());
+    pub fn enable_stats(&self, recv_queue_stats: &mut Stats, rps_stats: &mut Stats) {
+        self.receiver.recv_queue_stats.enable(recv_queue_stats, self.receiver.recv_queue.borrow().len());
+        self.receiver.rps_stats.enable(rps_stats, 0);
     }
 
     pub fn disable_stats(&self) {
-        self.receiver.stats.disable();
+        self.receiver.recv_queue_stats.disable();
+        self.receiver.rps_stats.disable();
     }
 }
 
@@ -1505,13 +1524,16 @@ pub mod state {
                 recv_queue
             }: ReceiverState,
             #[cfg(feature = "tcp-migration")]
-            stats: StatsHandle
+            recv_queue_stats: StatsHandle,
+            #[cfg(feature = "tcp-migration")]
+            rps_stats: StatsHandle,
         ) -> Self {
             Self {
                 reader_next: Cell::new(reader_next),
                 receive_next: Cell::new(receive_next),
                 recv_queue: RefCell::new(recv_queue),
-                stats,
+                recv_queue_stats,
+                rps_stats,
             }
         }
     }
@@ -1557,7 +1579,7 @@ pub mod state {
 				waker: RefCell::new(None),
 				out_of_order: RefCell::new(out_of_order_queue),
 				out_of_order_fin: Cell::new(out_of_order_fin),
-				receiver: Receiver::from_state(receiver, StatsHandle::new((local, remote))),
+				receiver: Receiver::from_state(receiver, StatsHandle::new((local, remote)), StatsHandle::new((local, remote))),
 				user_is_done_sending: Cell::new(false),
 				cc: congestion_control::None::new(mss, seq_no, None),
 				retransmit_deadline: WatchedValue::new(None),

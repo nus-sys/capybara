@@ -157,7 +157,9 @@ pub struct Inner {
     #[cfg(feature = "tcp-migration")]
     tcpmig: TcpMigPeer,
     #[cfg(feature = "tcp-migration")]
-    stats: Stats,
+    recv_queue_stats: Stats,
+    #[cfg(feature = "tcp-migration")]
+    rps_stats: Stats,
     #[cfg(feature = "tcp-migration")]
     tcpmig_poll_state: Rc<TcpmigPollState>,
 
@@ -379,7 +381,7 @@ impl TcpPeer {
                 }
             }
             
-            cb.enable_stats(&mut inner.stats);
+            cb.enable_stats(&mut inner.recv_queue_stats, &mut inner.rps_stats);
         }
 
         let established: EstablishedSocket = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
@@ -643,7 +645,9 @@ impl Inner {
             #[cfg(feature = "tcp-migration")]
             tcpmig,
             #[cfg(feature = "tcp-migration")]
-            stats: Stats::new(),
+            recv_queue_stats: Stats::new(),
+            #[cfg(feature = "tcp-migration")]
+            rps_stats: Stats::new(),
             #[cfg(feature = "tcp-migration")]
             tcpmig_poll_state,
 
@@ -682,7 +686,7 @@ impl Inner {
                     data[2..4].copy_from_slice(&connection_count.to_be_bytes());
 
                     #[cfg(feature = "tcp-migration")]
-                    let queue_len: u32 = self.stats.global_recv_queue_length().try_into().expect("queue length is over 4 billion");
+                    let queue_len: u32 = self.recv_queue_stats.global_stat().try_into().expect("queue length is over 4 billion");
                     #[cfg(not(feature = "tcp-migration"))]
                     let queue_len: u32 = 0;
                     data[4..8].copy_from_slice(&queue_len.to_be_bytes());
@@ -824,17 +828,23 @@ impl TcpPeer {
 
     pub fn receive_rps_signal(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         let sum = NetworkEndian::read_u32(&buf[12..16]);
-        let individual = NetworkEndian::read_u32(&buf[16..20]);
+        let individual = NetworkEndian::read_u32(&buf[16..20]) as usize;
+
+        let threshold = (sum as f64 * 0.65) as usize;
         
         if sum != 0{
             // eprintln!("sum: {}, individual: {}", sum, individual);
             capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
             #[cfg(not(feature = "manual-tcp-migration"))]
-            if sum > 100 && individual as f32 > sum as f32 * 0.65 {
-                if let Some(conns_to_migrate) = self.connections_to_proactively_migrate() {
+            if sum > 100 && individual > threshold {
+                let mut inner = self.inner.borrow_mut();
+                inner.rps_stats.set_threshold(threshold);
+                if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
+                    drop(inner);
                     for conn in conns_to_migrate {
                         self.initiate_migration(conn);
                     }
+                    self.inner.borrow_mut().rps_stats.reset_stats();
                 }
             }
         }
@@ -859,7 +869,6 @@ impl TcpPeer {
         inner.established.get(&conn).expect("connection not in established table")
             .cb.disable_stats();
 
-        // TODO: Turn off stats for this connection.
         inner.tcpmig.initiate_migration(conn, qd);
     }
     
@@ -902,25 +911,26 @@ impl TcpPeer {
 
     pub fn poll_stats(&mut self) {
         let mut inner = self.inner.borrow_mut();
-        inner.stats.poll();
+        inner.recv_queue_stats.poll();
+        inner.rps_stats.poll();
 
         // Send heartbeat.
-        let queue_len = inner.stats.avg_global_recv_queue_length();
+        // let queue_len = inner.recv_queue_stats.avg_global_stat();
         // inner.tcpmig.send_heartbeat(queue_len);
     }
 
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_proactively_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
-        self.inner.borrow_mut().stats.connections_to_proactively_migrate()
+        self.inner.borrow_mut().rps_stats.connections_to_proactively_migrate()
     }
 
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
-        self.inner.borrow_mut().stats.connections_to_migrate()
+        self.inner.borrow_mut().recv_queue_stats.connections_to_migrate()
     }
 
     pub fn global_recv_queue_length(&self) -> usize {
-        self.inner.borrow().stats.global_recv_queue_length()
+        self.inner.borrow().recv_queue_stats.global_stat()
     }
 
     pub fn register_application_state(&mut self, qd: QDesc, state: Rc<RefCell<dyn ApplicationState>>) {
@@ -965,7 +975,7 @@ impl Inner {
                 self.migrate_in_connection(state)?;
             },
             TcpmigReceiveStatus::HeartbeatResponse(global_queue_len_sum) => {
-                self.stats.update_threshold(global_queue_len_sum);
+                self.recv_queue_stats.update_threshold(global_queue_len_sum);
             },
         };
         Ok(())

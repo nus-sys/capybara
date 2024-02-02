@@ -25,16 +25,16 @@ pub const MAX_EXTRACTED_CONNECTIONS: usize = 20;
 //======================================================================================================================
 
 pub struct Stats {
-    /// Global recv queue length at any moment.
-    global_recv_queue_length: usize,
-    /// Rolling average of global recv queue length.
-    avg_global_recv_queue_length: RollingAverage,
-    /// Sorted bucket list of connections according to individual recv queue lengths.
+    /// Global recv stat at any moment.
+    global_stat: usize,
+    /// Rolling average of global recv stat.
+    avg_global_stat: RollingAverage,
+    /// Sorted bucket list of connections according to individual recv stats.
     buckets: BucketList,
     /// List of stat handles to poll.
     handles: Vec<StatsHandle>,
     
-    /// Global recv queue length threshold above which migration is triggered.
+    /// Global recv stat threshold above which migration is triggered.
     threshold: usize,
     /// TEMP TEST: Max number of connections to migrate for this test.
     max_migrations: Option<i32>,
@@ -42,9 +42,9 @@ pub struct Stats {
 
 #[derive(Debug)]
 struct BucketList {
-    /// Index i: Connections with queue length from (2^BUCKET_SIZE_LOG2) * i to (2^BUCKET_SIZE_LOG2) * (i+1) - 1. 
+    /// Index i: Connections with stat from (2^BUCKET_SIZE_LOG2) * i to (2^BUCKET_SIZE_LOG2) * (i+1) - 1. 
     ///
-    /// i.e., bucket_index = recv_queue_len >> BUCKET_SIZE_LOG2
+    /// i.e., bucket_index = stat >> BUCKET_SIZE_LOG2
     ///
     /// NOTE: 0 length connections are not stored
     buckets: Vec<Vec<StatsHandle>>,
@@ -67,11 +67,11 @@ enum Stat {
 struct StatsHandleInner {
     /// Connection endpoints.
     conn: (SocketAddrV4, SocketAddrV4),
-    /// Tracked queue length. If None, stop tracking this stat.
-    queue_len: Cell<Stat>,
-    /// Signals to update stat queue_len with this queue_len.
-    queue_len_to_update: Cell<Option<usize>>,
-    /// Position of this stat in the bucket list. None if not present (queue_len is zero).
+    /// Tracked stat. If None, stop tracking this stat.
+    stat: Cell<Stat>,
+    /// Signals to update stat stat with this stat.
+    stat_to_update: Cell<Option<usize>>,
+    /// Position of this stat in the bucket list. None if not present (stat is zero).
     bucket_list_position: Cell<Option<(usize, usize)>>,
     /// Index of this stat in the tracked handles list.
     handles_index: Cell<Option<usize>>,
@@ -89,8 +89,8 @@ pub struct RollingAverage {
 impl Debug for Stats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Stats")
-            .field("global_recv_queue_length", &self.global_recv_queue_length)
-            .field("avg_global_recv_queue_length", &self.avg_global_recv_queue_length.get())
+            .field("global_stat", &self.global_stat)
+            .field("avg_global_stat", &self.avg_global_stat.get())
             .field("handles", &self.handles)
             .field("buckets", &self.buckets)
             .finish()
@@ -102,8 +102,8 @@ impl Debug for StatsHandle {
         let inner = self.inner.as_ref();
         f.debug_struct("StatsHandle")
             .field("conn", &format_args!("({}, {})", inner.conn.0, inner.conn.1))
-            .field("queue_len", &format_args!("{:?}", inner.queue_len.get()))
-            .field("queue_len_to_update", &format_args!("{:?}", inner.queue_len_to_update.get()))
+            .field("stat", &format_args!("{:?}", inner.stat.get()))
+            .field("stat_to_update", &format_args!("{:?}", inner.stat_to_update.get()))
             .field("bucket_list_position", &format_args!("{:?}", inner.bucket_list_position.get()))
             .field("handles_index", &format_args!("{:?}", inner.handles_index.get()))
             .finish()
@@ -117,8 +117,8 @@ impl Debug for StatsHandle {
 impl Stats {
     pub fn new() -> Self {
         Self {
-            global_recv_queue_length: 0,
-            avg_global_recv_queue_length: RollingAverage::new(),
+            global_stat: 0,
+            avg_global_stat: RollingAverage::new(),
             buckets: BucketList::new(),
             handles: Vec::new(),
             
@@ -131,64 +131,41 @@ impl Stats {
         }
     }
 
-    pub fn global_recv_queue_length(&self) -> usize {
-        self.global_recv_queue_length
+    pub fn global_stat(&self) -> usize {
+        self.global_stat
     }
 
-    pub fn avg_global_recv_queue_length(&self) -> usize {
-        self.avg_global_recv_queue_length.get()
+    pub fn avg_global_stat(&self) -> usize {
+        self.avg_global_stat.get()
     }
 
-    pub fn update_threshold(&mut self, global_queue_len_sum: usize) {
+    pub fn update_threshold(&mut self, global_stat_sum: usize) {
         // TEMP
         const SERVER_COUNT: usize = 2;
 
-        let global_queue_len_avg = global_queue_len_sum / SERVER_COUNT;
+        let global_stat_avg = global_stat_sum / SERVER_COUNT;
         
         #[cfg(not(feature = "manual-tcp-migration"))]{
-            // Set threshold to 1.125 * global_queue_len_sum.
-            self.threshold = global_queue_len_avg + (global_queue_len_avg >> 3);
+            // Set threshold to 1.125 * global_stat_sum.
+            self.threshold = global_stat_avg + (global_stat_avg >> 3);
         }
     }
 
-    /// Choose a random connection to migrate.
+    pub fn set_threshold(&mut self, threshold: usize) {
+        self.threshold = threshold;
+    }
+
+    /// Extracts connections so that the global stat goes below the threshold.
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_proactively_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
-        // eprintln!("connections_to_proactively_migrate");
         let mut conns = ArrayVec::new();
 
-        for i in 0..1 { 
-            let handle = &self.handles[0];
-            self.global_recv_queue_length -= handle.inner.queue_len.get().expect_enabled("bucket list stat not enabled");
-            conns.push(handle.inner.conn);
-            
-            self.handles.swap_remove(0);
-            self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
-        }
-        Some(conns)
-    }
-
-    /// Extracts connections so that the global recv queue length goes below the threshold.
-    /// Returns `None` if no connections need to be migrated.
-    #[cfg(not(feature = "manual-tcp-migration"))]
-    pub fn connections_to_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
-        if let Some(val) = self.max_migrations {
-            if val <= 0 {
-                return None;
-            }
-        }
-
-        if self.avg_global_recv_queue_length.get() <= self.threshold || self.global_recv_queue_length <= self.threshold {
+        let mut should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
+        if should_end {
             return None;
         }
 
-        // Reset global avg.
-        self.avg_global_recv_queue_length.force_set(0);
-
-        let mut conns = ArrayVec::new();
-
-        let mut should_end = self.global_recv_queue_length <= self.threshold || conns.remaining_capacity() == 0;
-        let base_index = std::cmp::min((self.global_recv_queue_length - self.threshold) >> BUCKET_SIZE_LOG2, self.buckets.buckets.len());
+        let base_index = std::cmp::min((self.global_stat - self.threshold) >> BUCKET_SIZE_LOG2, self.buckets.buckets.len());
 
         capy_log_mig!("Need to migrate: base_index({})\nbuckets: {:#?}", base_index, self.buckets.buckets);
 
@@ -206,9 +183,9 @@ impl Stats {
                     self.handles[handle_index].inner.handles_index.set(Some(handle_index));
                 }
 
-                self.global_recv_queue_length -= handle.inner.queue_len.get().expect_enabled("bucket list stat not enabled");
+                self.global_stat -= handle.inner.stat.get().expect_enabled("bucket list stat not enabled");
                 conns.push(handle.inner.conn);
-                should_end = self.global_recv_queue_length <= self.threshold || conns.remaining_capacity() == 0;
+                should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
                 
                 if let Some(val) = self.max_migrations.as_mut() {
                     *val -= 1;
@@ -223,7 +200,73 @@ impl Stats {
             }
         }
 
-        self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
+        Some(conns)
+    }
+
+    pub fn reset_stats(&mut self) {
+        for bucket in self.buckets.buckets.iter_mut() {
+            for stat in bucket {
+                stat.inner.stat_to_update.set(Some(0));
+            }
+        }
+    }
+
+    /// Extracts connections so that the global recv stat goes below the threshold.
+    /// Returns `None` if no connections need to be migrated.
+    #[cfg(not(feature = "manual-tcp-migration"))]
+    pub fn connections_to_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
+        if let Some(val) = self.max_migrations {
+            if val <= 0 {
+                return None;
+            }
+        }
+
+        if self.avg_global_stat.get() <= self.threshold || self.global_stat <= self.threshold {
+            return None;
+        }
+
+        // Reset global avg.
+        self.avg_global_stat.force_set(0);
+
+        let mut conns = ArrayVec::new();
+
+        let mut should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
+        let base_index = std::cmp::min((self.global_stat - self.threshold) >> BUCKET_SIZE_LOG2, self.buckets.buckets.len());
+
+        capy_log_mig!("Need to migrate: base_index({})\nbuckets: {:#?}", base_index, self.buckets.buckets);
+
+        let (left, right) = self.buckets.buckets.split_at_mut(base_index);
+        let iter = right.iter_mut().chain(left.iter_mut().rev());
+
+        'outer: for bucket in iter {
+            while let Some(handle) = bucket.pop() {
+                capy_log_mig!("Chose: {:#?}", handle);
+
+                // Remove handle.
+                let handle_index = handle.inner.handles_index.get().unwrap();
+                self.handles.swap_remove(handle_index);
+                if handle_index < self.handles.len() {
+                    self.handles[handle_index].inner.handles_index.set(Some(handle_index));
+                }
+
+                self.global_stat -= handle.inner.stat.get().expect_enabled("bucket list stat not enabled");
+                conns.push(handle.inner.conn);
+                should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
+                
+                if let Some(val) = self.max_migrations.as_mut() {
+                    *val -= 1;
+                    if *val <= 0 {
+                        break 'outer;
+                    }
+                }
+                
+                if should_end {
+                    break 'outer;
+                }
+            }
+        }
+
+        self.avg_global_stat.update(self.global_stat);
 
         Some(conns)
     }
@@ -234,7 +277,7 @@ impl Stats {
             let inner = self.handles[i].inner.as_ref();
 
             // This handle is disabled, remove it.
-            let queue_len = match inner.queue_len.get() {
+            let stat = match inner.stat.get() {
                 Stat::MarkedForDisable(len) => {    
                     capy_log!("Disable stats for {:?}", inner.conn);
     
@@ -251,8 +294,8 @@ impl Stats {
                         self.buckets.remove(position);
                     }
 
-                    // Update global queue length.
-                    self.global_recv_queue_length -= len;
+                    // Update global stat.
+                    self.global_stat -= len;
 
                     continue;
                 },
@@ -262,26 +305,26 @@ impl Stats {
             };
 
             // This handle was updated.
-            if let Some(queue_len_to_update) = inner.queue_len_to_update.take() {
+            if let Some(stat_to_update) = inner.stat_to_update.take() {
                 // Only update if the new value is different from the old value.
-                if queue_len_to_update != queue_len {
+                if stat_to_update != stat {
                     capy_log!("Update stats for {:?}", inner.conn);
                     
-                    // Update global queue length.
-                    self.global_recv_queue_length = (self.global_recv_queue_length + queue_len_to_update) - queue_len;
+                    // Update global stat.
+                    self.global_stat = (self.global_stat + stat_to_update) - stat;
                     
-                    inner.queue_len.set(Stat::Enabled(queue_len_to_update));
+                    inner.stat.set(Stat::Enabled(stat_to_update));
 
                     // Update buckets.
-                    self.buckets.update(&self.handles[i], queue_len_to_update);
+                    self.buckets.update(&self.handles[i], stat_to_update);
                 }
             }
 
             i += 1;
         }
 
-        // Update rolling average of global queue length.
-        self.avg_global_recv_queue_length.update(self.global_recv_queue_length);
+        // Update rolling average of global stat.
+        self.avg_global_stat.update(self.global_stat);
     }
 }
 
@@ -370,8 +413,8 @@ impl StatsHandle {
         Self {
             inner: Rc::new(StatsHandleInner {
                 conn,
-                queue_len: Cell::new(Stat::Disabled),
-                queue_len_to_update: Cell::new(None),
+                stat: Cell::new(Stat::Disabled),
+                stat_to_update: Cell::new(None),
                 bucket_list_position: Cell::new(None),
                 handles_index: Cell::new(None),
             })
@@ -380,17 +423,28 @@ impl StatsHandle {
 
     #[inline]
     pub fn set(&self, val: usize) {
-        let inner= &self.inner;
-        if let Stat::Enabled(..) = inner.queue_len.get() {
-            inner.queue_len_to_update.set(Some(val));
+        let inner = &self.inner;
+        if let Stat::Enabled(..) = inner.stat.get() {
+            inner.stat_to_update.set(Some(val));
         }
         // capy_log_mig!("Setting stat val={val}: {:#?}", self);
+    }
+
+    #[inline]
+    pub fn increment(&self) {
+        let inner = &self.inner;
+        if let Stat::Enabled(val) = inner.stat.get() {
+            match inner.stat_to_update.get() {
+                Some(val) => inner.stat_to_update.set(Some(val + 1)),
+                None => inner.stat_to_update.set(Some(val + 1)),
+            }
+        }
     }
 
     /// Adds handle to list of polled stats handles.
     pub fn enable(&self, stats: &mut Stats, initial_val: usize) {
         capy_log!("Enable stats for {:?}", self.inner.conn);
-        self.inner.queue_len.set(Stat::Enabled(initial_val));
+        self.inner.stat.set(Stat::Enabled(initial_val));
 
         // Add to handles.
         self.inner.handles_index.set(Some(stats.handles.len()));
@@ -399,15 +453,15 @@ impl StatsHandle {
         // Add to buckets.
         stats.buckets.insert(self, initial_val);
 
-        // Update global queue length.
-        stats.global_recv_queue_length += initial_val;
+        // Update global stat.
+        stats.global_stat += initial_val;
     }
 
     /// Marks handle for removal from stats.
     pub fn disable(&self) {
-        if let Stat::Enabled(val) = self.inner.queue_len.get() {
+        if let Stat::Enabled(val) = self.inner.stat.get() {
             capy_log!("Mark stats disabled for {:?}", self.inner.conn);
-            self.inner.queue_len.set(Stat::MarkedForDisable(val));
+            self.inner.stat.set(Stat::MarkedForDisable(val));
             self.inner.handles_index.set(None);
         }
     }
