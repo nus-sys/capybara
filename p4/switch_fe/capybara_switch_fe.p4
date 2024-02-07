@@ -757,6 +757,9 @@ control Egress(
         add_reg_individual_rps_1.execute(hdr.tcp.dst_port);
     }
 
+    action drop() {
+        eg_dprsr_md.drop_ctl = 1;
+    }
 
     // table tbl_individual_rps { 
     //     key = {
@@ -789,6 +792,9 @@ control Egress(
                 exec_read_reg_individual_rps_0();
             }else{
                 exec_read_reg_individual_rps_1();
+            }
+            if(hdr.rps_signal.sum == 0){
+                drop();
             }
             // tbl_individual_rps.apply();
         }else if(hdr.tcp.isValid() && hdr.tcp.flags[1:1] != 1 && hdr.ipv4.total_len != 40 && eg_intr_md.egress_port == 24){
