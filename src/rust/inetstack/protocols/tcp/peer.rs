@@ -830,24 +830,23 @@ impl TcpPeer {
         let sum = NetworkEndian::read_u32(&buf[12..16]);
         let individual = NetworkEndian::read_u32(&buf[16..20]) as usize;
 
-        let threshold = (sum as f64 * 0.65) as usize;
+        let threshold = (sum as f64 * 0.60) as usize;
         
-        if sum != 0{
             // eprintln!("sum: {}, individual: {}", sum, individual);
-            capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
-            #[cfg(not(feature = "manual-tcp-migration"))]
-            if sum > 100 && individual > threshold {
-                let mut inner = self.inner.borrow_mut();
-                inner.rps_stats.set_threshold(threshold);
-                if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
-                    drop(inner);
-                    for conn in conns_to_migrate {
-                        self.initiate_migration(conn);
-                    }
-                    self.inner.borrow_mut().rps_stats.reset_stats();
+        capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
+        // self.inner.borrow().rps_stats.print_bucket_status();
+        #[cfg(not(feature = "manual-tcp-migration"))]
+        if sum > 100 && individual > threshold {
+            let mut inner = self.inner.borrow_mut();
+            inner.rps_stats.set_threshold(threshold);
+            if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
+                drop(inner);
+                for conn in conns_to_migrate {
+                    self.initiate_migration(conn);
                 }
             }
         }
+        self.inner.borrow_mut().rps_stats.reset_stats();
         Ok(())
     }
 

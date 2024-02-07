@@ -714,6 +714,10 @@ def run_eval():
         print("Error: NUM_THREADS is used only for wrk generator")
         kill_procs()
         exit(1)
+    if CLIENT_APP == 'caladan' and LOADSHIFTS.count('|') != 0 and LOADSHIFTS.count('|') != NUM_BACKENDS - 1:
+        print(f"Error: LOADSHIFT configuration is wrong (check '|')")
+        kill_procs()
+        exit(1)
     for repeat in range(0, REPEAT_NUM):
         for mig_delay in MIG_DELAYS:
             for max_stat_migs in MAX_STAT_MIGS: 

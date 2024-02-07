@@ -7,7 +7,7 @@ use std::{
 
 use arrayvec::ArrayVec;
 
-use crate::{capy_log_mig, capy_log};
+use crate::{capy_log_mig, capy_log, capy_time_log};
 
 //======================================================================================================================
 // Constants
@@ -209,6 +209,7 @@ impl Stats {
                 stat.inner.stat_to_update.set(Some(0));
             }
         }
+        capy_log!("reset stat");
     }
 
     /// Extracts connections so that the global recv stat goes below the threshold.
@@ -326,6 +327,14 @@ impl Stats {
         // Update rolling average of global stat.
         self.avg_global_stat.update(self.global_stat);
     }
+
+    pub fn print_bucket_status(&self) {
+        for (bucket_idx, bucket) in self.buckets.buckets.iter().enumerate() {
+            for entry in bucket.iter() {
+                capy_time_log!("RPS_PER_CONN,{},{},{:?}", bucket_idx, entry.inner.conn.1, entry.inner.stat.get().expect_enabled("bucket list stat not enabled"));
+            }
+        }
+    }
 }
 
 impl BucketList {
@@ -439,6 +448,7 @@ impl StatsHandle {
                 None => inner.stat_to_update.set(Some(val + 1)),
             }
         }
+        capy_log!("increment {:?} to {:?}", inner.conn, inner.stat_to_update.get());
     }
 
     /// Adds handle to list of polled stats handles.
