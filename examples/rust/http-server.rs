@@ -122,17 +122,18 @@ impl Buffer {
 #[cfg(feature = "tcp-migration")]
 impl ApplicationState for Buffer {
     fn serialized_size(&self) -> usize {
-        self.data_size()
+        4 + self.data_size()
     }
 
     fn serialize(&self, buf: &mut [u8]) {
-        buf.copy_from_slice(self.get_data());
+        buf[0..4].copy_from_slice(&(self.data_size() as u32).to_be_bytes());
+        buf[4..4 + self.data_size()].copy_from_slice(self.get_data());
     }
 
     fn deserialize(buf: &[u8]) -> Self where Self: Sized {
         let mut buffer = Buffer::new();
-        let data_size = buf.len();
-        buffer.get_empty_buf()[0..data_size].copy_from_slice(buf);
+        let data_size = u32::from_be_bytes(buf[0..4].try_into().unwrap()) as usize;
+        buffer.get_empty_buf()[0..data_size].copy_from_slice(&buf[4..4 + data_size]);
         buffer.push_data(data_size);
         buffer
     }
@@ -264,9 +265,56 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
 // server()
 //======================================================================================================================
 
+struct SessionData {
+    data: Vec<u8>,
+}
+
+impl SessionData {
+    fn new(size: usize) -> Self {
+        Self { data: vec![5; size] }
+    }
+}
 
 struct ConnectionState {
-    buffer: Rc<RefCell<Buffer>>,
+    buffer: Buffer,
+    session_data: SessionData,
+}
+
+#[cfg(feature = "tcp-migration")]
+impl ApplicationState for SessionData {
+    fn serialized_size(&self) -> usize {
+        4 + self.data.len()
+    }
+
+    fn serialize(&self, buf: &mut [u8]) {
+        buf[0..4].copy_from_slice(&self.data.len().to_be_bytes());
+        buf[4..4 + self.data.len()].copy_from_slice(&self.data);
+    }
+
+    fn deserialize(buf: &[u8]) -> Self where Self: Sized {
+        let size = u32::from_be_bytes(buf[0..4].try_into().unwrap()) as usize;
+        let mut data = Vec::with_capacity(size);
+        data.extend_from_slice(&buf[4..4 + size]);
+        Self { data }
+    }
+}
+
+#[cfg(feature = "tcp-migration")]
+impl ApplicationState for ConnectionState {
+    fn serialized_size(&self) -> usize {
+        self.buffer.serialized_size() + self.session_data.serialized_size()
+    }
+
+    fn serialize(&self, buf: &mut [u8]) {
+        self.buffer.serialize(&mut buf[0..self.buffer.serialized_size()]);
+        self.session_data.serialize(&mut buf[self.buffer.serialized_size()..])
+    }
+
+    fn deserialize(buf: &[u8]) -> Self where Self: Sized {
+        let buffer = Buffer::deserialize(buf);
+        let session_data = SessionData::deserialize(&buf[buffer.serialized_size()..]);
+        Self { buffer, session_data }
+    }
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
@@ -285,6 +333,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
     }).expect("Error setting Ctrl-C handler");
     // unsafe { START_TIME = Some(Instant::now()); }
 
+    let session_data_size: usize = std::env::var("SESSION_DATA_SIZE").map_or(1024, |v| v.parse().unwrap());
+
     let libos_name: LibOSName = LibOSName::from_env().unwrap().into();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
     let sockqd: QDesc = libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0).expect("created socket");
@@ -293,7 +343,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     libos.listen(sockqd, 300).expect("listen socket");
 
     let mut qts: Vec<QToken> = Vec::new();
-    let mut connstate: HashMap<QDesc, ConnectionState> = HashMap::new();
+    let mut connstate: HashMap<QDesc, Rc<RefCell<ConnectionState>>> = HashMap::new();
 
     qts.push(libos.accept(sockqd).expect("accept"));
 
@@ -338,18 +388,24 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
                     #[cfg(feature = "tcp-migration")]
-                    let buffer = if let Some(data) = libos.get_migrated_application_state::<Buffer>(new_qd) {
-                        server_log!("BUFFER LOG: Received migrated app data ({} bytes)", data.borrow().data_size());
+                    let state = if let Some(data) = libos.get_migrated_application_state::<ConnectionState>(new_qd) {
+                        server_log!("Connection State LOG: Received migrated app data ({} bytes)", data.borrow().data_size());
                         data
                     } else {
-                        server_log!("BUFFER LOG: No migrated app data, creating new Buffer");
-                        let buffer = Rc::new(RefCell::new(Buffer::new()));
-                        libos.register_application_state(new_qd, buffer.clone());
-                        buffer
+                        server_log!("Connection State LOG: No migrated app data, creating new ConnectionState");
+                        let state = Rc::new(RefCell::new(ConnectionState {
+                            buffer: Buffer::new(),
+                            session_data: SessionData::new(session_data_size),
+                        }));
+                        libos.register_application_state(new_qd, state.clone());
+                        state
                     };
 
                     #[cfg(not(feature = "tcp-migration"))]
-                    let buffer = Rc::new(RefCell::new(Buffer::new()));
+                    let state = Rc::new(RefCell::new(ConnectionState {
+                        buffer: Buffer::new(),
+                        session_data: SessionData::new(session_data_size),
+                    }));
 
                     // Pop from new_qd
                     /* comment out this for recv_queue_len vs mig_lat eval */
@@ -361,9 +417,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     }
                     /* comment out this for recv_queue_len vs mig_lat eval */
 
-                    connstate.insert(new_qd, ConnectionState {
-                        buffer,
-                    });
+                    connstate.insert(new_qd, state);
                     
                     #[cfg(feature = "manual-tcp-migration")]
                     assert!(requests_remaining.insert(new_qd, migration_per_n).is_none());
@@ -379,9 +433,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Pop(_, recvbuf) => {
                     server_log!("POP complete");
 
-                    let mut state = connstate.get_mut(&qd).unwrap();
+                    let mut state = connstate.get_mut(&qd).unwrap().borrow_mut();
                     
-                    let sent = push_data_and_run(&mut libos, qd, &mut state.buffer.borrow_mut(), &recvbuf, &mut qts);
+                    let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
 
                     //server_log!("Issued PUSH => {} pushes pending", state.pushing);
                     server_log!("Issued {sent} PUSHes");
