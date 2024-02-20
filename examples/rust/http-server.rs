@@ -287,7 +287,7 @@ impl ApplicationState for SessionData {
     }
 
     fn serialize(&self, buf: &mut [u8]) {
-        buf[0..4].copy_from_slice(&self.data.len().to_be_bytes());
+        buf[0..4].copy_from_slice(&(self.data.len() as u32).to_be_bytes());
         buf[4..4 + self.data.len()].copy_from_slice(&self.data);
     }
 
