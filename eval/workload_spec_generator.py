@@ -1,11 +1,13 @@
 import random
 
 # All time intervals are in ms, RPS are in KRPS.
-TOTAL_TIME = 5000
+SERVER_COUNT = 2
+TOTAL_TIME = 5000 # Always in multiples of phase
 START_RPS = 100
-TOTAL_RPS_MAX = 800 # 400 * # of servers
+TOTAL_RPS_MAX = 400 * SERVER_COUNT # 400 * # of servers
 MAX_RPS_LIMITS = (100, 600)
-PHASE_TIME_INTERVAL_LIMITS = (600, 1400)
+#PHASE_TIME_INTERVAL_LIMITS = (800, 1200)
+PHASE_INTERVAL = 1000
 
 RPS_LOWER_LIMIT = 10
 
@@ -16,8 +18,8 @@ TRANSITION_LIMITS = (1, 10)
 def random_rps_upper_limit():
     return random.randint(MAX_RPS_LIMITS[0], MAX_RPS_LIMITS[1])
 
-def random_phase():
-    return random.randint(PHASE_TIME_INTERVAL_LIMITS[0], PHASE_TIME_INTERVAL_LIMITS[1])
+# def random_phase():
+#     return random.randint(PHASE_TIME_INTERVAL_LIMITS[0], PHASE_TIME_INTERVAL_LIMITS[1])
 
 def random_rps(rps_upper_limit):
     return random.randint(RPS_LOWER_LIMIT, rps_upper_limit)
@@ -110,36 +112,46 @@ def generate(start_rps, total_time, rps_upper_limit):
 
     return final
 
+def generate_rps_upper_limits():
+    limits = [MAX_RPS_LIMITS[0]] * SERVER_COUNT
+    max_delta = MAX_RPS_LIMITS[1] - MAX_RPS_LIMITS[0]
+    total_rps = TOTAL_RPS_MAX - MAX_RPS_LIMITS[0] * SERVER_COUNT
+    for i in range(SERVER_COUNT):
+        delta = random.randint(0, min(total_rps, max_delta))
+        total_rps -= delta
+        limits[i] += delta
+        if total_rps < 0:
+            break
+    
+    # Shuffle the limits list
+    random.shuffle(limits)
+    return limits
+
 def main():
-    final1 = []
-    final2 = []
-    start_rps1 = START_RPS
-    start_rps2 = START_RPS
+    # Asserts that phase is a factor of total time.
+    assert TOTAL_TIME / PHASE_INTERVAL == TOTAL_TIME // PHASE_INTERVAL
+
+    finals = [[] for _ in range(SERVER_COUNT)]
+    start_rps = [START_RPS] * SERVER_COUNT
     total_time = TOTAL_TIME
 
     while total_time > 0:
-        phase = min(total_time, random_phase())
-        total_time -= phase
+        total_time -= PHASE_INTERVAL
+        rps_limits = generate_rps_upper_limits()
 
-        rps_upper_limit = random_rps_upper_limit()
-        gen = generate(start_rps1, phase, rps_upper_limit)
-        if len(final1) > 0:
-            final1[-1] = (final1[-1][0], final1[-1][1] + gen[0][1])
-            gen = gen[1:]
-        final1.extend(gen)
-        start_rps1 = final1[-1][0]
+        for i in range(SERVER_COUNT):
+            final = finals[i]
+            gen = generate(start_rps[i], PHASE_INTERVAL, rps_limits[i])
+            if len(final) > 0:
+                final[-1] = (final[-1][0], final[-1][1] + gen[0][1])
+                gen = gen[1:]
+            final.extend(gen)
+            start_rps[i] = final[-1][0]
 
-        rps_upper_limit = TOTAL_RPS_MAX - rps_upper_limit
-        gen = generate(start_rps2, phase, rps_upper_limit)
-        if len(final2) > 0:
-            final2[-1] = (final2[-1][0], final2[-1][1] + gen[0][1])
-            gen = gen[1:]
-        final2.extend(gen)
-        start_rps2 = final2[-1][0]
+    for final in finals:
+        print(format_output(final))
+        print()
 
-    print(format_output(final1))
-    print()
-    print(format_output(final2))
 
 if __name__ == '__main__':
     main()
