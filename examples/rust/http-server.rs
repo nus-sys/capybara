@@ -13,6 +13,7 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
+use num_traits::ToBytes;
 
 use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map::Entry}, rc::Rc, time::Instant};
 use ::std::{
@@ -189,6 +190,9 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
 
     #[cfg(feature = "server-reply-analysis")]
     {
+        const PREFILLED_METADATA_SIZE: usize = 16;
+        const METADATA_SIZE: usize = PREFILLED_METADATA_SIZE + 4;
+
         static mut RESPONSE: Option<Vec<u8>> = None;
         let response = if let Some(response) = unsafe { RESPONSE.as_mut() } {
             response.as_mut_slice()
@@ -201,8 +205,8 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
                     format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
                 },
             };
-            let mut buf = vec![0u8; 16 + msg.len()];
-            buf[16..].copy_from_slice(msg.as_bytes());
+            let mut buf = vec![0u8; METADATA_SIZE + msg.len()];
+            buf[METADATA_SIZE..].copy_from_slice(msg.as_bytes());
             unsafe { 
                 RESPONSE = Some(buf);
                 RESPONSE.as_mut().unwrap().as_mut_slice()
@@ -210,8 +214,15 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         };
         
         // Assume request has been overwritten with statistics.
-        response[0..16].copy_from_slice(&data[0..16]);
-        server_log!("PUSH: ({}) {}", u32::from_be_bytes(data[4..8].try_into().unwrap()), std::str::from_utf8(&response[16..]).unwrap());
+        response[0..PREFILLED_METADATA_SIZE].copy_from_slice(&data[0..PREFILLED_METADATA_SIZE]);
+
+        // Add delta.
+        let now: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
+        let then = u64::from_be_bytes(data[8..16].try_into().unwrap());
+        let delta: u32 = now.checked_sub(then).expect("delta is negative").try_into().expect("delta > 4.29 seconds");
+        response[PREFILLED_METADATA_SIZE..METADATA_SIZE].copy_from_slice(&delta.to_be_bytes());
+
+        server_log!("PUSH: ({}) {}", u32::from_be_bytes(data[4..8].try_into().unwrap()), std::str::from_utf8(&response[METADATA_SIZE..]).unwrap());
         libos.push2(qd, &response).expect("push success")
     }
 }
