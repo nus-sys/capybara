@@ -166,7 +166,10 @@ impl Receiver {
     pub fn push(&self, buf: Buffer) {
         let buf_len: u32 = buf.len() as u32;
         let mut recv_queue = self.recv_queue.borrow_mut();
+        
+        /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
         recv_queue.push_back(buf);
+        /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
 
         #[cfg(feature = "tcp-migration")]
         {

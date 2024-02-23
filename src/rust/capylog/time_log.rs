@@ -20,13 +20,13 @@ static mut DATA: Option<Vec<(i64, ArrayVec<u8, 128>)>> = None;
 //==============================================================================
 // Macros
 //==============================================================================
-
+#[macro_export]
 macro_rules! __capy_time_log {
     ($($arg:tt)*) => {
         $crate::capylog::time_log::__push_time_log(format_args!($($arg)*));
     };
 }
-
+#[macro_export]
 macro_rules! __capy_time_log_dump {
     ($dump:expr) => {
         $crate::capylog::time_log::__write_time_log_data($dump).expect("capy_time_log_dump failed");
@@ -34,9 +34,9 @@ macro_rules! __capy_time_log_dump {
 }
 
 #[allow(unused)]
-pub(crate) use __capy_time_log;
+pub use __capy_time_log;
 #[allow(unused)]
-pub(crate) use __capy_time_log_dump;
+pub use __capy_time_log_dump;
 
 //==============================================================================
 // Structures
@@ -61,7 +61,7 @@ pub(crate) use __capy_time_log_dump;
 //==============================================================================
 
 #[allow(unused)]
-pub(crate) fn __write_time_log_data<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
+pub fn __write_time_log_data<W: std::io::Write>(w: &mut W) -> std::io::Result<()> {
     eprintln!("\n[CAPYLOG] dumping time log data");
     let data = data();
     for (time, msg) in data.iter() {
@@ -71,7 +71,7 @@ pub(crate) fn __write_time_log_data<W: std::io::Write>(w: &mut W) -> std::io::Re
 }
 
 #[allow(unused)]
-pub(crate) fn __push_time_log(args: std::fmt::Arguments) {
+pub fn __push_time_log(args: std::fmt::Arguments) {
     let data = data();
     if data.len() == data.capacity() {
         eprintln!("[CAPYLOG-WARN] Time log allocation");

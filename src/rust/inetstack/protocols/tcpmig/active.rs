@@ -187,7 +187,7 @@ impl ActiveMigration {
                         let hdr = next_header(hdr, MigrationStage::ConnectionStateAck);
                         self.last_sent_stage = MigrationStage::ConnectionStateAck;
                         capy_log_mig!("[TX] CONN_STATE_ACK ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port);
-                        capy_time_log!("SEND_STATE_ACK,({})", self.client);
+                        // capy_time_log!("SEND_STATE_ACK,({})", self.client);
                         self.send(hdr, empty_buffer());
 
                         // Take the buffered packets.
@@ -203,7 +203,7 @@ impl ActiveMigration {
             MigrationStage::ConnectionState => {
                 match hdr.stage {
                     MigrationStage::ConnectionStateAck => {
-                        capy_time_log!("RECV_STATE_ACK,({})", self.client);
+                        // capy_time_log!("RECV_STATE_ACK,({})", self.client);
                         capy_log_mig!("CONN_STATE_ACK for ({}, {})", self.origin, self.client);
                         // TODO: Start closing the active migration.
                         return Ok(TcpmigReceiveStatus::MigrationCompleted);

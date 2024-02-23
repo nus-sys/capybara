@@ -27,8 +27,10 @@ use ctrlc;
 #[cfg(feature = "tcp-migration")]
 use demikernel::{
     inetstack::protocols::tcpmig::ApplicationState,
-    demikernel::bindings::demi_print_queue_length_log
+    demikernel::bindings::demi_print_queue_length_log,
 };
+
+use ::demikernel::capy_time_log;
 
 #[cfg(feature = "profiler")]
 use ::demikernel::perftools::profiler;
@@ -333,7 +335,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     let mut request_count = 0;
     let mut queue_length_vec: Vec<(usize, usize)> = Vec::new();
     let migration_per_n: i32 = env::var("MIG_PER_N")
-            .unwrap_or(String::from("0")) // Default value is 0 if MIG_PER_N is not set
+            .unwrap_or(String::from("10")) // Default value is 10 if MIG_PER_N is not set
             .parse()
             .expect("MIG_PER_N must be a i32");
     ctrlc::set_handler(move || {
@@ -400,7 +402,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                     #[cfg(feature = "tcp-migration")]
                     let state = if let Some(data) = libos.get_migrated_application_state::<ConnectionState>(new_qd) {
-                        server_log!("Connection State LOG: Received migrated app data ({} bytes)", data.borrow().data_size());
+                        server_log!("Connection State LOG: Received migrated app data ({} bytes)", data.borrow().serialized_size() - 8);
                         data
                     } else {
                         server_log!("Connection State LOG: No migrated app data, creating new ConnectionState");
@@ -417,24 +419,36 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         buffer: Buffer::new(),
                         session_data: SessionData::new(session_data_size),
                     }));
-
+                    // capy_time_log!("APP_STATE_REGISTERED,(n/a)");
+                    
                     // Pop from new_qd
-                    /* comment out this for recv_queue_len vs mig_lat eval */
+                    /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
                     match libos.pop(new_qd) {
                         Ok(pop_qt) => {
                             qts.push(pop_qt)
                         },
                         Err(e) => panic!("pop qt: {}", e),
                     }
-                    /* comment out this for recv_queue_len vs mig_lat eval */
-
-                    connstate.insert(new_qd, state);
-                    
                     #[cfg(feature = "manual-tcp-migration")]
                     assert!(requests_remaining.insert(new_qd, migration_per_n).is_none());
+                    /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
+
+                    connstate.insert(new_qd, state);
 
                     // Re-arm accept
                     qts.push(libos.accept(qd).expect("accept qtoken"));
+
+                    /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
+                    // #[cfg(feature = "manual-tcp-migration")]
+                    // {
+                    //     static mut NUM_MIG: u32 = 0;
+                    //     unsafe{ NUM_MIG += 1; }
+                    //     if unsafe{ NUM_MIG } < 10000 {
+                    //         libos.initiate_migration(new_qd).unwrap();
+                    //     }
+                    //     // }
+                    // }
+                    /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
                 },
 
                 OperationResult::Push => {
@@ -462,7 +476,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             server_log!("Issued POP");
                         } else {
                             server_log!("Should be migrated (no POP issued)");
-                            server_log!("BUFFER DATA SIZE = {}", state.buffer.borrow().data_size());
+                            server_log!("BUFFER DATA SIZE = {}", state.buffer.data_size());
                             libos.initiate_migration(qd).unwrap();
                             entry.remove();
 

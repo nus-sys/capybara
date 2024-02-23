@@ -111,6 +111,7 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 CAPY_LOG={CAPY_LOG} \
                 LIBOS={LIBOS} \
                 RECV_QUEUE_THRESHOLD={RECV_QUEUE_THRESHOLD} \
+                SESSION_DATA_SIZE={SESSION_DATA_SIZE} \
                 {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
                 MTU=1500 \
                 MSS=1500 \
@@ -198,12 +199,12 @@ def parse_mig_latency(experiment_id):
                     columns = line.strip().split(",")
                     if len(columns) != 3:
                         continue
-                    time_str = columns[0]
-                    time_components = time_str.split(':')
-                    hours, minutes = map(int, time_components[:2])
-                    seconds = float(time_components[2])  # Convert sub-second part to a float
-                    nanosecond_timestamp = int((hours * 3600 + minutes * 60 + seconds) * 1_000_000_000)
-                    columns[0] = str(nanosecond_timestamp)
+                    # time_str = columns[0]
+                    # time_components = time_str.split(':')
+                    # hours, minutes = map(int, time_components[:2])
+                    # seconds = float(time_components[2])  # Convert sub-second part to a float
+                    # nanosecond_timestamp = int((hours * 3600 + minutes * 60 + seconds) * 1_000_000_000)
+                    # columns[0] = str(nanosecond_timestamp)
 
                     last_column = columns[-1]
 
@@ -222,8 +223,9 @@ def parse_mig_latency(experiment_id):
             'SERIALIZE_STATE', #6
             'SEND_STATE', #7 (including fragmentation)
             'RECV_STATE', #8 (once receiving all fragments)
-            'SEND_STATE_ACK', #9
-            'RECV_STATE_ACK']
+            'CONN_ACCEPTED']
+            # 'SEND_STATE_ACK', #9
+            # 'RECV_STATE_ACK']
     prev_step = 0
     prev_ns = 0
     final_result = ''
@@ -234,7 +236,7 @@ def parse_mig_latency(experiment_id):
         #     print(line)
         
         # print("Sorted")
-        sorted_list = sorted(lines, key=lambda x: int(x.split(",")[0]))
+        sorted_list = sorted(lines, key=lambda x: int(x.split(",")[0]))[1:]
         init_ns = 0
         
         black_out_times = list()
@@ -248,7 +250,7 @@ def parse_mig_latency(experiment_id):
             if step == 'RECV_PREPARE_MIG_ACK':
                 black_out_start = ns
             
-            if step == 'CONN_ESTABLISHED':
+            if step == 'CONN_ACCEPTED':
                 black_out_times.append(ns - black_out_start)
         
         black_out_idx = 0
@@ -257,9 +259,7 @@ def parse_mig_latency(experiment_id):
             columns = item.split(',')
             ns = int(columns[0])
             step = columns[1]
-
-            if step == 'CONN_ESTABLISHED':
-                continue            
+      
             step_idx = steps.index(step)
             if step_idx != prev_step+1:
                 print("[PANIC] migration step is wrong!: prev {}, current {}", prev_step, step_idx, "\n", item)
@@ -271,13 +271,13 @@ def parse_mig_latency(experiment_id):
             if step_idx >= 2:
                 latency = ns - prev_ns
                 result = result + str(latency) + ','
-            if step_idx == 10:
+            if step_idx == 9:
                 result = result + str(ns - init_ns) + ',' + str(black_out_times[black_out_idx]) + "\n"
                 black_out_idx += 1
                 prev_step = 0
             prev_ns = ns
         # print(result)
-        final_result = final_result + '\n'.join(result.split('\n')[20:])
+        final_result = final_result + '\n'.join(result.split('\n')[200:])
         # final_result = final_result + '\n'.join(result.split('\n')[:])
     
     print(len(final_result.split('\n')))
@@ -286,9 +286,26 @@ def parse_mig_latency(experiment_id):
 
     with open(f'{DATA_PATH}/{experiment_id}.mig_latency', 'w') as file:
         # Write the content to the file
-        file.write('\n'.join(final_result.split('\n')[-10001:]))
+        file.write('\n'.join(final_result.split('\n')[-10021:]))
         # file.write('\n'.join(final_result.split('\n')[:]))
 
+    
+    print(f'CALCULATING {experiment_id} mig_latency CDF') 
+    
+    cmd = f"ssh node9 \"cd {CAPYBARA_PATH}/eval && bash mig_latency_cdf.sh {experiment_id}\""
+    print("Executing command:", cmd)  # For debugging
+
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=True,
+    ).stdout.decode()
+    if result != '':
+        print("ERROR: " + result + '\n\n')
+    else:
+        print("DONE")
   
 
 def parse_poll_interval(experiment_id):
@@ -493,6 +510,7 @@ def run_eval():
                                         f'NUM_THREAD: {num_thread}\n'
                                         f'REPEAT: {repeat}\n'
                                         f'RECV_QUEUE_THRESHOLD: {RECV_QUEUE_THRESHOLD}\n'
+                                        f'SESSION_DATA_SIZE: {SESSION_DATA_SIZE}\n'
                                         f'MIG_DELAY: {mig_delay}\n'
                                         f'MAX_STAT_MIGS: {max_stat_migs}\n'
                                         f'MIG_PER_N: {mig_per_n}\n'

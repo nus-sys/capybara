@@ -419,7 +419,7 @@ impl TcpPeer {
         if inner.established.insert(key, established).is_some() {
             panic!("duplicate queue descriptor in established sockets table");
         }
-        // capy_time_log!("CONN_ESTABLISHED,({})", remote);
+        capy_time_log!("CONN_ACCEPTED,({})", remote);
         Poll::Ready(Ok(new_qd))
     }
 
@@ -893,7 +893,7 @@ impl TcpPeer {
         inner.established.get(&conn).expect("connection not in established table")
             .cb.disable_stats();
 
-        // capy_time_log!("INIT_MIG,({})", conn.1);
+        capy_time_log!("INIT_MIG,({})", conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
         Ok(())
 

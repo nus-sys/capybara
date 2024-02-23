@@ -1,6 +1,6 @@
 pub(crate) mod profile;
 pub mod log;
-pub(crate) mod time_log;
+pub mod time_log;
 
 //==============================================================================
 // Profile
