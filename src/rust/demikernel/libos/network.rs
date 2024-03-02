@@ -14,7 +14,7 @@ use crate::runtime::{
     QDesc,
     QToken,
 };
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 use ::std::{
     net::SocketAddrV4,
     time::SystemTime,
@@ -62,7 +62,7 @@ pub enum NetworkLibOS {
 /// Associated functions for network LibOSes.
 impl NetworkLibOS {
     /// Waits on a pending operation in an I/O queue.
-    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
+    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize], timeout: Option<Duration>) -> Result<usize, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(libos) => libos.wait_any2(qts),
@@ -72,7 +72,7 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(libos) => libos.wait_any2(qts),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.wait_any2(qts, qrs, indices),
+            NetworkLibOS::Catnip(libos) => libos.wait_any2(qts, qrs, indices, timeout),
         }
     }
 
@@ -319,7 +319,7 @@ impl NetworkLibOS {
     }
 
     /// Waits for any operation in an I/O queue.
-    pub fn wait_any(&mut self, qts: &[QToken], qrs: &mut [demi_qresult_t], indices: &mut [usize]) -> Result<usize, Fail> {
+    pub fn wait_any(&mut self, qts: &[QToken], qrs: &mut [demi_qresult_t], indices: &mut [usize], timeout: Option<Duration>) -> Result<usize, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
             NetworkLibOS::Catpowder(libos) => libos.wait_any(qts),
@@ -328,7 +328,7 @@ impl NetworkLibOS {
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(libos) => libos.wait_any(qts),
             #[cfg(feature = "catnip-libos")]
-            NetworkLibOS::Catnip(libos) => libos.wait_any(qts, qrs, indices),
+            NetworkLibOS::Catnip(libos) => libos.wait_any(qts, qrs, indices, timeout),
         }
     }
 

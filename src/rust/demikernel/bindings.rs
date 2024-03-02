@@ -22,6 +22,7 @@ use crate::{
         QToken,
     },
 };
+use libc::c_longlong;
 use ::libc::{
     c_char,
     c_int,
@@ -485,6 +486,7 @@ pub extern "C" fn demi_wait_any(
     qrs_count: *mut c_int,
     qts: *mut demi_qtoken_t,
     num_qts: c_int,
+    timeout_us: c_longlong,
 ) -> c_int {
     trace!("demi_wait_any()");
 
@@ -492,6 +494,12 @@ pub extern "C" fn demi_wait_any(
     if num_qts < 0 {
         return libc::EINVAL;
     }
+
+    let timeout = match timeout_us {
+        -1 => None,
+        us if us < -1 => panic!("timeout must be non-negative or -1"),
+        us => Some(Duration::from_micros(us as u64)),
+    };
 
     // Get queue tokens.
     let qts: Vec<QToken> = {
@@ -505,7 +513,7 @@ pub extern "C" fn demi_wait_any(
     let mut indices = vec![0usize; qrs_len];
 
     // Issue wait_any operation.
-    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.wait_any(&qts, qrs, &mut indices) {
+    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.wait_any(&qts, qrs, &mut indices, timeout) {
         Ok(num_qrs) => {
             assert!(num_qrs <= qrs_len);
             let ready_offsets = unsafe { slice::from_raw_parts_mut(ready_offsets, num_qrs) };

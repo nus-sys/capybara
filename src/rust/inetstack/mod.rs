@@ -54,7 +54,7 @@ use ::libc::{
     ENOTSUP,
 };
 
-use std::cell::RefCell;
+use std::{cell::RefCell, time::Duration};
 use ::std::{
     any::Any,
     convert::TryFrom,
@@ -556,8 +556,10 @@ impl InetStack {
     /// The length of `qrs` and `indices` needs to be at least as big as `qts`. If `qrs` is not big enough, all results are not written to it.
     /// 
     /// Returns the number of results written to `qrs`.
-    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
+    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize], mut timeout: Option<Duration>) -> Result<usize, Fail> {
         loop {
+            let begin = Instant::now();
+
             // Poll first, so as to give pending operations a chance to complete.
             self.poll_bg_work();
 
@@ -590,6 +592,14 @@ impl InetStack {
 
             if completed > 0 {
                 return Ok(completed);
+            }
+
+            if let Some(timeout) = timeout.as_mut() {
+                let elapsed = begin.elapsed();
+                if *timeout <= elapsed {
+                    return Ok(0);
+                }
+                *timeout -= elapsed;
             }
         }
     }

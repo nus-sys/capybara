@@ -39,6 +39,7 @@ use crate::{
         SchedulerHandle,
     },
 };
+use std::time::Duration;
 use ::std::{
     net::SocketAddrV4,
     ops::{
@@ -185,7 +186,7 @@ impl CatnipLibOS {
     }
 
     /// Waits for any operation to complete.
-    pub fn wait_any(&mut self, qts: &[QToken], qrs: &mut [demi_qresult_t], indices: &mut [usize]) -> Result<usize, Fail> {
+    pub fn wait_any(&mut self, qts: &[QToken], qrs: &mut [demi_qresult_t], indices: &mut [usize], timeout: Option<Duration>) -> Result<usize, Fail> {
         #[cfg(feature = "profiler")]
         timer!("catnip::wait_any");
         trace!("wait_any(): qts={:?}", qts);
@@ -197,7 +198,7 @@ impl CatnipLibOS {
             self.intermediate_wait_any_results.len(),
         )};
 
-        let qrs_count = self.wait_any2(qts, temp_qrs, indices)?;
+        let qrs_count = self.wait_any2(qts, temp_qrs, indices, timeout)?;
         let iter =  qrs.iter_mut()
             .zip(self.intermediate_wait_any_results[0..qrs_count].iter_mut())
             .zip(indices.iter().copied());

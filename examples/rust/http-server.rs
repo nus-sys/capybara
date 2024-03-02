@@ -370,7 +370,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     indices.resize(2000, 0);
     
     loop {
-        let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices).expect("result");
+        let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, None).expect("result");
 
         /* let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
             matches!(result, OperationResult::Pop(_, _))

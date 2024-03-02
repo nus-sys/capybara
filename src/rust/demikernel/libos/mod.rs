@@ -28,7 +28,7 @@ use crate::{
         QToken,
     }
 };
-use std::{cell::RefCell, os::raw::c_void, rc::Rc};
+use std::{cell::RefCell, os::raw::c_void, rc::Rc, time::Duration};
 use ::std::{
     env,
     net::SocketAddrV4,
@@ -96,9 +96,9 @@ impl LibOS {
     }
 
     /// Waits on a pending operation in an I/O queue.
-    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
+    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize], timeout: Option<Duration>) -> Result<usize, Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.wait_any2(qts, qrs, indices),
+            LibOS::NetworkLibOS(libos) => libos.wait_any2(qts, qrs, indices, timeout),
         }
     }
 
@@ -225,9 +225,9 @@ impl LibOS {
     }
 
     /// Waits for any operation in an I/O queue.
-    pub fn wait_any(&mut self, qts: &[QToken], qrs: &mut [demi_qresult_t], indices: &mut [usize]) -> Result<usize, Fail> {
+    pub fn wait_any(&mut self, qts: &[QToken], qrs: &mut [demi_qresult_t], indices: &mut [usize], timeout: Option<Duration>) -> Result<usize, Fail> {
         match self {
-            LibOS::NetworkLibOS(libos) => libos.wait_any(qts, qrs, indices),
+            LibOS::NetworkLibOS(libos) => libos.wait_any(qts, qrs, indices, timeout),
         }
     }
 

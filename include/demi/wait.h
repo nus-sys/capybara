@@ -41,10 +41,11 @@ extern "C"
      * @param qrs_count     Pointer to integer that contains the maximum number of results that can be stored. This is overwritten with the actual number of results.
      * @param qts           List of I/O queue tokens to wait for completion.
      * @param num_qts       Length of the list of I/O queue tokens to wait for completion.
+     * @param timeout_us    Returns after this number of microseconds if no operation completes. -1 if no limit.
      *
      * @return On successful completion, zero is returned. On failure, a positive error code is returned instead.
      */
-    extern int demi_wait_any(demi_qresult_t qrs_out[], int ready_offsets[], int *qrs_count, const demi_qtoken_t qts[], int num_qts);
+    extern int demi_wait_any(demi_qresult_t qrs_out[], int ready_offsets[], int *qrs_count, const demi_qtoken_t qts[], int num_qts, long long timeout_us);
 
     /**
      * @brief Returns all completed asynchronous I/O operation in a list.
