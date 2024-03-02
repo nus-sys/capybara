@@ -158,6 +158,11 @@ impl Stats {
     /// Extracts connections so that the global stat goes below the threshold.
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_proactively_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
+        if let Some(val) = self.max_migrations {
+            if val <= 0 {
+                return None;
+            }
+        }
         let mut conns = ArrayVec::new();
 
         let mut should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
@@ -216,6 +221,7 @@ impl Stats {
     /// Returns `None` if no connections need to be migrated.
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
+        return None;
         if let Some(val) = self.max_migrations {
             if val <= 0 {
                 return None;

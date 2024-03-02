@@ -7,7 +7,7 @@ fi
 
 exptid=/homes/inho/capybara-data/$1
 
-input_file=$exptid.mig_latency
+input_file=$exptid.mig_delay
 num_columns=$(head -1 $input_file | awk -F, '{print NF}')
 
 # Loop through each column
@@ -25,6 +25,6 @@ for ((col=1; col<=$num_columns; col++)); do
     	for(i=1; i<=NR; i++) {
     		printf "%d,%.8f\n", records[i,0], records[i,2]/sum
     	}
-    }' > $exptid.mig_latency_cdf_step${col}
+    }' > $exptid.mig_delay_cdf_step${col}
 done
 

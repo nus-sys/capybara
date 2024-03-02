@@ -9,10 +9,10 @@ exptid=/homes/inho/capybara-data/$1
 
 cat $exptid.latency_trace | awk -F, '                              
 {
-  group = int($1 / 1000000);
+  group = int($2 / 1000000);
   count[group]++;
-  sum[group] += $2;
-  values[group] = values[group] " " $2;
+  sum[group] += $3;
+  values[group] = values[group] " " $3;
 }
 END {
   for (g in count) {

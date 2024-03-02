@@ -189,7 +189,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         server_log!("PUSH: {}", RESPONSE.lines().next().unwrap_or(""));
         libos.push2(qd, RESPONSE.as_bytes()).expect("push success")
     }
-
+    
     #[cfg(feature = "server-reply-analysis")]
     {
         const PREFILLED_METADATA_SIZE: usize = 16;
@@ -221,7 +221,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         // Add delta.
         let now: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
         let then = u64::from_be_bytes(data[8..16].try_into().unwrap());
-        let delta: u32 = now.checked_sub(then).expect("delta is negative").try_into().expect("delta > 4.29 seconds");
+        let delta: u32 = now.checked_sub(then).unwrap_or(0).try_into().expect("delta > 4.29 seconds");
         response[PREFILLED_METADATA_SIZE..METADATA_SIZE].copy_from_slice(&delta.to_be_bytes());
 
         server_log!("PUSH: ({}) {}", u32::from_be_bytes(data[4..8].try_into().unwrap()), std::str::from_utf8(&response[METADATA_SIZE..]).unwrap());

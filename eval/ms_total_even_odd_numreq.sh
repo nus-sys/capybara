@@ -10,7 +10,7 @@ exptid=/homes/inho/capybara-data/$1
 cat $exptid.latency_trace | awk -F, '                                              
 {
   group = int($1 / 1000000);
-  even = $3 % 2 == 0 ? "even" : "odd";
+  even = $4 % 2 == 0 ? "even" : "odd";
   count[group]++;
   sum[group]++;
   count_even_odd[group, even]++;

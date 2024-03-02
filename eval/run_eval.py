@@ -104,7 +104,14 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
 
     server_tasks = []
     for j in range(NUM_BACKENDS): 
+        run_cmd = ''
         if SERVER_APP == 'http-server':
+            run_cmd = f'{CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP}.elf 10.0.1.9:1000{j}'
+        elif SERVER_APP == 'redis-server':
+            run_cmd = f'make run-redis-server'
+        
+        
+        if SERVER_APP == 'http-server' or SERVER_APP == 'redis-server':
             cmd = [f'cd {CAPYBARA_PATH} && \
                 {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
                 sudo -E \
@@ -120,18 +127,19 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 CORE_ID={j+1} \
                 MIG_DELAY={int(mig_delay/10) * 76} \
                 MIG_PER_N={int(mig_per_n)} \
-                CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
+                {f"CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml" if SERVER_APP == "http-server" else ""} \
+                {f"CONF=redis{j}" if SERVER_APP == "redis-server" else ""} \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
                 PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
-                numactl -m0 {CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP}.elf 10.0.1.9:1000{j} \
+                numactl -m0 \
+                {run_cmd} \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
-        elif SERVER_APP == 'redis-server':
-            cmd = [f'cd {CAPYBARA_PATH} && \
-                    make run-redis-server \
-                    CORE_ID={j+1} \
-                    CONF=redis{j} \
-                    {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
-                    > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
+        # elif SERVER_APP == 'redis-server':
+        #     cmd = [f'cd {CAPYBARA_PATH} && \
+        #             CONF=redis{j} make run-redis-server \
+        #             CORE_ID={j+1} \
+        #             {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
+        #             > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
         elif SERVER_APP == 'prism':
             cmd = [f'taskset --cpu-list {j+1} \
                 sudo numactl -m0 phttp-bench-backend \
@@ -175,8 +183,8 @@ def parse_tcpdump(experiment_id):
     pyrem.task.Parallel([task], aggregate=True).start(wait=True)
   
 
-def parse_mig_latency(experiment_id):
-    print(f'PARSING {experiment_id} migration latency') 
+def parse_mig_delay(experiment_id):
+    print(f'PARSING {experiment_id} migration delay') 
     
     # host = pyrem.host.RemoteHost(TCPDUMP_NODE)
     
@@ -284,15 +292,15 @@ def parse_mig_latency(experiment_id):
     
     # print('\n'.join(final_result.split('\n')[-10001:]))
 
-    with open(f'{DATA_PATH}/{experiment_id}.mig_latency', 'w') as file:
+    with open(f'{DATA_PATH}/{experiment_id}.mig_delay', 'w') as file:
         # Write the content to the file
         file.write('\n'.join(final_result.split('\n')[-10021:]))
         # file.write('\n'.join(final_result.split('\n')[:]))
 
     
-    print(f'CALCULATING {experiment_id} mig_latency CDF') 
+    print(f'CALCULATING {experiment_id} mig_delay CDF') 
     
-    cmd = f"ssh node9 \"cd {CAPYBARA_PATH}/eval && bash mig_latency_cdf.sh {experiment_id}\""
+    cmd = f"cd {CAPYBARA_PATH}/eval && bash mig_delay_cdf.sh {experiment_id}"
     print("Executing command:", cmd)  # For debugging
 
     result = subprocess.run(
@@ -362,7 +370,11 @@ def parse_poll_interval(experiment_id):
 def parse_latency_trace(experiment_id):
     print(f'PARSING {experiment_id} latency_trace') 
     
-    cmd = f"ssh node9 \"cd {CAPYBARA_PATH}/eval && sh ms_avg_99p_lat.sh {experiment_id} && sh ms_total_even_odd_numreq.sh {experiment_id}\""
+    cmd = f"cd {CAPYBARA_PATH}/eval\
+            && sh parse_request_sched.sh {experiment_id}\
+            && sh ms_avg_99p_lat.sh {experiment_id}\
+            && sh ms_total_even_odd_numreq.sh {experiment_id}\
+            && sh latency_cdf.sh {experiment_id}"
     print("Executing command:", cmd)  # For debugging
 
     result = subprocess.run(
@@ -440,7 +452,7 @@ def parse_wrk_result(experiment_id):
 
 def parse_server_reply(experiment_id):
     print(f'PARSING {experiment_id} server reply') 
-    cmd = f"ssh node9 \"cd {CAPYBARA_PATH}/eval && sh parse_server_reply.sh {experiment_id}\""
+    cmd = f"cd {CAPYBARA_PATH}/eval && sh parse_server_reply.sh {experiment_id}"
     print("Executing command:", cmd)  # For debugging
 
 
@@ -480,7 +492,22 @@ def parse_rps_signal(experiment_id):
         with open(f'{DATA_PATH}/{experiment_id}.be{i}_rps_signal', 'w') as file:
             # Write the content to the file
             file.write(final_result)
-    print(f'DONE')
+    
+    cmd = f"cd {CAPYBARA_PATH}/eval && sh workload_gap_cdf.sh {experiment_id}"
+    print("Executing command:", cmd)  # For debugging
+
+
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=True,
+    ).stdout.decode()
+    if result != '':
+        print("ERROR: " + result + '\n\n')
+    else:
+        print("DONE")
     
 def run_eval():
     global experiment_id
@@ -503,33 +530,9 @@ def run_eval():
                                 kill_procs()
                                 experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
                                 
-                                print(f'================ RUNNING TEST =================\n'
-                                        f'NUM_BACKENDS: {NUM_BACKENDS}\n'
-                                        f'SERVER_APP: {SERVER_APP}\n'
-                                        f'CLIENT_APP: {CLIENT_APP}\n'
-                                        f'NUM_THREAD: {num_thread}\n'
-                                        f'REPEAT: {repeat}\n'
-                                        f'RECV_QUEUE_THRESHOLD: {RECV_QUEUE_THRESHOLD}\n'
-                                        f'SESSION_DATA_SIZE: {SESSION_DATA_SIZE}\n'
-                                        f'MIG_DELAY: {mig_delay}\n'
-                                        f'MAX_STAT_MIGS: {max_stat_migs}\n'
-                                        f'MIG_PER_N: {mig_per_n}\n'
-                                        f'RATE: {pps}\n'
-                                        f'LOADSHIFTS: {LOADSHIFTS}\n'
-                                        f'ZIPF_ALPHA: {ZIPF_ALPHA}\n'
-                                        f'ONOFF: {ONOFF}\n'
-                                        f'NUM_CONNECTIONS: {conn}\n'
-                                        f'RUNTIME: {RUNTIME}\n'
-                                        f'TCPDUMP: {TCPDUMP}\n'
-                                        f'EVAL_MIG_LATENCY: {EVAL_MIG_LATENCY}\n'
-                                        f'EVAL_POLL_INTERVAL: {EVAL_POLL_INTERVAL}\n'
-                                        f'EVAL_LATENCY_TRACE: {EVAL_LATENCY_TRACE}\n'
-                                        f'EVAL_SERVER_REPLY: {EVAL_SERVER_REPLY}\n'
-                                        f'EVAL_RPS_SIGNAL: {EVAL_RPS_SIGNAL}\n'
-                                        f'RUN ID: {experiment_id}\n'
-                                        )
-                                
-
+                                with open(f'{CAPYBARA_PATH}/eval/test_config.py', 'r') as file:
+                                    print(f'================ RUNNING TEST =================\n{file.read()}')
+                                    print(f'\n\nEXPTID: {experiment_id}')
                                 if TCPDUMP == True:
                                     run_tcpdump(experiment_id)
                                 
@@ -636,15 +639,15 @@ def run_eval():
                                         print("EXPERIMENT FAILED\n\n")
                                 
                                 kill_procs()
-                                time.sleep(3)
+                                time.sleep(7)
                                 if TCPDUMP == True:
                                     parse_tcpdump(experiment_id)
                                     # print("Parsing pcap file is done, finishing test here.\n\n")
 
                                     # exit()
 
-                                if EVAL_MIG_LATENCY == True:
-                                    parse_mig_latency(experiment_id)
+                                if EVAL_MIG_DELAY == True:
+                                    parse_mig_delay(experiment_id)
 
                                 if EVAL_POLL_INTERVAL == True:
                                     parse_poll_interval(experiment_id)
@@ -709,10 +712,10 @@ def run_compile():
 
 
 if __name__ == '__main__':
-    # parse_server_reply("20240220-041950.331085")
+    # parse_server_reply("20240228-065133.628398")
     # exit(1)
     # parse_result()
-    # parse_mig_latency("20231129-083149.755267")
+    # parse_mig_delay("20231129-083149.755267")
     # exit()
 
     if len(sys.argv) > 1 and sys.argv[1] == 'build':

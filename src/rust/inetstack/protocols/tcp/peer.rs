@@ -419,7 +419,7 @@ impl TcpPeer {
         if inner.established.insert(key, established).is_some() {
             panic!("duplicate queue descriptor in established sockets table");
         }
-        capy_time_log!("CONN_ACCEPTED,({})", remote);
+        // capy_time_log!("CONN_ACCEPTED,({})", remote);
         Poll::Ready(Ok(new_qd))
     }
 
@@ -830,13 +830,13 @@ impl TcpPeer {
         let sum = NetworkEndian::read_u32(&buf[12..16]);
         let individual = NetworkEndian::read_u32(&buf[16..20]) as usize;
 
-        let threshold = (sum as f64 * 0.60) as usize;
+        let threshold = (sum as f64 * 0.55) as usize;
         
-            // eprintln!("sum: {}, individual: {}", sum, individual);
+        // eprintln!("sum: {}, individual: {}", sum, individual);
         capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
         // self.inner.borrow().rps_stats.print_bucket_status();
         #[cfg(not(feature = "manual-tcp-migration"))]
-        if sum > 100 && individual > threshold + 10 {
+        if sum > 100 && individual > threshold + 30 {
             let mut inner = self.inner.borrow_mut();
             inner.rps_stats.set_threshold(threshold);
             if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
@@ -893,7 +893,7 @@ impl TcpPeer {
         inner.established.get(&conn).expect("connection not in established table")
             .cb.disable_stats();
 
-        capy_time_log!("INIT_MIG,({})", conn.1);
+        // capy_time_log!("INIT_MIG,({})", conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
         Ok(())
 
