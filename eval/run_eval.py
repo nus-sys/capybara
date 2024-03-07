@@ -705,7 +705,7 @@ def run_compile():
         return os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-examples-rust")
     elif SERVER_APP == 'redis-server':
         clean = 'make clean-redis &&' if len(sys.argv) > 2 and sys.argv[2] == 'clean' else ''
-        return os.system(f'cd {CAPYBARA_PATH} && {clean} make redis-server{mig}')
+        return os.system(f'cd {CAPYBARA_PATH} && {clean} EXAMPLE_FEATURES={features} make redis-server{mig}')
     else:
         print(f'Invalid server app: {SERVER_APP}')
         exit(1)

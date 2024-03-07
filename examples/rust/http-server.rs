@@ -338,12 +338,12 @@ fn server(local: SocketAddrV4) -> Result<()> {
             .unwrap_or(String::from("10")) // Default value is 10 if MIG_PER_N is not set
             .parse()
             .expect("MIG_PER_N must be a i32");
-    ctrlc::set_handler(move || {
-        eprintln!("Received Ctrl-C signal.");
-        LibOS::dpdk_print_eth_stats();
-        LibOS::capylog_dump(&mut std::io::stderr().lock());
-        std::process::exit(0);
-    }).expect("Error setting Ctrl-C handler");
+    // ctrlc::set_handler(move || {
+    //     eprintln!("Received Ctrl-C signal.");
+    //     LibOS::dpdk_print_eth_stats();
+    //     LibOS::capylog_dump(&mut std::io::stderr().lock());
+    //     std::process::exit(0);
+    // }).expect("Error setting Ctrl-C handler");
     // unsafe { START_TIME = Some(Instant::now()); }
 
     let session_data_size: usize = std::env::var("SESSION_DATA_SIZE").map_or(1024, |v| v.parse().unwrap());

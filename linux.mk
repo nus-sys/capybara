@@ -89,8 +89,8 @@ install:
 all-libs:
 	@echo "LD_LIBRARY_PATH: $(LD_LIBRARY_PATH)"
 	@echo "PKG_CONFIG_PATH: $(PKG_CONFIG_PATH)"
-	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS)
+	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)"
+	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
 
 #=======================================================================================================================
 # Tests
@@ -441,7 +441,7 @@ redis-server-mig-manual: all-libs-mig-manual
 	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 make redis-server
 
 run-redis-server:
-	cd ../capybara-redis && sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/node$(NODE)_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) numactl -m0 ./src/redis-server $(CONF).conf
+	cd ../capybara-redis && sudo -E NUM_CORES=4 CORE_ID=1 LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/node$(NODE)_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) numactl -m0 ./src/redis-server $(CONF).conf
 
 clean-redis:
 	cd ../capybara-redis && make distclean

@@ -66,6 +66,8 @@ impl LibOS {
         logging::initialize();
         crate::capylog::init();
 
+        assert_eq!(unsafe { libc::atexit(exit_dump) }, 0, "atexit() call failed");
+
         // Read in configuration file.
         let config_path: String = match env::var("CONFIG_PATH") {
             Ok(config_path) => config_path,
@@ -294,4 +296,10 @@ impl LibOS {
     pub fn dpdk_print_eth_stats() {
         CatnipLibOS::dpdk_print_eth_stats();
     }
+}
+
+extern "C" fn exit_dump() {
+    eprintln!("Exiting process.");
+    LibOS::dpdk_print_eth_stats();
+    LibOS::capylog_dump(&mut std::io::stderr().lock());
 }
