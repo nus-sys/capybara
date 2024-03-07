@@ -580,17 +580,20 @@ def run_eval():
                                             10.0.1.8:10000 \
                                             --config {CALADAN_PATH}/client.config \
                                             --mode runtime-client \
+                                            --protocol=resp \
+                                            --redis-string=1000000 \
                                             --transport=tcp \
                                             --samples=1 \
                                             --pps={pps} \
                                             --threads={conn} \
                                             --runtime={RUNTIME} \
                                             --discard_pct=10 \
-                                            --output=buckets \
+                                            --output=trace \
                                             --rampup=0 \
+                                            {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
+                                            {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
+                                            {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
                                             --exptid={DATA_PATH}/{experiment_id} \
-                                            --protocol=resp \
-                                            --redis-string=100 \
                                             > {DATA_PATH}/{experiment_id}.client']
                                 else:
                                     print(f'Invalid server app: {SERVER_APP}')
@@ -692,10 +695,11 @@ def exiting():
 def run_compile():
     # only for redis-server
     mig = ''
+    """
     if 'manual-tcp-migration' in FEATURES:
         mig = '-mig-manual'
     elif 'tcp-migration' in FEATURES:
-        mig = '-mig'
+        mig = '-mig' """
 
     features = '--features=' if len(FEATURES) > 0 else ''
     for feat in FEATURES:
