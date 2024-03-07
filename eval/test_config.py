@@ -24,50 +24,13 @@ NODE9_MAC = '08:c0:eb:b6:c5:ad'
 ################## BUILD CONFIG #####################
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
-    # 'tcp-migration',
-    # 'manual-tcp-migration',
-    # 'capy-log',
+    'tcp-migration',
+    'manual-tcp-migration',
+    'capy-log',
     # 'capy-profile',
-    # 'capy-time-log',
+    'capy-time-log',
     # 'server-reply-analysis',
 ]
-
-################## WORKLOAD GENERATOR CONFIG #####################
-# All time intervals are in ms, RPS are in KRPS.
-NUM_BACKENDS = 2
-TOTAL_TIME = 5000 # Always in multiples of phase
-WARMUP_RPS = 100
-SERVER_CAPACITY_RPS = 450
-TOTAL_RPS_MAX = int(SERVER_CAPACITY_RPS * 0.8) * NUM_BACKENDS
-STRESS_FACTOR = 1.25 #1.25 
-MAX_RPS_LIMITS = (400, 650)
-#PHASE_TIME_INTERVAL_LIMITS = (800, 1200)
-PHASE_INTERVAL = 100
-RPS_LOWER_LIMIT = 10
-# RPS_LIMITS = (10, 600)
-DURATION_LIMITS = (5, 20)
-TRANSITION_LIMITS = (5, 10)
-RAND_SEED = 2402271237
-
-################## ENV VARS #####################
-### SERVER ###
-RECV_QUEUE_THRESHOLD = 50
-MIG_DELAYS = [0]
-MAX_STAT_MIGS = [10000]#[5000, 10000, 15000] # set element to '' if you don't want to set this env var
-MIG_PER_N = [100]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
-SESSION_DATA_SIZE = 1024 * 0 # bytes
-CAPY_LOG = 'all' # 'all', 'mig'
-
-### CALADAN ###
-CLIENT_PPS = [i for i in range(250000, 250000 + 1, 100)]#[i for i in range(100000, 1_300_001, 100000)]
-import workload_spec_generator
-# LOADSHIFTS = workload_spec_generator.main()
-# LOADSHIFTS = '150000:25000,750000:30000,150000:20000/150000:75000'
-LOADSHIFTS = ''
-ZIPF_ALPHA = '' # 0.9
-ONOFF = '0' # '0', '1'
-NUM_CONNECTIONS = [100]
-RUNTIME = 5
 
 ################## TEST CONFIG #####################
 NUM_BACKENDS = 2
@@ -82,6 +45,42 @@ EVAL_POLL_INTERVAL = False
 EVAL_LATENCY_TRACE = True
 EVAL_SERVER_REPLY = False
 EVAL_RPS_SIGNAL = True
+
+################## WORKLOAD GENERATOR CONFIG #####################
+# All time intervals are in ms, RPS are in KRPS.
+PHASE_INTERVAL = 100
+TOTAL_TIME = 5000 # Always in multiples of PHASE_INTERVAL
+WARMUP_RPS = 100
+SERVER_CAPACITY_RPS = 300 #450
+TOTAL_RPS_MAX = int(SERVER_CAPACITY_RPS * 0.8) * NUM_BACKENDS
+STRESS_FACTOR = 1 #1.25 
+MAX_RPS_LIMITS = (200, 310)#(400, 650)
+#PHASE_TIME_INTERVAL_LIMITS = (800, 1200)
+RPS_LOWER_LIMIT = 10
+# RPS_LIMITS = (10, 600)
+DURATION_LIMITS = (5, 20)
+TRANSITION_LIMITS = (5, 10)
+RAND_SEED = 2402271237
+
+################## ENV VARS #####################
+### SERVER ###
+RECV_QUEUE_THRESHOLD = 50
+MIG_DELAYS = [0]
+MAX_STAT_MIGS = [1]#[5000, 10000, 15000] # set element to '' if you don't want to set this env var
+MIG_PER_N = [2]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
+SESSION_DATA_SIZE = 1024 * 0 # bytes
+CAPY_LOG = 'all' # 'all', 'mig'
+
+### CALADAN ###
+CLIENT_PPS = [i for i in range(5, 5 + 1, 100)]#[i for i in range(100000, 1_300_001, 100000)]
+import workload_spec_generator
+# LOADSHIFTS = workload_spec_generator.main()
+# LOADSHIFTS = '150000:25000,750000:30000,150000:20000/150000:75000'
+LOADSHIFTS = ''
+ZIPF_ALPHA = '' # 0.9
+ONOFF = '0' # '0', '1'
+NUM_CONNECTIONS = [1]
+RUNTIME = 1
 
 #####################
 # build command: run_eval.py [build [clean]]

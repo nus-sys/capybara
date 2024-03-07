@@ -26,4 +26,4 @@ END {
     percentile99 = arr[ceil_val];
     print g","avg","percentile99;
   }
-}' > $exptid.ms_avg_99p_lat
+}' | sort -t, -k1,1n > $exptid.ms_avg_99p_lat
