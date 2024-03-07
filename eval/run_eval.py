@@ -695,11 +695,8 @@ def exiting():
 def run_compile():
     # only for redis-server
     mig = ''
-    """
-    if 'manual-tcp-migration' in FEATURES:
-        mig = '-mig-manual'
-    elif 'tcp-migration' in FEATURES:
-        mig = '-mig' """
+    if 'manual-tcp-migration' in FEATURES or 'tcp-migration' in FEATURES:
+        mig = '-mig'
 
     features = '--features=' if len(FEATURES) > 0 else ''
     for feat in FEATURES:
