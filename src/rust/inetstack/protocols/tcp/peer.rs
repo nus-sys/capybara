@@ -1008,6 +1008,10 @@ impl Inner {
 
         // 3) Remove connection from Established hashmap.
         let cb = entry.remove().cb;
+
+        // Wake the scheduler task for this connection, if any.
+        cb.wake_scheduler_task();
+        
         Ok(TcpState::new(cb.as_ref().into()))
     }
 

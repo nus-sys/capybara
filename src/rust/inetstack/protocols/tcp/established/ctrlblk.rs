@@ -1230,6 +1230,13 @@ impl ControlBlock {
         self.receiver.recv_queue_stats.disable();
         self.receiver.rps_stats.disable();
     }
+
+    pub fn wake_scheduler_task(&self) {
+        if let Some(w) = self.waker.borrow_mut().take() {
+            capy_log!("Wake recv!");
+            w.wake()
+        }
+    }
 }
 
 #[cfg(feature = "tcp-migration")]
