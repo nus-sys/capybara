@@ -428,6 +428,9 @@ redis-server: all-libs
 redis-server-mig: all-libs
 	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 make redis-server
 
+redis-server-mig-manual: all-libs
+	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 MANUAL_TCPMIG=1 make redis-server
+
 run-redis-server:
 	cd ../capybara-redis && sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/node$(NODE)_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) numactl -m0 ./src/redis-server $(CONF).conf
 
