@@ -6,7 +6,7 @@
 //==============================================================================
 
 use crate::{
-    inetstack::{
+    capy_log_mig, capy_profile, capy_time_log, inetstack::{
         futures::operation::FutureOperation,
         operations::OperationResult,
         protocols::{
@@ -19,14 +19,11 @@ use crate::{
             udp::UdpOperation,
             Peer,
         },
-    },
-    runtime::{
-        fail::Fail,
-        memory::{
+    }, runtime::{
+        fail::Fail, memory::{
             Buffer,
             DataBuffer,
-        },
-        network::{
+        }, network::{
             config::{
                 ArpConfig,
                 TcpConfig,
@@ -34,18 +31,12 @@ use crate::{
             },
             types::MacAddress,
             NetworkRuntime,
-        },
-        queue::IoQueueTable,
-        timer::TimerRc,
-        QDesc,
-        QToken,
-        QType,
-    },
-    scheduler::{
+        }, queue::IoQueueTable, timer::TimerRc, types::demi_qresult_t, QDesc, QToken, QType
+    }, scheduler::{
         FutureResult,
         Scheduler,
         SchedulerHandle,
-    }, capy_time_log, capy_profile, capy_log_mig,
+    }
 };
 use ::libc::{
     c_int,
@@ -54,7 +45,7 @@ use ::libc::{
     ENOTSUP,
 };
 
-use std::{cell::RefCell, time::Duration};
+use std::{cell::RefCell, collections::HashSet, time::Duration};
 use ::std::{
     any::Any,
     convert::TryFrom,
@@ -115,7 +106,15 @@ pub struct InetStack {
     prev_time: NaiveTime,
 
     #[cfg(feature = "tcp-migration")]
-    tcpmig_poll_state: Rc<TcpmigPollState>,
+    tcpmig_state: TcpMigState,
+}
+
+#[cfg(feature = "tcp-migration")]
+struct TcpMigState {
+    poll_state: Rc<TcpmigPollState>,
+
+    // These QDs need to be freed at the correct point, since the connections they represent have been migrated.
+    migrated_qds: HashSet<QDesc>,
 }
 
 impl InetStack {
@@ -133,7 +132,10 @@ impl InetStack {
         let file_table: IoQueueTable = IoQueueTable::new();
 
         #[cfg(feature = "tcp-migration")]
-        let tcpmig_poll_state = Rc::new(TcpmigPollState::default());
+        let tcpmig_state = TcpMigState {
+            poll_state: Rc::new(TcpmigPollState::default()),
+            migrated_qds: HashSet::new(),
+        };
 
         let arp: ArpPeer = ArpPeer::new(
             rt.clone(),
@@ -155,7 +157,7 @@ impl InetStack {
             rng_seed,
 
             #[cfg(feature = "tcp-migration")]
-            tcpmig_poll_state.clone()
+            tcpmig_state.poll_state.clone()
         )?;
         Ok(Self {
             arp,
@@ -169,7 +171,7 @@ impl InetStack {
             prev_time: chrono::Local::now().time(),
 
             #[cfg(feature = "tcp-migration")]
-            tcpmig_poll_state
+            tcpmig_state
         })
     }
 
@@ -307,7 +309,18 @@ impl InetStack {
             Some(qtype) => match QType::try_from(qtype) {
                 // It does, so allocate a new queue descriptor and issue accept operation.
                 Ok(QType::TcpSocket) => {
-                    let new_qd: QDesc = self.file_table.alloc(QType::TcpSocket.into());
+                    let new_qd: QDesc = {
+                        #[cfg(feature = "tcp-migration")]
+                        if let Some(new_qd) = self.tcpmig_state.migrated_qds.iter().next().copied() {
+                            assert!(self.tcpmig_state.migrated_qds.remove(&new_qd));
+                            new_qd
+                        } else {
+                            self.file_table.alloc(QType::TcpSocket.into())
+                        }
+
+                        #[cfg(not(feature = "tcp-migration"))]
+                        self.file_table.alloc(QType::TcpSocket.into())
+                    };
                     let future: FutureOperation = FutureOperation::from(self.ipv4.tcp.do_accept(qd, new_qd));
                     /* capy_log!("Scheduling Accept operation"); */
                     let handle: SchedulerHandle = match self.scheduler.insert(future) {
@@ -485,7 +498,10 @@ impl InetStack {
                 },
                 _ => Err(Fail::new(EINVAL, "invalid queue type")),
             },
-            _ => Err(Fail::new(EBADF, "bad queue descriptor")),
+            _ => {
+                capy_log!("EBADF {qd:?}");
+                Err(Fail::new(EBADF, "bad queue descriptor"))
+            },
         }?;
         capy_log!("Scheduling POP");
         let handle: SchedulerHandle = match self.scheduler.insert(future) {
@@ -556,10 +572,10 @@ impl InetStack {
     /// The length of `qrs` and `indices` needs to be at least as big as `qts`. If `qrs` is not big enough, all results are not written to it.
     /// 
     /// Returns the number of results written to `qrs`.
-    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize], mut timeout: Option<Duration>) -> Result<usize, Fail> {
-        loop {
-            let begin = Instant::now();
+    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize], timeout: Option<Duration>) -> Result<usize, Fail> {
+        let begin = Instant::now();
 
+        loop {
             // Poll first, so as to give pending operations a chance to complete.
             self.poll_bg_work();
 
@@ -594,12 +610,10 @@ impl InetStack {
                 return Ok(completed);
             }
 
-            if let Some(timeout) = timeout.as_mut() {
-                let elapsed = begin.elapsed();
-                if *timeout <= elapsed {
+            if let Some(timeout) = timeout {
+                if timeout <= begin.elapsed() {
                     return Ok(0);
                 }
-                *timeout -= elapsed;
             }
         }
     }
@@ -804,7 +818,7 @@ impl InetStack {
         //capy_time_log!("poll_dpdk_interval,{},{}", recv_time, self.prev_time);
 
         // Reset poll state, and disallow fast migrations initially since TCP DPDK queue might have unpolled packets.
-        self.tcpmig_poll_state.reset();
+        self.tcpmig_state.poll_state.reset();
         
         for pkt in tcpmig_batch {
             // Parse the packet. If it is a PREPARE_MIG_ACK, 
@@ -812,7 +826,7 @@ impl InetStack {
                 warn!("Dropped packet: {:?}", e);
             }
             // Get qd to free if a connection was/will be migrated out.
-            let qd_to_remove = match self.tcpmig_poll_state.take_qd() {
+            let qd_to_remove = match self.tcpmig_state.poll_state.take_qd() {
                 None => continue,
                 Some(qd) => qd,
             };
@@ -820,7 +834,7 @@ impl InetStack {
             // Control only enters here if a PREPARE_ACK was received.
 
             // Fast migration is disabled, so TCP queue hasn't been polled yet. Poll it.
-            if !self.tcpmig_poll_state.is_fast_migrate_enabled() {
+            if !self.tcpmig_state.poll_state.is_fast_migrate_enabled() {
                 // Poll the TCP DPDK queue.
                 capy_log_mig!("PREPARE_MIG_ACK slow path entered");
                 self.poll_runtime_no_scheduler_poll();
@@ -829,16 +843,17 @@ impl InetStack {
                 self.ipv4.tcp.migrate_out_and_send(qd_to_remove);
 
                 // Enable fast migration now that TCP queue has been flushed.
-                self.tcpmig_poll_state.enable_fast_migrate();
+                self.tcpmig_state.poll_state.enable_fast_migrate();
             }
             
-            // Free the QD.
-            self.file_table.free(qd_to_remove);
+            // Track the QD as migrated.
+            assert!(self.tcpmig_state.migrated_qds.insert(qd_to_remove));
+            capy_log_mig!("Freeing QD {qd_to_remove:?}");
         }
         // self.prev_time = recv_time;
 
         // The state of fast migrate also indicates if any migration occured.
-        self.tcpmig_poll_state.is_fast_migrate_enabled()
+        self.tcpmig_state.poll_state.is_fast_migrate_enabled()
     }
 
     /// Exactly the same as `poll_runtime()` but does not poll the scheduler after every packet.
