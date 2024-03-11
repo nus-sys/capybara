@@ -833,7 +833,7 @@ impl TcpPeer {
         capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
         // self.inner.borrow().rps_stats.print_bucket_status();
         #[cfg(not(feature = "manual-tcp-migration"))]
-        if true { //sum > 100 && individual > threshold + 30 {
+        if sum > 100 && individual > threshold + 30 {
             let mut inner = self.inner.borrow_mut();
             inner.rps_stats.set_threshold(threshold);
             if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {

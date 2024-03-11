@@ -618,6 +618,61 @@ impl InetStack {
         }
     }
 
+    /// Waits for any operation to complete.
+    /// 
+    /// The length of `qrs` and `indices` needs to be at least as big as `qts`. If `qrs` is not big enough, all results are not written to it.
+    /// 
+    /// Returns the number of results written to `qrs`.
+    #[cfg(feature = "catnip-libos")]
+    pub fn wait_any(
+        &mut self,
+        rt: Rc<crate::catnip::runtime::DPDKRuntime>,
+        qts: &[QToken], qrs: &mut [demi_qresult_t], indices: &mut [usize], timeout: Option<Duration>,
+    ) -> Result<usize, Fail> {
+        let begin = Instant::now();
+
+        loop {
+            // Poll first, so as to give pending operations a chance to complete.
+            self.poll_bg_work();
+
+            let mut completed = 0;
+            // Search for any operation that has completed.
+            for (i, &qt) in qts.iter().enumerate() {
+                if completed == qrs.len() {
+                    break;
+                }
+
+                // Retrieve associated schedule handle.
+                let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
+                    Some(handle) => handle,
+                    None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
+                };
+
+                // Found one, so extract the result and return.
+                if handle.has_completed() {
+                    let (qd, result): (QDesc, OperationResult) = self.take_operation(handle);
+                    qrs[completed] = super::catnip::interop::pack_result(rt.clone(), result, qd, qt.into()); // Store the completed handle result.
+                    indices[completed] = i; // Store the index of the result.
+                    completed += 1;
+                } else {
+                    // Return this operation to the scheduling queue by removing the associated key
+                    // (which would otherwise cause the operation to be freed).
+                    handle.take_key();
+                }
+            }
+
+            if completed > 0 {
+                return Ok(completed);
+            }
+
+            if let Some(timeout) = timeout {
+                if timeout <= begin.elapsed() {
+                    return Ok(0);
+                }
+            }
+        }
+    }
+
     /// Checks if any operation is complete. If not, immediately returns.
     /// 
     /// The length of `qrs` and `indices` needs to be at least as big as `qts`. If `qrs` is not big enough, all results are not written to it.

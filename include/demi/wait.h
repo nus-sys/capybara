@@ -45,7 +45,7 @@ extern "C"
      *
      * @return On successful completion, zero is returned. On failure, a positive error code is returned instead.
      */
-    extern int demi_wait_any(demi_qresult_t qrs_out[], int ready_offsets[], int *qrs_count, const demi_qtoken_t qts[], int num_qts, long long timeout_us);
+    extern int demi_wait_any(demi_qresult_t qrs_out[], size_t ready_offsets[], size_t *qrs_count, const demi_qtoken_t qts[], size_t num_qts, long long timeout_us);
 
     /**
      * @brief Returns all completed asynchronous I/O operation in a list.

@@ -22,7 +22,7 @@ use crate::{
         QToken,
     },
 };
-use libc::c_longlong;
+use libc::{c_longlong, size_t};
 use ::libc::{
     c_char,
     c_int,
@@ -482,18 +482,13 @@ pub extern "C" fn demi_wait(qr_out: *mut demi_qresult_t, qt: demi_qtoken_t) -> c
 #[no_mangle]
 pub extern "C" fn demi_wait_any(
     qrs_out: *mut demi_qresult_t,
-    ready_offsets: *mut c_int,
-    qrs_count: *mut c_int,
+    ready_offsets: *mut size_t,
+    qrs_count: *mut size_t,
     qts: *mut demi_qtoken_t,
-    num_qts: c_int,
+    num_qts: size_t,
     timeout_us: c_longlong,
 ) -> c_int {
     trace!("demi_wait_any()");
-
-    // Check arguments.
-    if num_qts < 0 {
-        return libc::EINVAL;
-    }
 
     let timeout = match timeout_us {
         -1 => None,
@@ -502,24 +497,18 @@ pub extern "C" fn demi_wait_any(
     };
 
     // Get queue tokens.
-    let qts: Vec<QToken> = {
-        let raw_qts: &[u64] = unsafe { slice::from_raw_parts(qts, num_qts as usize) };
-        raw_qts.iter().map(|i| QToken::from(*i)).collect()
-    };
+    let qts = unsafe { slice::from_raw_parts(qts as *const QToken, num_qts as usize) };
 
     // TODO: Remove allocations.
-    let qrs_len = unsafe { *qrs_count } as usize;
+    let qrs_len = unsafe { *qrs_count };
     let qrs = unsafe { slice::from_raw_parts_mut(qrs_out, qrs_len) };
-    let mut indices = vec![0usize; qrs_len];
+    let ready_offsets = unsafe { slice::from_raw_parts_mut(ready_offsets as *mut usize, qrs_len as usize) };
 
     // Issue wait_any operation.
-    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.wait_any(&qts, qrs, &mut indices, timeout) {
+    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.wait_any(&qts, qrs, ready_offsets, timeout) {
         Ok(num_qrs) => {
             assert!(num_qrs <= qrs_len);
-            let ready_offsets = unsafe { slice::from_raw_parts_mut(ready_offsets, num_qrs) };
-            ready_offsets.iter_mut().zip(indices.iter().copied())
-                .for_each(|(ready, i)| *ready = i as c_int);
-            unsafe { *qrs_count = num_qrs as c_int };
+            unsafe { *qrs_count = num_qrs };
             0
         },
         Err(e) => {

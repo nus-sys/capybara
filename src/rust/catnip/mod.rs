@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 mod config;
-mod interop;
+pub mod interop;
 pub mod runtime;
 
 //==============================================================================
@@ -64,9 +64,6 @@ pub struct CatnipLibOS {
     scheduler: Scheduler,
     inetstack: InetStack,
     rt: Rc<DPDKRuntime>,
-
-    // TEMP until we can find a better solution.
-    intermediate_wait_any_results: Vec<(QDesc, OperationResult)>,
 }
 
 //==============================================================================
@@ -111,12 +108,6 @@ impl CatnipLibOS {
             inetstack,
             scheduler,
             rt,
-            intermediate_wait_any_results: {
-                let mut vec = Vec::with_capacity(1024);
-                // Fill with garbage.
-                vec.resize_with(1024, || (0.into(), OperationResult::Connect));
-                vec
-            },
         }
     }
 
@@ -191,22 +182,7 @@ impl CatnipLibOS {
         timer!("catnip::wait_any");
         trace!("wait_any(): qts={:?}", qts);
 
-        assert!(qts.len() <= self.intermediate_wait_any_results.len(), "intermediate results not large enough");
-
-        let temp_qrs = unsafe { core::slice::from_raw_parts_mut(
-            self.intermediate_wait_any_results.as_mut_ptr(),
-            self.intermediate_wait_any_results.len(),
-        )};
-
-        let qrs_count = self.wait_any2(qts, temp_qrs, indices, timeout)?;
-        let iter =  qrs.iter_mut()
-            .zip(self.intermediate_wait_any_results[0..qrs_count].iter_mut())
-            .zip(indices.iter().copied());
-        for ((qr, (qd, r)), i) in iter {
-            let r = std::mem::replace(r, OperationResult::Connect); // Replace with garbage.
-            *qr = pack_result(self.rt.clone(), r, *qd, qts[i].into());
-        }
-        Ok(qrs_count)
+        self.inetstack.wait_any(self.rt.clone(), qts, qrs, indices, timeout)
     }
 
     pub fn try_wait_any(&mut self, qts: &[QToken]) -> Result<Option<Vec<(usize, demi_qresult_t)>>, Fail> {
