@@ -90,11 +90,13 @@ impl MemoryManager {
             // Heap-managed buffer.
             Buffer::Heap(dbuf) => {
                 let len: usize = dbuf.len();
+                let offset: usize = dbuf.offset();
                 let dbuf_ptr: *const [u8] = DataBuffer::into_raw(Clone::clone(&dbuf))?;
+                let dbuf_ptr: *mut c_void = unsafe { (dbuf_ptr as *const u8).add(offset) } as *mut c_void;
                 (
                     ptr::null_mut(),
                     demi_sgaseg_t {
-                        sgaseg_buf: dbuf_ptr as *mut c_void,
+                        sgaseg_buf: dbuf_ptr,
                         sgaseg_len: len as u32,
                     },
                 )

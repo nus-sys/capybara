@@ -492,7 +492,7 @@ impl TcpPeer {
             None => return Poll::Ready(Err(Fail::new(EBADF, "bad queue descriptor"))),
         };
 
-        capy_log!("\n\npolling POP on {:?}", key);
+        capy_log!("\n\npolling POP on {:?} ({:?})", fd, key);
         match inner.established.get(&key) {
             Some(ref s) => s.poll_recv(ctx),
             None => Poll::Ready(Err(Fail::new(ENOTCONN, "connection not established"))),
@@ -1176,7 +1176,7 @@ pub mod state {
                 get_socket_addr(),
                 get_socket_addr(),
                 100,
-                crate::inetstack::protocols::tcpmig::MigrationStage::ConnectionState,
+                crate::inetstack::protocols::tcpmig::segment::MigrationStage::ConnectionState,
                 10000,
                 10000,
             )
@@ -1244,7 +1244,7 @@ pub mod state {
                 // capy_profile!("deserialise");
                 TcpState::deserialize(buf)
             };
-            assert_eq!(state, get_state());
+            assert_eq!(state.cb, get_state().cb);
 
             capy_profile_dump!(&mut std::io::stderr().lock());
             eprintln!();

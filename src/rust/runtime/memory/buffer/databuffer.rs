@@ -117,6 +117,10 @@ impl DataBuffer {
     pub fn from_slice(src: &[u8]) -> Self {
         src.into()
     }
+
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
 }
 
 //==============================================================================
