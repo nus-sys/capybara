@@ -13,7 +13,7 @@ use super::{
     },
 };
 use crate::{
-    inetstack::protocols::{
+    capy_log_mig, inetstack::protocols::{
         arp::ArpPeer,
         ethernet2::{
             EtherType2,
@@ -28,8 +28,7 @@ use crate::{
             },
             SeqNumber,
         },
-    },
-    runtime::{
+    }, runtime::{
         fail::Fail,
         memory::{
             Buffer,
@@ -45,8 +44,7 @@ use crate::{
             WatchFuture,
             WatchedValue,
         },
-    },
-    scheduler::scheduler::Scheduler,
+    }, scheduler::scheduler::Scheduler
 };
 use ::std::{
     cell::{
@@ -1233,7 +1231,7 @@ impl ControlBlock {
 
     pub fn wake_scheduler_task(&self) {
         if let Some(w) = self.waker.borrow_mut().take() {
-            capy_log!("Wake recv!");
+            capy_log_mig!("Wake scheduler task for migration");
             w.wake()
         }
     }
