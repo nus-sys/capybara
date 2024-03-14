@@ -118,15 +118,17 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 CAPY_LOG={CAPY_LOG} \
                 LIBOS={LIBOS} \
                 RECV_QUEUE_THRESHOLD={RECV_QUEUE_THRESHOLD} \
-                SESSION_DATA_SIZE={SESSION_DATA_SIZE} \
+                MIG_DELAY={int(mig_delay/10) * 76} \
                 {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
+                MIG_PER_N={int(mig_per_n)} \
+                SESSION_DATA_SIZE={SESSION_DATA_SIZE} \
+                MIN_TOTAL_LOAD_FOR_MIG={MIN_TOTAL_LOAD_FOR_MIG} \
+                THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
                 MTU=1500 \
                 MSS=1500 \
                 NUM_CORES=4 \
                 RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
-                MIG_DELAY={int(mig_delay/10) * 76} \
-                MIG_PER_N={int(mig_per_n)} \
                 {f"CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml" if SERVER_APP == "http-server" else ""} \
                 {f"CONF=redis{j}" if SERVER_APP == "redis-server" else ""} \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \

@@ -162,6 +162,10 @@ pub struct Inner {
     rps_stats: Stats,
     #[cfg(feature = "tcp-migration")]
     tcpmig_poll_state: Rc<TcpmigPollState>,
+    #[cfg(feature = "tcp-migration")]
+    minimum_total_load_for_migration: usize,
+    #[cfg(feature = "tcp-migration")]
+    threshold_epsilon: usize,
 
     #[cfg(feature = "server-reply-analysis")]
     listening_port: u16,
@@ -647,6 +651,16 @@ impl Inner {
             rps_stats: Stats::new(),
             #[cfg(feature = "tcp-migration")]
             tcpmig_poll_state,
+            #[cfg(feature = "tcp-migration")]
+            minimum_total_load_for_migration: std::env::var("MIN_TOTAL_LOAD_FOR_MIG")
+                .unwrap_or_else(|_| String::from("100"))
+                .parse::<usize>()
+                .expect("Invalid MIN_TOTAL_LOAD_FOR_MIG value"),
+            #[cfg(feature = "tcp-migration")]
+            threshold_epsilon: std::env::var("THRESHOLD_EPSILON")
+                .unwrap_or_else(|_| String::from("30"))
+                .parse::<usize>()
+                .expect("Invalid THRESHOLD_EPSILON value"),
 
             #[cfg(feature = "server-reply-analysis")]
             listening_port: 0,
@@ -824,22 +838,25 @@ impl TcpPeer {
     }
 
     pub fn receive_rps_signal(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
-        let sum = NetworkEndian::read_u32(&buf[12..16]);
-        let individual = NetworkEndian::read_u32(&buf[16..20]) as usize;
-
-        let threshold = (sum as f64 * 0.55) as usize;
-        
-        // eprintln!("sum: {}, individual: {}", sum, individual);
-        capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
-        // self.inner.borrow().rps_stats.print_bucket_status();
-        #[cfg(not(feature = "manual-tcp-migration"))]
-        if sum > 100 && individual > threshold + 30 {
+        {
             let mut inner = self.inner.borrow_mut();
-            inner.rps_stats.set_threshold(threshold);
-            if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
-                drop(inner);
-                for conn in conns_to_migrate {
-                    self.initiate_migration(conn);
+
+            let sum = NetworkEndian::read_u32(&buf[12..16]) as usize;
+            let individual = NetworkEndian::read_u32(&buf[16..20]) as usize;
+            let threshold = (sum as f64 * 0.55) as usize;
+            
+            // eprintln!("sum: {}, individual: {}", sum, individual);
+            capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
+            // self.inner.borrow().rps_stats.print_bucket_status();
+            #[cfg(not(feature = "manual-tcp-migration"))]
+            if sum > inner.minimum_total_load_for_migration && individual > threshold + inner.threshold_epsilon {
+                inner.rps_stats.set_threshold(threshold);
+                if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
+                    drop(inner);
+                    for conn in conns_to_migrate {
+                        capy_time_log!("MIG");
+                        self.initiate_migration(conn);
+                    }
                 }
             }
         }

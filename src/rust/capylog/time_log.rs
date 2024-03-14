@@ -91,7 +91,7 @@ fn data() -> &'static mut Vec<(i64, ArrayVec<u8, 128>)> {
 #[allow(unused)]
 pub(super) fn init() {
     unsafe {
-        DATA = Some(Vec::with_capacity(1024));
+        DATA = Some(Vec::with_capacity(8192));
     }
 
     eprintln!("[CAPYLOG] capy_time_log is on");
