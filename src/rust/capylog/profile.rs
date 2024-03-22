@@ -145,13 +145,13 @@ pub(crate) fn __write_profiler_data<W: std::io::Write>(w: &mut W) -> std::io::Re
     eprintln!("\n[CAPYLOG] dumping profiler data");
     let data: &Vec<(&str, Duration)> = data();
     for (name, datum) in data {
-        write!(w, "{}: {} ns\n", name, datum.as_nanos())?;
+        write!(w, "{},{}\n", name, datum.as_nanos())?;
     }
 
     eprintln!("\n[CAPYLOG] dumping total profiler data");
     let data: &HashMap<&str, Duration> = total_data();
     for (name, datum) in data {
-        write!(w, "{}: {} ns\n", name, datum.as_nanos())?;
+        write!(w, "{},{}\n", name, datum.as_nanos())?;
     }
     Ok(())
 }

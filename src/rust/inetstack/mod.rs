@@ -889,6 +889,7 @@ impl InetStack {
             // Control only enters here if a PREPARE_ACK was received.
 
             // Fast migration is disabled, so TCP queue hasn't been polled yet. Poll it.
+            /* COMMENT OUT THIS FOR MIG_DELAY EVAL */
             if !self.tcpmig_state.poll_state.is_fast_migrate_enabled() {
                 // Poll the TCP DPDK queue.
                 capy_log_mig!("PREPARE_MIG_ACK slow path entered");
@@ -900,6 +901,7 @@ impl InetStack {
                 // Enable fast migration now that TCP queue has been flushed.
                 self.tcpmig_state.poll_state.enable_fast_migrate();
             }
+            /* COMMENT OUT THIS FOR MIG_DELAY EVAL */
             
             // Track the QD as migrated.
             assert!(self.tcpmig_state.migrated_qds.insert(qd_to_remove));

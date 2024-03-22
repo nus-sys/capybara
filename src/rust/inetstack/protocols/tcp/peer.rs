@@ -423,7 +423,7 @@ impl TcpPeer {
         if inner.established.insert(key, established).is_some() {
             panic!("duplicate queue descriptor in established sockets table");
         }
-        // capy_time_log!("CONN_ACCEPTED,({})", remote);
+        capy_time_log!("CONN_ACCEPTED,({})", remote);
         Poll::Ready(Ok(new_qd))
     }
 
@@ -872,7 +872,7 @@ impl TcpPeer {
 
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
-        capy_profile!("prepare");
+        // capy_profile!("prepare");
         capy_log_mig!("INIT MIG");
 
         let mut inner = self.inner.borrow_mut();
@@ -887,8 +887,9 @@ impl TcpPeer {
     
     #[cfg(feature = "manual-tcp-migration")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
-        capy_profile!("prepare");
+        // capy_profile!("prepare");
         capy_log_mig!("INIT MIG");
+        capy_time_log!("INIT_MIG");
         let mut inner = self.inner.borrow_mut();
         let conn = match inner.sockets.get(&qd) {
             None => {
@@ -907,13 +908,12 @@ impl TcpPeer {
         inner.established.get(&conn).expect("connection not in established table")
             .cb.disable_stats();
 
-        // capy_time_log!("INIT_MIG,({})", conn.1);
         inner.tcpmig.initiate_migration(conn, qd);
         Ok(())
 
         /* NON-CONCURRENT MIGRATION */
-        /* if(conn.1.port() == 301){
-            capy_time_log!("INIT_MIG,({})", conn.1); 
+        /* if(conn.1.port() == 203){
+            capy_time_log!("INIT_MIG"); 
             inner.tcpmig.initiate_migration(conn, qd);
             Ok(())
         }else{
@@ -979,7 +979,8 @@ impl Inner {
                 self.tcpmig_poll_state.set_qd(qd);
 
                 // If fast migration is allowed, migrate out the connection immediately.
-                if self.tcpmig_poll_state.is_fast_migrate_enabled() {
+                // if true { /* ACTIVATE THIS FOR MIG_DELAY EVAL */
+                if self.tcpmig_poll_state.is_fast_migrate_enabled() { /* COMMENT OUT THIS FOR MIG_DELAY EVAL */
                     let state = self.migrate_out_connection(qd)?;
                     self.tcpmig.send_tcp_state(state);
                 }
@@ -998,6 +999,7 @@ impl Inner {
     /// 2) Check if this connection is established one.
     /// 3) Remove socket from Established hashmap.
     fn migrate_out_connection(&mut self, qd: QDesc) -> Result<TcpState, Fail> {
+        capy_profile!("PROF_EXPORT");
         // Mark socket as migrated out.
         let conn = match self.sockets.get_mut(&qd) {
             None => panic!("invalid QD for migrating out"),
@@ -1024,12 +1026,22 @@ impl Inner {
         let cb = entry.remove().cb;
 
         // Wake the scheduler task for this connection, if any.
+        // The scheduler doesn't poll every qt every call, 
+        // only once at the start and then doesn't poll it 
+        // until it gets a notification from the CB that a packet has arrived. 
+        // But consider this case: polls qt -> no packet yet -> scheduler 
+        // won't poll that qt until new packet arrives -> connection is migrated. 
+        // Since we depend on the connection being polled to tell the application 
+        // that it was migrated, it's a deadlock that leads to that connection 
+        // never returning ETCPMIG error and never getting removed from Redis. 
+        // Fixed it by waking the scheduler task right before migrating the connection.
         cb.wake_scheduler_task();
         
         Ok(TcpState::new(cb.as_ref().into()))
     }
 
     fn migrate_in_connection(&mut self, state: TcpState) -> Result<(), Fail> {
+        capy_profile!("PROF_IMPORT");
         // TODO: Handle user data from the state.
 
         // Convert state to control block.
@@ -1067,7 +1079,7 @@ impl Inner {
 pub mod state {
     use std::{cell::RefCell, net::SocketAddrV4, rc::Rc};
 
-    use crate::{capy_log_mig, inetstack::protocols::{tcp::established::ControlBlockState, tcpmig::{ApplicationState, MigratedApplicationState}}, runtime::memory::{Buffer, DataBuffer}};
+    use crate::{capy_log_mig, capy_profile, inetstack::protocols::{tcp::established::ControlBlockState, tcpmig::{ApplicationState, MigratedApplicationState}}, runtime::memory::{Buffer, DataBuffer}};
 
     pub trait Serialize {
         /// Serializes into the buffer and returns its unused part.
@@ -1113,6 +1125,7 @@ pub mod state {
         }
 
         pub fn serialize(&self) -> Buffer {
+            // capy_profile!("PROF_SERIALIZE");
             let mut buf = Buffer::Heap(DataBuffer::new(self.serialized_size()).unwrap());
             let remaining = self.cb.serialize_into(&mut buf);
 
@@ -1133,6 +1146,7 @@ pub mod state {
         }
 
         pub fn deserialize(mut buf: Buffer) -> Self {
+            // capy_profile!("PROF_DESERIALIZE");
             let cb = ControlBlockState::deserialize_from(&mut buf);
             let app_state = if buf[0] == 0 { MigratedApplicationState::None }
             else {

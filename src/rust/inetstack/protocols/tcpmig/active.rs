@@ -242,7 +242,7 @@ impl ActiveMigration {
     }
 
     pub fn send_connection_state(&mut self, state: TcpState) {
-        capy_time_log!("SERIALIZE_STATE,({})", self.client);
+        // capy_time_log!("SERIALIZE_STATE,({})", self.client);
         assert_eq!(self.last_sent_stage, MigrationStage::PrepareMigration);
 
         capy_log_mig!("[TX] CONNECTION_STATE: ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port);

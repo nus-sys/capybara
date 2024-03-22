@@ -188,10 +188,7 @@ def parse_tcpdump(experiment_id):
 def parse_mig_delay(experiment_id):
     print(f'PARSING {experiment_id} migration delay') 
     
-    # host = pyrem.host.RemoteHost(TCPDUMP_NODE)
-    
-    
-    clusters = {}
+    lines = list() 
     for i in [0, 1]:
         file_path = f'{DATA_PATH}/{experiment_id}.be{i}'
         with open(file_path, "r") as file:
@@ -199,15 +196,13 @@ def parse_mig_delay(experiment_id):
             start_printing = False
             for line in file:
                 # Check if the line contains the target string
-                if "[CAPYLOG] dumping time log data" in line:
-                    # Set the flag to start printing lines
+                if "INIT_MIG" in line or "RECV_PREPARE_MIG" in line:
                     start_printing = True
-                    continue  # Skip this line
 
                 # Check if we should print the line
                 if start_printing:
                     columns = line.strip().split(",")
-                    if len(columns) != 3:
+                    if len(columns) < 2 :
                         continue
                     # time_str = columns[0]
                     # time_components = time_str.split(':')
@@ -215,13 +210,9 @@ def parse_mig_delay(experiment_id):
                     # seconds = float(time_components[2])  # Convert sub-second part to a float
                     # nanosecond_timestamp = int((hours * 3600 + minutes * 60 + seconds) * 1_000_000_000)
                     # columns[0] = str(nanosecond_timestamp)
-
-                    last_column = columns[-1]
-
-                    if last_column in clusters:
-                        clusters[last_column].append(columns[0] + ',' + columns[1] + ',' + columns[2])
-                    else:
-                        clusters[last_column] = [columns[0] + ',' + columns[1] + ',' + columns[2]]
+                    # print(columns)
+                    
+                    lines.append(columns[0] + ',' + columns[1])
     
 
     steps = ['',
@@ -230,65 +221,62 @@ def parse_mig_delay(experiment_id):
             'RECV_PREPARE_MIG',  #3
             'SEND_PREPARE_MIG_ACK', #4 
             'RECV_PREPARE_MIG_ACK', #5
-            'SERIALIZE_STATE', #6
-            'SEND_STATE', #7 (including fragmentation)
-            'RECV_STATE', #8 (once receiving all fragments)
-            'CONN_ACCEPTED']
+            # 'SERIALIZE_STATE', #6
+            'SEND_STATE', #6 (including fragmentation)
+            'RECV_STATE', #7 (once receiving all fragments)
+            'CONN_ACCEPTED', #8
+            ]
             # 'SEND_STATE_ACK', #9
             # 'RECV_STATE_ACK']
     prev_step = 0
     prev_ns = 0
     final_result = ''
-    for last_column, lines in clusters.items():
-        result = ''
-        # print(f"Cluster for last column '{last_column}':")
-        # for line in lines:
-        #     print(line)
-        
-        # print("Sorted")
-        sorted_list = sorted(lines, key=lambda x: int(x.split(",")[0]))[1:]
-        init_ns = 0
-        
-        black_out_times = list()
-        black_out_start = 0
-        for item in sorted_list:
-            # print(item)
-            columns = item.split(',')
-            ns = int(columns[0])
-            step = columns[1]
+    
+    result = ''
+    
+    sorted_list = sorted(lines, key=lambda x: int(x.split(",")[0]))
+    init_ns = 0
+    
+    black_out_times = list()
+    black_out_start = 0
+    for item in sorted_list:
+        # print(item)
+        columns = item.split(',')
+        ns = int(columns[0])
+        step = columns[1]
 
-            if step == 'RECV_PREPARE_MIG_ACK':
-                black_out_start = ns
-            
-            if step == 'CONN_ACCEPTED':
-                black_out_times.append(ns - black_out_start)
+        if step == 'RECV_PREPARE_MIG_ACK':
+            black_out_start = ns
         
-        black_out_idx = 0
-        for item in sorted_list:
-            # print(item)
-            columns = item.split(',')
-            ns = int(columns[0])
-            step = columns[1]
-      
-            step_idx = steps.index(step)
-            if step_idx != prev_step+1:
-                print("[PANIC] migration step is wrong!: prev {}, current {}", prev_step, step_idx, "\n", item)
-                exit()
-            prev_step = step_idx
+        if step == 'CONN_ACCEPTED':
+            black_out_times.append(ns - black_out_start)
+    
+    black_out_idx = 0
+    for item in sorted_list:
+        # print(item)
+        columns = item.split(',')
+        ns = int(columns[0])
+        step = columns[1]
+    
+        step_idx = steps.index(step)
+        if step_idx != prev_step+1:
+            print("[PANIC] migration step is wrong!: prev {}, current {}", prev_step, step_idx, "\n", item)
+            exit()
+        prev_step = step_idx
 
-            if step_idx == 1:
-                init_ns = ns
-            if step_idx >= 2:
-                latency = ns - prev_ns
-                result = result + str(latency) + ','
-            if step_idx == 9:
-                result = result + str(ns - init_ns) + ',' + str(black_out_times[black_out_idx]) + "\n"
-                black_out_idx += 1
-                prev_step = 0
-            prev_ns = ns
-        # print(result)
-        final_result = final_result + '\n'.join(result.split('\n')[200:])
-        # final_result = final_result + '\n'.join(result.split('\n')[:])
+        if step_idx == 1:
+            init_ns = ns
+        if step_idx >= 2:
+            latency = ns - prev_ns
+            result = result + str(latency) + ','
+        if step_idx == 8:
+            result = result + str(ns - init_ns) + ',' + str(black_out_times[black_out_idx]) + "\n"
+            black_out_idx += 1
+            prev_step = 0
+        prev_ns = ns
+    # print(result)
+    final_result = final_result + '\n'.join(result.split('\n')[200:])
+    # final_result = final_result + '\n'.join(result.split('\n')[:])
     
     print(len(final_result.split('\n')))
     
@@ -296,13 +284,13 @@ def parse_mig_delay(experiment_id):
 
     with open(f'{DATA_PATH}/{experiment_id}.mig_delay', 'w') as file:
         # Write the content to the file
-        file.write('\n'.join(final_result.split('\n')[-10021:]))
+        file.write('\n'.join(final_result.split('\n')[-10001:]))
         # file.write('\n'.join(final_result.split('\n')[:]))
 
     
     print(f'CALCULATING {experiment_id} mig_delay CDF') 
     
-    cmd = f"cd {CAPYBARA_PATH}/eval && bash mig_delay_cdf.sh {experiment_id}"
+    cmd = f"cd {CAPYBARA_PATH}/eval && bash mig_delay_cdf_avg_minmax_stddev.sh {experiment_id}"
     print("Executing command:", cmd)  # For debugging
 
     result = subprocess.run(
@@ -318,6 +306,26 @@ def parse_mig_delay(experiment_id):
         print("DONE")
   
 
+def parse_mig_cpu_ovhd(experiment_id):
+    print(f'PARSING {experiment_id} prism mig delay') 
+    
+    cmd = f"cd {CAPYBARA_PATH}/eval\
+            && sh parse_mig_cpu_ovhd.sh {experiment_id}"
+    print("Executing command:", cmd)  # For debugging
+
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=True,
+    ).stdout.decode()
+    if result != '':
+        print("ERROR: " + result + '\n\n')
+    else:
+        print("DONE")
+        
+        
 def parse_poll_interval(experiment_id):
     print(f'PARSING {experiment_id} poll_interval') 
     
@@ -665,6 +673,9 @@ def run_eval():
 
                                 if EVAL_RPS_SIGNAL == True:
                                     parse_rps_signal(experiment_id)
+                                
+                                if EVAL_MIG_CPU_OVHD == True:
+                                    parse_mig_cpu_ovhd(experiment_id)
                                     
                                 
 
@@ -720,7 +731,7 @@ if __name__ == '__main__':
     # parse_server_reply("20240228-065133.628398")
     # exit(1)
     # parse_result()
-    # parse_mig_delay("20231129-083149.755267")
+    # parse_mig_delay("20240318-093754.379579")
     # exit()
 
     if len(sys.argv) > 1 and sys.argv[1] == 'build':
