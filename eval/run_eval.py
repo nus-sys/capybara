@@ -122,7 +122,8 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
                 MIG_PER_N={int(mig_per_n)} \
                 SESSION_DATA_SIZE={SESSION_DATA_SIZE} \
-                MIN_TOTAL_LOAD_FOR_MIG={MIN_TOTAL_LOAD_FOR_MIG} \
+                MIN_THRESHOLD={MIN_THRESHOLD} \
+                RPS_THRESHOLD={RPS_THRESHOLD} \
                 THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
                 MTU=1500 \
                 MSS=1500 \

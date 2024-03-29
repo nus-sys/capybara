@@ -22,3 +22,13 @@ END {
     printf "%d,%.8f\n", records[i,0], records[i,2]/sum
   }
 }' > $exptid.workload_gap_cdf
+
+paste -d, $exptid.be0_rps_signal $exptid.be1_rps_signal | awk -F, '
+{
+  diff = ($3 - $6) < 0 ? -($3 - $6) : ($3 - $6); 
+  sum += diff; 
+  count++
+} 
+END {
+  print sum/count
+}' > $exptid.workload_gap_avg

@@ -573,6 +573,8 @@ impl InetStack {
     /// 
     /// Returns the number of results written to `qrs`.
     pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize], timeout: Option<Duration>) -> Result<usize, Fail> {
+        #[cfg(feature = "profiler")]
+        timer!("inetstack::wait_any2");
         let begin = Instant::now();
 
         loop {
@@ -791,8 +793,8 @@ impl InetStack {
         #[cfg(feature = "profiler")]
         timer!("inetstack::poll_bg_work");
 
-        #[cfg(feature = "tcp-migration")]
-        let was_runtime_polled = self.poll_runtime_tcpmig();
+        // #[cfg(feature = "tcp-migration")]
+        // let was_runtime_polled = self.poll_runtime_tcpmig();
         //self.prev_time = chrono::Local::now().time();
 
         {
@@ -801,11 +803,11 @@ impl InetStack {
             self.scheduler.poll();
         }
 
-        #[cfg(feature = "tcp-migration")]
-        if !was_runtime_polled {
-            self.poll_runtime();
-        }
-        #[cfg(not(feature = "tcp-migration"))]
+        // #[cfg(feature = "tcp-migration")]
+        // if !was_runtime_polled {
+        //     self.poll_runtime();
+        // }
+        // #[cfg(not(feature = "tcp-migration"))]
         self.poll_runtime();
 
         #[cfg(feature = "tcp-migration")]
@@ -815,13 +817,13 @@ impl InetStack {
         
             // If overloaded, start migrations.
             /* comment out this for recv_queue_len vs mig_lat eval */
-            #[cfg(not(feature = "manual-tcp-migration"))]
-            if let Some(conns_to_migrate) = self.ipv4.tcp.connections_to_migrate() {
-                for conn in conns_to_migrate {
-                    // capy_time_log!("INIT_MIG,({})", conn.1);
-                    self.ipv4.tcp.initiate_migration(conn);
-                }
-            }
+            // #[cfg(not(feature = "manual-tcp-migration"))]
+            // if let Some(conns_to_migrate) = self.ipv4.tcp.connections_to_migrate() {
+            //     for conn in conns_to_migrate {
+            //         // capy_time_log!("INIT_MIG,({})", conn.1);
+            //         self.ipv4.tcp.initiate_migration(conn);
+            //     }
+            // }
             /* comment out this for recv_queue_len vs mig_lat eval */
         }
 

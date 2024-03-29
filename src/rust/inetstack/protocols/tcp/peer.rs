@@ -163,9 +163,11 @@ pub struct Inner {
     #[cfg(feature = "tcp-migration")]
     tcpmig_poll_state: Rc<TcpmigPollState>,
     #[cfg(feature = "tcp-migration")]
-    minimum_total_load_for_migration: usize,
+    min_threshold: f64,
     #[cfg(feature = "tcp-migration")]
-    threshold_epsilon: usize,
+    rps_threshold: f64,
+    #[cfg(feature = "tcp-migration")]
+    threshold_epsilon: f64,
 
     #[cfg(feature = "server-reply-analysis")]
     listening_port: u16,
@@ -652,14 +654,19 @@ impl Inner {
             #[cfg(feature = "tcp-migration")]
             tcpmig_poll_state,
             #[cfg(feature = "tcp-migration")]
-            minimum_total_load_for_migration: std::env::var("MIN_TOTAL_LOAD_FOR_MIG")
-                .unwrap_or_else(|_| String::from("100"))
-                .parse::<usize>()
+            min_threshold: std::env::var("MIN_THRESHOLD")
+                .unwrap_or_else(|_| String::from("0.2"))
+                .parse::<f64>()
                 .expect("Invalid MIN_TOTAL_LOAD_FOR_MIG value"),
             #[cfg(feature = "tcp-migration")]
+            rps_threshold: std::env::var("RPS_THRESHOLD")
+                .unwrap_or_else(|_| String::from("0.55"))
+                .parse::<f64>()
+                .expect("Invalid RPS_THRESHOLD value"),
+            #[cfg(feature = "tcp-migration")]
             threshold_epsilon: std::env::var("THRESHOLD_EPSILON")
-                .unwrap_or_else(|_| String::from("30"))
-                .parse::<usize>()
+                .unwrap_or_else(|_| String::from("0.05"))
+                .parse::<f64>()
                 .expect("Invalid THRESHOLD_EPSILON value"),
 
             #[cfg(feature = "server-reply-analysis")]
@@ -843,18 +850,20 @@ impl TcpPeer {
 
             let sum = NetworkEndian::read_u32(&buf[12..16]) as usize;
             let individual = NetworkEndian::read_u32(&buf[16..20]) as usize;
-            let threshold = (sum as f64 * 0.55) as usize;
+            let min_threshold = (sum as f64 * inner.min_threshold) as usize;
+            let threshold = (sum as f64 * inner.rps_threshold) as usize;
+            let threshold_epsilon = (sum as f64 * (inner.rps_threshold + inner.threshold_epsilon)) as usize;
             
             // eprintln!("sum: {}, individual: {}", sum, individual);
             capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
             // self.inner.borrow().rps_stats.print_bucket_status();
             #[cfg(not(feature = "manual-tcp-migration"))]
-            if sum > inner.minimum_total_load_for_migration && individual > threshold + inner.threshold_epsilon {
+            if sum > min_threshold && individual > threshold_epsilon {
                 inner.rps_stats.set_threshold(threshold);
                 if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
                     drop(inner);
                     for conn in conns_to_migrate {
-                        capy_time_log!("MIG");
+                        capy_time_log!("START_MIG");
                         self.initiate_migration(conn);
                     }
                 }
@@ -889,7 +898,7 @@ impl TcpPeer {
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         // capy_profile!("prepare");
         capy_log_mig!("INIT MIG");
-        capy_time_log!("INIT_MIG");
+        // capy_time_log!("INIT_MIG");
         let mut inner = self.inner.borrow_mut();
         let conn = match inner.sockets.get(&qd) {
             None => {
@@ -980,10 +989,10 @@ impl Inner {
 
                 // If fast migration is allowed, migrate out the connection immediately.
                 // if true { /* ACTIVATE THIS FOR MIG_DELAY EVAL */
-                if self.tcpmig_poll_state.is_fast_migrate_enabled() { /* COMMENT OUT THIS FOR MIG_DELAY EVAL */
-                    let state = self.migrate_out_connection(qd)?;
-                    self.tcpmig.send_tcp_state(state);
-                }
+                // if self.tcpmig_poll_state.is_fast_migrate_enabled() { /* COMMENT OUT THIS FOR MIG_DELAY EVAL */
+                let state = self.migrate_out_connection(qd)?;
+                self.tcpmig.send_tcp_state(state);
+                // }
             },
             TcpmigReceiveStatus::StateReceived(state) => {
                 self.migrate_in_connection(state)?;

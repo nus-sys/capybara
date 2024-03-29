@@ -29,12 +29,12 @@ FEATURES = [
     # 'capy-log',
     # 'capy-profile',
     'capy-time-log',
-    # 'server-reply-analysis',
+    'server-reply-analysis',
 ]
 
 ################## TEST CONFIG #####################
 NUM_BACKENDS = 2
-SERVER_APP = 'redis-server' # 'http-server', 'prism', 'redis-server'
+SERVER_APP = 'http-server' # 'http-server', 'prism', 'redis-server'
 CLIENT_APP = 'caladan' # 'wrk', 'caladan'
 NUM_THREADS = [1] # for wrk load generator
 REPEAT_NUM = 1
@@ -43,8 +43,9 @@ TCPDUMP = False
 EVAL_MIG_DELAY = False
 EVAL_POLL_INTERVAL = False
 EVAL_LATENCY_TRACE = True
-EVAL_SERVER_REPLY = False
+EVAL_SERVER_REPLY = True
 EVAL_RPS_SIGNAL = True
+EVAL_MIG_CPU_OVHD = False
 
 ################## WORKLOAD GENERATOR CONFIG #####################
 # All time intervals are in ms, RPS are in KRPS.
@@ -66,26 +67,27 @@ RAND_SEED = 2402271237
 ### SERVER ###
 RECV_QUEUE_THRESHOLD = 50
 MIG_DELAYS = [0]
-MAX_STAT_MIGS = [10000]#[5000, 10000, 15000] # set element to '' if you don't want to set this env var
-MIG_PER_N = [100]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
+MAX_STAT_MIGS = [0]#[5000, 10000, 15000] # set element to '' if you don't want to set this env var
+MIG_PER_N = [10]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
 SESSION_DATA_SIZE = 1024 * 0 # bytes
-MIN_TOTAL_LOAD_FOR_MIG = 50 #100
-THRESHOLD_EPSILON = 5 #30
+MIN_THRESHOLD = 0.2
+RPS_THRESHOLD = 0.55
+THRESHOLD_EPSILON = 0.05 
 
 CAPY_LOG = 'all' # 'all', 'mig'
 REDIS_LOG = 0
 
 
 ### CALADAN ###
-CLIENT_PPS = [i for i in range(200000, 200000 + 1, 100)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(10, 10 + 1, 50000)]#[i for i in range(100000, 1_300_001, 100000)]
 import workload_spec_generator
-LOADSHIFTS = workload_spec_generator.main()
-# LOADSHIFTS = '150000:25000,750000:30000,150000:20000/150000:75000'
+# LOADSHIFTS = workload_spec_generator.main()
+LOADSHIFTS = '90000:30000,270000:20000,450000:20000,630000:20000,810000:30000/90000:120000'
 # LOADSHIFTS = ''
 ZIPF_ALPHA = '1.2' # 0.9
 ONOFF = '0' # '0', '1'
 NUM_CONNECTIONS = [100]
-RUNTIME = 5
+RUNTIME = 1
 
 #####################
 # build command: run_eval.py [build [clean]]

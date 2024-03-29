@@ -516,6 +516,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 },
             }
         }
+        // #[cfg(feature = "profiler")]
+        // profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
+        
         server_log!("******* APP: Okay, handled the results! *******");
     }
 
