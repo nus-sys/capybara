@@ -54,7 +54,7 @@ def kill_procs():
     print('KILLED CAPYBARA PROCESSES')
 
 
-def run_server(mig_delay, max_stat_migs, mig_per_n):
+def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     global experiment_id
     
     print('SETUP SWITCH')
@@ -117,9 +117,10 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 sudo -E \
                 CAPY_LOG={CAPY_LOG} \
                 LIBOS={LIBOS} \
-                RECV_QUEUE_THRESHOLD={RECV_QUEUE_THRESHOLD} \
+                RECV_QUEUE_LEN_THRESHOLD={RECV_QUEUE_LEN_THRESHOLD} \
                 MIG_DELAY={int(mig_delay/10) * 76} \
-                {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
+                {f"MAX_REACTIVE_MIGS={max_reactive_migs}" if max_reactive_migs != "" else ""} \
+                {f"MAX_PROACTIVE_MIGS={max_proactive_migs}" if max_proactive_migs != "" else ""} \
                 MIG_PER_N={int(mig_per_n)} \
                 SESSION_DATA_SIZE={SESSION_DATA_SIZE} \
                 MIN_THRESHOLD={MIN_THRESHOLD} \
@@ -137,12 +138,6 @@ def run_server(mig_delay, max_stat_migs, mig_per_n):
                 numactl -m0 \
                 {run_cmd} \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
-        # elif SERVER_APP == 'redis-server':
-        #     cmd = [f'cd {CAPYBARA_PATH} && \
-        #             CONF=redis{j} make run-redis-server \
-        #             CORE_ID={j+1} \
-        #             {f"MAX_STAT_MIGS={max_stat_migs}" if max_stat_migs != "" else ""} \
-        #             > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
         elif SERVER_APP == 'prism':
             cmd = [f'taskset --cpu-list {j+1} \
                 sudo numactl -m0 phttp-bench-backend \
@@ -189,7 +184,10 @@ def parse_tcpdump(experiment_id):
 def parse_mig_delay(experiment_id):
     print(f'PARSING {experiment_id} migration delay') 
     
-    lines = list() 
+    # host = pyrem.host.RemoteHost(TCPDUMP_NODE)
+    
+    
+    clusters = {}
     for i in [0, 1]:
         file_path = f'{DATA_PATH}/{experiment_id}.be{i}'
         with open(file_path, "r") as file:
@@ -197,13 +195,15 @@ def parse_mig_delay(experiment_id):
             start_printing = False
             for line in file:
                 # Check if the line contains the target string
-                if "INIT_MIG" in line or "RECV_PREPARE_MIG" in line:
+                if "[CAPYLOG] dumping time log data" in line:
+                    # Set the flag to start printing lines
                     start_printing = True
+                    continue  # Skip this line
 
                 # Check if we should print the line
                 if start_printing:
                     columns = line.strip().split(",")
-                    if len(columns) < 2 :
+                    if len(columns) != 3:
                         continue
                     # time_str = columns[0]
                     # time_components = time_str.split(':')
@@ -211,9 +211,13 @@ def parse_mig_delay(experiment_id):
                     # seconds = float(time_components[2])  # Convert sub-second part to a float
                     # nanosecond_timestamp = int((hours * 3600 + minutes * 60 + seconds) * 1_000_000_000)
                     # columns[0] = str(nanosecond_timestamp)
-                    # print(columns)
-                    
-                    lines.append(columns[0] + ',' + columns[1])
+
+                    last_column = columns[-1]
+
+                    if last_column in clusters:
+                        clusters[last_column].append(columns[0] + ',' + columns[1] + ',' + columns[2])
+                    else:
+                        clusters[last_column] = [columns[0] + ',' + columns[1] + ',' + columns[2]]
     
 
     steps = ['',
@@ -232,52 +236,56 @@ def parse_mig_delay(experiment_id):
     prev_step = 0
     prev_ns = 0
     final_result = ''
-    
-    result = ''
-    
-    sorted_list = sorted(lines, key=lambda x: int(x.split(",")[0]))
-    init_ns = 0
-    
-    black_out_times = list()
-    black_out_start = 0
-    for item in sorted_list:
-        # print(item)
-        columns = item.split(',')
-        ns = int(columns[0])
-        step = columns[1]
-
-        if step == 'RECV_PREPARE_MIG_ACK':
-            black_out_start = ns
+    for last_column, lines in clusters.items():
+        result = ''
+        # print(f"Cluster for last column '{last_column}':")
+        # for line in lines:
+        #     print(line)
         
-        if step == 'CONN_ACCEPTED':
-            black_out_times.append(ns - black_out_start)
-    
-    black_out_idx = 0
-    for item in sorted_list:
-        # print(item)
-        columns = item.split(',')
-        ns = int(columns[0])
-        step = columns[1]
-    
-        step_idx = steps.index(step)
-        if step_idx != prev_step+1:
-            print("[PANIC] migration step is wrong!: prev {}, current {}", prev_step, step_idx, "\n", item)
-            exit()
-        prev_step = step_idx
+        # print("Sorted")
+        sorted_list = sorted(lines, key=lambda x: int(x.split(",")[0]))
+        init_ns = 0
+        
+        black_out_times = list()
+        black_out_start = 0
+        for item in sorted_list:
+            # print(item)
+            columns = item.split(',')
+            ns = int(columns[0])
+            step = columns[1]
 
-        if step_idx == 1:
-            init_ns = ns
-        if step_idx >= 2:
-            latency = ns - prev_ns
-            result = result + str(latency) + ','
-        if step_idx == 8:
-            result = result + str(ns - init_ns) + ',' + str(black_out_times[black_out_idx]) + "\n"
-            black_out_idx += 1
-            prev_step = 0
-        prev_ns = ns
-    # print(result)
-    final_result = final_result + '\n'.join(result.split('\n')[200:])
-    # final_result = final_result + '\n'.join(result.split('\n')[:])
+            if step == 'RECV_PREPARE_MIG_ACK':
+                black_out_start = ns
+            
+            if step == 'CONN_ACCEPTED':
+                black_out_times.append(ns - black_out_start)
+        
+        black_out_idx = 0
+        for item in sorted_list:
+            # print(item)
+            columns = item.split(',')
+            ns = int(columns[0])
+            step = columns[1]
+      
+            step_idx = steps.index(step)
+            if step_idx != prev_step+1:
+                print("[PANIC] migration step is wrong!: prev {}, current {}", prev_step, step_idx, "\n", item)
+                exit()
+            prev_step = step_idx
+
+            if step_idx == 1:
+                init_ns = ns
+            if step_idx >= 2:
+                latency = ns - prev_ns
+                result = result + str(latency) + ','
+            if step_idx == 8:
+                result = result + str(ns - init_ns) + ',' + str(black_out_times[black_out_idx]) + "\n"
+                black_out_idx += 1
+                prev_step = 0
+            prev_ns = ns
+        # print(result)
+        final_result = final_result + '\n'.join(result.split('\n')[200:])
+        # final_result = final_result + '\n'.join(result.split('\n')[:])
     
     print(len(final_result.split('\n')))
     
@@ -305,6 +313,7 @@ def parse_mig_delay(experiment_id):
         print("ERROR: " + result + '\n\n')
     else:
         print("DONE")
+
   
 
 def parse_mig_cpu_ovhd(experiment_id):
@@ -533,150 +542,153 @@ def run_eval():
         exit(1)
     for repeat in range(0, REPEAT_NUM):
         for mig_delay in MIG_DELAYS:
-            for max_stat_migs in MAX_STAT_MIGS: 
-                for mig_per_n in MIG_PER_N:
-                    for pps in CLIENT_PPS:
-                        for conn in NUM_CONNECTIONS:
-                            for num_thread in NUM_THREADS:
-                                kill_procs()
-                                experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
-                                
-                                with open(f'{CAPYBARA_PATH}/eval/test_config.py', 'r') as file:
-                                    print(f'================ RUNNING TEST =================\n{file.read()}')
-                                    print(f'\n\nEXPTID: {experiment_id}')
-                                if TCPDUMP == True:
-                                    run_tcpdump(experiment_id)
-                                
-                                run_server(mig_delay, max_stat_migs, mig_per_n)
+            for max_reactive_migs in MAX_REACTIVE_MIGS: 
+                for max_proactive_migs in MAX_PROACTIVE_MIGS:
+                    for mig_per_n in MIG_PER_N:
+                        for pps in CLIENT_PPS:
+                            for conn in NUM_CONNECTIONS:
+                                for num_thread in NUM_THREADS:
+                                    kill_procs()
+                                    experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
+                                    
+                                    with open(f'{CAPYBARA_PATH}/eval/test_config.py', 'r') as file:
+                                        print(f'================ RUNNING TEST =================')
+                                        print(f'\n\nEXPTID: {experiment_id}')
+                                        with open(f'{DATA_PATH}/{experiment_id}.test_config', 'w') as output_file:
+                                            output_file.write(file.read())
+                                    if TCPDUMP == True:
+                                        run_tcpdump(experiment_id)
+                                    
+                                    run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n)
 
-                                #exit(0)
-                                host = pyrem.host.RemoteHost(CLIENT_NODE)
-                                if CLIENT_APP != 'wrk':
-                                    cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
-                                    task = host.run(cmd, quiet=True)
-                                    pyrem.task.Parallel([task], aggregate=True).start(wait=False)
-                                    time.sleep(3)
-                                    print('iokerneld is running')
-                                
-                                if SERVER_APP == 'http-server' or SERVER_APP == 'prism':
-                                    if CLIENT_APP == 'wrk':
-                                        cmd = [f'sudo numactl -m0 {HOME}/wrk-tools/wrk/wrk \
-                                            -t{num_thread} \
-                                            -c{int(conn)*int(num_thread)} \
-                                            -d{RUNTIME}s \
-                                            --latency \
-                                            http://10.0.1.8:10000/get \
-                                            > {DATA_PATH}/{experiment_id}.client']
-                                    else:    
+                                    #exit(0)
+                                    host = pyrem.host.RemoteHost(CLIENT_NODE)
+                                    if CLIENT_APP != 'wrk':
+                                        cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
+                                        task = host.run(cmd, quiet=True)
+                                        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+                                        time.sleep(3)
+                                        print('iokerneld is running')
+                                    
+                                    if SERVER_APP == 'http-server' or SERVER_APP == 'prism':
+                                        if CLIENT_APP == 'wrk':
+                                            cmd = [f'sudo numactl -m0 {HOME}/wrk-tools/wrk/wrk \
+                                                -t{num_thread} \
+                                                -c{int(conn)*int(num_thread)} \
+                                                -d{RUNTIME}s \
+                                                --latency \
+                                                http://10.0.1.8:10000/get \
+                                                > {DATA_PATH}/{experiment_id}.client']
+                                        else:    
+                                            cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
+                                                10.0.1.8:10000 \
+                                                --config {CALADAN_PATH}/client.config \
+                                                --mode runtime-client \
+                                                --protocol=http \
+                                                --transport=tcp \
+                                                --samples=1 \
+                                                --pps={pps} \
+                                                --threads={conn} \
+                                                --runtime={RUNTIME} \
+                                                --discard_pct=10 \
+                                                --output=trace \
+                                                --rampup=0 \
+                                                {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
+                                                {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
+                                                {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
+                                                --exptid={DATA_PATH}/{experiment_id} \
+                                                > {DATA_PATH}/{experiment_id}.client']
+                                    elif SERVER_APP == 'redis-server':
                                         cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
-                                            10.0.1.8:10000 \
-                                            --config {CALADAN_PATH}/client.config \
-                                            --mode runtime-client \
-                                            --protocol=http \
-                                            --transport=tcp \
-                                            --samples=1 \
-                                            --pps={pps} \
-                                            --threads={conn} \
-                                            --runtime={RUNTIME} \
-                                            --discard_pct=10 \
-                                            --output=trace \
-                                            --rampup=0 \
-                                            {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
-                                            {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
-                                            {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
-                                            --exptid={DATA_PATH}/{experiment_id} \
-                                            > {DATA_PATH}/{experiment_id}.client']
-                                elif SERVER_APP == 'redis-server':
-                                    cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
-                                            10.0.1.8:10000 \
-                                            --config {CALADAN_PATH}/client.config \
-                                            --mode runtime-client \
-                                            --protocol=resp \
-                                            --redis-string=1000000 \
-                                            --transport=tcp \
-                                            --samples=1 \
-                                            --pps={pps} \
-                                            --threads={conn} \
-                                            --runtime={RUNTIME} \
-                                            --discard_pct=10 \
-                                            --output=trace \
-                                            --rampup=0 \
-                                            {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
-                                            {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
-                                            {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
-                                            --exptid={DATA_PATH}/{experiment_id} \
-                                            > {DATA_PATH}/{experiment_id}.client']
-                                else:
-                                    print(f'Invalid server app: {SERVER_APP}')
-                                    exit(1)
-                                # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \
-                                #         -a 31:00.1 \
-                                #         -n 4 \
-                                #         -c 0xffff -- \
-                                #         -d exponential \
-                                #         -c {HOME}/Capybara/tcp_generator/addr.cfg \
-                                #         -s 256 \
-                                #         -t 10 \
-                                #         -r {i} \
-                                #         -f {j} \
-                                #         -q {4 if j >= 4 else j} \
-                                #         -o {DATA_PATH}/{experiment_id}.latency \
-                                #         > {DATA_PATH}/{experiment_id}.stats 2>&1']
-                                task = host.run(cmd, quiet=False)
-                                pyrem.task.Parallel([task], aggregate=True).start(wait=True)
+                                                10.0.1.8:10000 \
+                                                --config {CALADAN_PATH}/client.config \
+                                                --mode runtime-client \
+                                                --protocol=resp \
+                                                --redis-string=1000000 \
+                                                --transport=tcp \
+                                                --samples=1 \
+                                                --pps={pps} \
+                                                --threads={conn} \
+                                                --runtime={RUNTIME} \
+                                                --discard_pct=10 \
+                                                --output=trace \
+                                                --rampup=0 \
+                                                {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
+                                                {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
+                                                {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
+                                                --exptid={DATA_PATH}/{experiment_id} \
+                                                > {DATA_PATH}/{experiment_id}.client']
+                                    else:
+                                        print(f'Invalid server app: {SERVER_APP}')
+                                        exit(1)
+                                    # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \
+                                    #         -a 31:00.1 \
+                                    #         -n 4 \
+                                    #         -c 0xffff -- \
+                                    #         -d exponential \
+                                    #         -c {HOME}/Capybara/tcp_generator/addr.cfg \
+                                    #         -s 256 \
+                                    #         -t 10 \
+                                    #         -r {i} \
+                                    #         -f {j} \
+                                    #         -q {4 if j >= 4 else j} \
+                                    #         -o {DATA_PATH}/{experiment_id}.latency \
+                                    #         > {DATA_PATH}/{experiment_id}.stats 2>&1']
+                                    task = host.run(cmd, quiet=False)
+                                    pyrem.task.Parallel([task], aggregate=True).start(wait=True)
 
-                                print('================ TEST COMPLETE =================\n')
-                                if CLIENT_APP == 'wrk':
-                                    result_str = parse_wrk_result(experiment_id)
-                                    print(result_str + '\n\n')
-                                    final_result = final_result + result_str + '\n'
-                                else:
-                                    try:
-                                        cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]" | tail -1'
-                                        result = subprocess.run(
-                                            cmd,
-                                            shell=True,
-                                            stdout=subprocess.PIPE,
-                                            stderr=subprocess.STDOUT,
-                                            check=True,
-                                        ).stdout.decode()
-                                        if result == '':
-                                            result = '[RESULT] N/A\n'
-                                        print('[RESULT]' + f'{experiment_id}, {NUM_BACKENDS}, {conn}, {mig_delay}, {max_stat_migs}, {mig_per_n},{result[len("[RESULT]"):]}' + '\n\n')
-                                        final_result = final_result + f'{experiment_id}, {NUM_BACKENDS}, {conn}, {mig_delay}, {max_stat_migs}, {mig_per_n},{result[len("[RESULT]"):]}'
-                                    except subprocess.CalledProcessError as e:
-                                        # Handle the exception for a failed command execution
-                                        print("EXPERIMENT FAILED\n\n")
+                                    print('================ TEST COMPLETE =================\n')
+                                    if CLIENT_APP == 'wrk':
+                                        result_str = parse_wrk_result(experiment_id)
+                                        print(result_str + '\n\n')
+                                        final_result = final_result + result_str + '\n'
+                                    else:
+                                        try:
+                                            cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]" | tail -1'
+                                            result = subprocess.run(
+                                                cmd,
+                                                shell=True,
+                                                stdout=subprocess.PIPE,
+                                                stderr=subprocess.STDOUT,
+                                                check=True,
+                                            ).stdout.decode()
+                                            if result == '':
+                                                result = '[RESULT] N/A\n'
+                                            print('[RESULT]' + f'{experiment_id}, {NUM_BACKENDS}, {conn}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n},{result[len("[RESULT]"):]}' + '\n\n')
+                                            final_result = final_result + f'{experiment_id}, {NUM_BACKENDS}, {conn}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n},{result[len("[RESULT]"):]}'
+                                        except subprocess.CalledProcessError as e:
+                                            # Handle the exception for a failed command execution
+                                            print("EXPERIMENT FAILED\n\n")
 
-                                    except Exception as e:
-                                        # Handle any other unexpected exceptions
-                                        print("EXPERIMENT FAILED\n\n")
-                                
-                                kill_procs()
-                                time.sleep(7)
-                                if TCPDUMP == True:
-                                    parse_tcpdump(experiment_id)
-                                    # print("Parsing pcap file is done, finishing test here.\n\n")
+                                        except Exception as e:
+                                            # Handle any other unexpected exceptions
+                                            print("EXPERIMENT FAILED\n\n")
+                                    
+                                    kill_procs()
+                                    time.sleep(7)
+                                    if TCPDUMP == True:
+                                        parse_tcpdump(experiment_id)
+                                        # print("Parsing pcap file is done, finishing test here.\n\n")
 
-                                    # exit()
+                                        # exit()
 
-                                if EVAL_MIG_DELAY == True:
-                                    parse_mig_delay(experiment_id)
+                                    if EVAL_MIG_DELAY == True:
+                                        parse_mig_delay(experiment_id)
 
-                                if EVAL_POLL_INTERVAL == True:
-                                    parse_poll_interval(experiment_id)
-                                
-                                if EVAL_LATENCY_TRACE == True:
-                                    parse_latency_trace(experiment_id)
+                                    if EVAL_POLL_INTERVAL == True:
+                                        parse_poll_interval(experiment_id)
+                                    
+                                    if EVAL_LATENCY_TRACE == True:
+                                        parse_latency_trace(experiment_id)
 
-                                if EVAL_SERVER_REPLY == True:
-                                    parse_server_reply(experiment_id)
+                                    if EVAL_SERVER_REPLY == True:
+                                        parse_server_reply(experiment_id)
 
-                                if EVAL_RPS_SIGNAL == True:
-                                    parse_rps_signal(experiment_id)
-                                
-                                if EVAL_MIG_CPU_OVHD == True:
-                                    parse_mig_cpu_ovhd(experiment_id)
+                                    if EVAL_RPS_SIGNAL == True:
+                                        parse_rps_signal(experiment_id)
+                                    
+                                    if EVAL_MIG_CPU_OVHD == True:
+                                        parse_mig_cpu_ovhd(experiment_id)
                                     
                                 
 
@@ -718,14 +730,14 @@ def run_compile():
     for feat in FEATURES:
         features += feat + ','
 
-    if SERVER_APP == 'http-server':
-        return os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-examples-rust")
-    elif SERVER_APP == 'redis-server':
+    # if SERVER_APP == 'http-server':
+    os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-examples-rust")
+    if SERVER_APP == 'redis-server':
         clean = 'make clean-redis &&' if len(sys.argv) > 2 and sys.argv[2] == 'clean' else ''
         return os.system(f'cd {CAPYBARA_PATH} && {clean} EXAMPLE_FEATURES={features} REDIS_LOG={REDIS_LOG} make redis-server{mig}')
-    else:
-        print(f'Invalid server app: {SERVER_APP}')
-        exit(1)
+    # else:
+    #     print(f'Invalid server app: {SERVER_APP}')
+    #     exit(1)
 
 
 if __name__ == '__main__':

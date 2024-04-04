@@ -795,7 +795,13 @@ impl InetStack {
 
         // #[cfg(feature = "tcp-migration")]
         // let was_runtime_polled = self.poll_runtime_tcpmig();
-        //self.prev_time = chrono::Local::now().time();
+        // self.prev_time = chrono::Local::now().time();
+        
+        // Inho: After using a single RX queue, 
+        // Redis shows poor tail latency without this on for some reason. 
+        // So, purposely add this line for eval.  
+        self.poll_runtime_no_scheduler_poll();
+
 
         {
             #[cfg(feature = "profiler")]
@@ -817,13 +823,12 @@ impl InetStack {
         
             // If overloaded, start migrations.
             /* comment out this for recv_queue_len vs mig_lat eval */
-            // #[cfg(not(feature = "manual-tcp-migration"))]
-            // if let Some(conns_to_migrate) = self.ipv4.tcp.connections_to_migrate() {
-            //     for conn in conns_to_migrate {
-            //         // capy_time_log!("INIT_MIG,({})", conn.1);
-            //         self.ipv4.tcp.initiate_migration(conn);
-            //     }
-            // }
+            #[cfg(not(feature = "manual-tcp-migration"))]
+            if let Some(conns_to_migrate) = self.ipv4.tcp.connections_to_reactively_migrate() {
+                for conn in conns_to_migrate {
+                    self.ipv4.tcp.initiate_migration(conn);
+                }
+            }
             /* comment out this for recv_queue_len vs mig_lat eval */
         }
 

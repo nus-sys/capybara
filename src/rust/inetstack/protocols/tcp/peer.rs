@@ -163,7 +163,7 @@ pub struct Inner {
     #[cfg(feature = "tcp-migration")]
     tcpmig_poll_state: Rc<TcpmigPollState>,
     #[cfg(feature = "tcp-migration")]
-    min_threshold: f64,
+    min_threshold: usize,
     #[cfg(feature = "tcp-migration")]
     rps_threshold: f64,
     #[cfg(feature = "tcp-migration")]
@@ -381,6 +381,7 @@ impl TcpPeer {
         {
             // Process buffered packets.
             if let Some(buffered) = inner.tcpmig.close_active_migration(remote) {
+                capy_time_log!("CONN_ACCEPTED,({})", remote);
                 for (mut hdr, data) in buffered {
                     capy_log_mig!("start receiving target-buffered packets into the CB");
                     cb.receive(&mut hdr, data);
@@ -425,7 +426,7 @@ impl TcpPeer {
         if inner.established.insert(key, established).is_some() {
             panic!("duplicate queue descriptor in established sockets table");
         }
-        capy_time_log!("CONN_ACCEPTED,({})", remote);
+        
         Poll::Ready(Ok(new_qd))
     }
 
@@ -655,8 +656,8 @@ impl Inner {
             tcpmig_poll_state,
             #[cfg(feature = "tcp-migration")]
             min_threshold: std::env::var("MIN_THRESHOLD")
-                .unwrap_or_else(|_| String::from("0.2"))
-                .parse::<f64>()
+                .unwrap_or_else(|_| String::from("100"))
+                .parse::<usize>()
                 .expect("Invalid MIN_TOTAL_LOAD_FOR_MIG value"),
             #[cfg(feature = "tcp-migration")]
             rps_threshold: std::env::var("RPS_THRESHOLD")
@@ -850,7 +851,6 @@ impl TcpPeer {
 
             let sum = NetworkEndian::read_u32(&buf[12..16]) as usize;
             let individual = NetworkEndian::read_u32(&buf[16..20]) as usize;
-            let min_threshold = (sum as f64 * inner.min_threshold) as usize;
             let threshold = (sum as f64 * inner.rps_threshold) as usize;
             let threshold_epsilon = (sum as f64 * (inner.rps_threshold + inner.threshold_epsilon)) as usize;
             
@@ -858,12 +858,11 @@ impl TcpPeer {
             capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
             // self.inner.borrow().rps_stats.print_bucket_status();
             #[cfg(not(feature = "manual-tcp-migration"))]
-            if sum > min_threshold && individual > threshold_epsilon {
+            if sum > inner.min_threshold && individual > threshold_epsilon {
                 inner.rps_stats.set_threshold(threshold);
                 if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
                     drop(inner);
                     for conn in conns_to_migrate {
-                        capy_time_log!("START_MIG");
                         self.initiate_migration(conn);
                     }
                 }
@@ -882,7 +881,7 @@ impl TcpPeer {
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
         // capy_profile!("prepare");
-        capy_log_mig!("INIT MIG");
+        capy_time_log!("INIT_MIG,({})", conn.1);
 
         let mut inner = self.inner.borrow_mut();
         let qd = *inner.qds.get(&conn).expect("no QD found for connection");
@@ -947,8 +946,8 @@ impl TcpPeer {
     }
 
     #[cfg(not(feature = "manual-tcp-migration"))]
-    pub fn connections_to_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
-        self.inner.borrow_mut().recv_queue_stats.connections_to_migrate()
+    pub fn connections_to_reactively_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
+        self.inner.borrow_mut().recv_queue_stats.connections_to_reactively_migrate()
     }
 
     pub fn global_recv_queue_length(&self) -> usize {

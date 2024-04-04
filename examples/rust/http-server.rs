@@ -216,15 +216,17 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         };
         
         // Assume request has been overwritten with statistics.
-        response[0..PREFILLED_METADATA_SIZE].copy_from_slice(&data[0..PREFILLED_METADATA_SIZE]);
-
-        // Add delta.
-        let now: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
-        let then = u64::from_be_bytes(data[8..16].try_into().unwrap());
-        let delta: u32 = now.checked_sub(then).unwrap_or(0).try_into().expect("delta > 4.29 seconds");
-        response[PREFILLED_METADATA_SIZE..METADATA_SIZE].copy_from_slice(&delta.to_be_bytes());
-
-        server_log!("PUSH: ({}) {}", u32::from_be_bytes(data[4..8].try_into().unwrap()), std::str::from_utf8(&response[METADATA_SIZE..]).unwrap());
+        if data.len() >= 16 {
+            response[0..PREFILLED_METADATA_SIZE].copy_from_slice(&data[0..PREFILLED_METADATA_SIZE]);
+            
+            // Add delta.
+            let now: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
+            let then = u64::from_be_bytes(data[8..16].try_into().unwrap());
+            let delta: u32 = now.checked_sub(then).unwrap_or(0).try_into().expect("delta > 4.29 seconds");
+            response[PREFILLED_METADATA_SIZE..METADATA_SIZE].copy_from_slice(&delta.to_be_bytes());
+        
+            server_log!("PUSH: ({}) {}", u32::from_be_bytes(data[4..8].try_into().unwrap()), std::str::from_utf8(&response[METADATA_SIZE..]).unwrap());
+        }
         libos.push2(qd, &response).expect("push success")
     }
 }

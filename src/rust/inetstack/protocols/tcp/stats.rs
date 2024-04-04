@@ -37,7 +37,8 @@ pub struct Stats {
     /// Global recv stat threshold above which migration is triggered.
     threshold: usize,
     /// TEMP TEST: Max number of connections to migrate for this test.
-    max_migrations: Option<i32>,
+    max_proactive_migrations: Option<i32>,
+    max_reactive_migrations: Option<i32>,
 }
 
 #[derive(Debug)]
@@ -122,11 +123,14 @@ impl Stats {
             buckets: BucketList::new(),
             handles: Vec::new(),
             
-            threshold: std::env::var("RECV_QUEUE_THRESHOLD").expect("No RECV_QUEUE_THRESHOLD specified")
-                .parse().expect("RECV_QUEUE_THRESHOLD should be a number"),
+            threshold: std::env::var("RECV_QUEUE_LEN_THRESHOLD").expect("No RECV_QUEUE_LEN_THRESHOLD specified")
+                .parse().expect("RECV_QUEUE_LEN_THRESHOLD should be a number"),
 
-            max_migrations: std::env::var("MAX_STAT_MIGS")
-                .map(|e| Some(e.parse().expect("MAX_STAT_MIGS should be a number")))
+            max_proactive_migrations: std::env::var("MAX_PROACTIVE_MIGS")
+                .map(|e| Some(e.parse().expect("MAX_PROACTIVE_MIGS should be a number")))
+                .unwrap_or(None),
+            max_reactive_migrations: std::env::var("MAX_REACTIVE_MIGS")
+                .map(|e| Some(e.parse().expect("MAX_REACTIVE_MIGS should be a number")))
                 .unwrap_or(None),
         }
     }
@@ -158,7 +162,7 @@ impl Stats {
     /// Extracts connections so that the global stat goes below the threshold.
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_proactively_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
-        if let Some(val) = self.max_migrations {
+        if let Some(val) = self.max_proactive_migrations {
             if val <= 0 {
                 return None;
             }
@@ -192,7 +196,7 @@ impl Stats {
                 conns.push(handle.inner.conn);
                 should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
                 
-                if let Some(val) = self.max_migrations.as_mut() {
+                if let Some(val) = self.max_proactive_migrations.as_mut() {
                     *val -= 1;
                     if *val <= 0 {
                         break 'outer;
@@ -220,9 +224,8 @@ impl Stats {
     /// Extracts connections so that the global recv stat goes below the threshold.
     /// Returns `None` if no connections need to be migrated.
     #[cfg(not(feature = "manual-tcp-migration"))]
-    pub fn connections_to_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
-        return None;
-        if let Some(val) = self.max_migrations {
+    pub fn connections_to_reactively_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
+        if let Some(val) = self.max_reactive_migrations {
             if val <= 0 {
                 return None;
             }
@@ -260,7 +263,7 @@ impl Stats {
                 conns.push(handle.inner.conn);
                 should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
                 
-                if let Some(val) = self.max_migrations.as_mut() {
+                if let Some(val) = self.max_reactive_migrations.as_mut() {
                     *val -= 1;
                     if *val <= 0 {
                         break 'outer;
