@@ -168,6 +168,8 @@ pub struct Inner {
     rps_threshold: f64,
     #[cfg(feature = "tcp-migration")]
     threshold_epsilon: f64,
+    #[cfg(feature = "tcp-migration")]
+    reactive_migration_enabled: bool,
 
     #[cfg(feature = "server-reply-analysis")]
     listening_port: u16,
@@ -669,6 +671,8 @@ impl Inner {
                 .unwrap_or_else(|_| String::from("0.05"))
                 .parse::<f64>()
                 .expect("Invalid THRESHOLD_EPSILON value"),
+            #[cfg(feature = "tcp-migration")]
+            reactive_migration_enabled: false,
 
             #[cfg(feature = "server-reply-analysis")]
             listening_port: 0,
@@ -860,12 +864,15 @@ impl TcpPeer {
             #[cfg(not(feature = "manual-tcp-migration"))]
             if sum > inner.min_threshold && individual > threshold_epsilon {
                 inner.rps_stats.set_threshold(threshold);
+                inner.reactive_migration_enabled = true;
                 if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
                     drop(inner);
                     for conn in conns_to_migrate {
                         self.initiate_migration(conn);
                     }
                 }
+            } else {
+                inner.reactive_migration_enabled = false;
             }
         }
         self.inner.borrow_mut().rps_stats.reset_stats();
@@ -947,7 +954,12 @@ impl TcpPeer {
 
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_reactively_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
-        self.inner.borrow_mut().recv_queue_stats.connections_to_reactively_migrate()
+        let mut inner = self.inner.borrow_mut();
+        if inner.reactive_migration_enabled {
+            self.inner.borrow_mut().recv_queue_stats.connections_to_reactively_migrate()
+        } else {
+            None
+        }
     }
 
     pub fn global_recv_queue_length(&self) -> usize {
@@ -976,12 +988,25 @@ impl TcpPeer {
 }
 
 #[cfg(feature = "tcp-migration")]
+pub struct TcpMigContext {
+    pub is_under_load: bool,
+}
+
+#[cfg(feature = "tcp-migration")]
 impl Inner {
     fn receive_tcpmig(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         use super::super::tcpmig::TcpmigReceiveStatus;
 
-        match self.tcpmig.receive(ip_hdr, buf)? {
-            TcpmigReceiveStatus::Ok | TcpmigReceiveStatus::MigrationCompleted => {},
+        let ctx = TcpMigContext {
+            // Avg queue len > 12.5% of threshold.
+            is_under_load: self.recv_queue_stats.avg_global_stat() > (self.recv_queue_stats.threshold() >> 3),
+        };
+
+        match self.tcpmig.receive(ip_hdr, buf, ctx)? {
+            TcpmigReceiveStatus::Ok |
+                TcpmigReceiveStatus::Rejected |
+                TcpmigReceiveStatus::MigrationCompleted => {},
+            
             TcpmigReceiveStatus::PrepareMigrationAcked(qd) => {
                 // Set the qd to be freed.
                 self.tcpmig_poll_state.set_qd(qd);

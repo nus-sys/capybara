@@ -291,8 +291,8 @@ impl TryFrom<u8> for MigrationStage {
     fn try_from(value: u8) -> Result<Self, u8> {
         use MigrationStage::*;
         match value {
-            0 => Ok(Rejected),
-            1 => Ok(None),
+            0 => Ok(None),
+            1 => Ok(Rejected),
             2 => Ok(PrepareMigration),
             3 => Ok(PrepareMigrationAck),
             4 => Ok(ConnectionState),

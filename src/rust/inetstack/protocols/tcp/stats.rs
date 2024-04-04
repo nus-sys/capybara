@@ -143,6 +143,10 @@ impl Stats {
         self.avg_global_stat.get()
     }
 
+    pub fn threshold(&self) -> usize {
+        self.threshold
+    }
+
     pub fn update_threshold(&mut self, global_stat_sum: usize) {
         // TEMP
         const SERVER_COUNT: usize = 2;

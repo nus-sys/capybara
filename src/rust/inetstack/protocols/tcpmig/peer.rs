@@ -8,6 +8,7 @@
 use super::{constants::*, ApplicationState};
 use super::segment::TcpMigSegment;
 use super::{segment::TcpMigHeader, active::ActiveMigration};
+use crate::inetstack::protocols::tcp::peer::TcpMigContext;
 use crate::{
     inetstack::protocols::{
             ipv4::Ipv4Header, 
@@ -56,6 +57,7 @@ use crate::capy_log_mig;
 
 pub enum TcpmigReceiveStatus {
     Ok,
+    Rejected,
     PrepareMigrationAcked(QDesc),
     StateReceived(TcpState),
     MigrationCompleted,
@@ -151,7 +153,7 @@ impl TcpMigPeer {
     }
 
     /// Consumes the payload from a buffer.
-    pub fn receive(&mut self, ipv4_hdr: &Ipv4Header, buf: Buffer) -> Result<TcpmigReceiveStatus, Fail> {
+    pub fn receive(&mut self, ipv4_hdr: &Ipv4Header, buf: Buffer, ctx: TcpMigContext) -> Result<TcpmigReceiveStatus, Fail> {
         // Parse header.
         let (hdr, buf) = TcpMigHeader::parse(ipv4_hdr, buf)?;
         capy_log_mig!("\n\n[RX] TCPMig");
@@ -174,7 +176,6 @@ impl TcpMigPeer {
             capy_log_mig!("I'm target {}", target);
 
             capy_time_log!("RECV_PREPARE_MIG,({})", remote);
-            
 
             let active = ActiveMigration::new(
                 self.rt.clone(),
@@ -207,7 +208,7 @@ impl TcpMigPeer {
 
 
         capy_log_mig!("Active migration {:?}", remote);
-        let mut status = active.process_packet(ipv4_hdr, hdr, buf)?;
+        let mut status = active.process_packet(ipv4_hdr, hdr, buf, ctx)?;
         match status {
             TcpmigReceiveStatus::PrepareMigrationAcked(..) => (),
             TcpmigReceiveStatus::StateReceived(ref mut state) => {
@@ -243,6 +244,11 @@ impl TcpMigPeer {
                 
                 //self.is_currently_migrating = false;
                 capy_log_mig!("CONN_STATE_ACK ({})\n=======  MIGRATION COMPLETE! =======\n\n", remote);
+            },
+            TcpmigReceiveStatus::Rejected => {
+                // Remove active migration.
+                entry.remove();
+                capy_log_mig!("Removed rejected active migration: {remote}");
             },
             TcpmigReceiveStatus::Ok => (),
             TcpmigReceiveStatus::HeartbeatResponse(..) => panic!("heartbeat not handled earlier"),
