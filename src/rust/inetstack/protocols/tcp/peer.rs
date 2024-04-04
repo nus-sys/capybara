@@ -956,7 +956,7 @@ impl TcpPeer {
     pub fn connections_to_reactively_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
         let mut inner = self.inner.borrow_mut();
         if inner.reactive_migration_enabled {
-            self.inner.borrow_mut().recv_queue_stats.connections_to_reactively_migrate()
+            inner.recv_queue_stats.connections_to_reactively_migrate()
         } else {
             None
         }
