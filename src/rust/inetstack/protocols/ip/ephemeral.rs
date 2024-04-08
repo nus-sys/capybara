@@ -33,6 +33,11 @@ impl EphemeralPorts {
             ports.push(port);
         }
         ports.shuffle(rng);
+
+        if let Ok(id) = std::env::var("CORE_ID").map(|id| id.parse::<u16>().expect("CORE_ID not an integer")) {
+            ports.push(9999 + id);
+        }
+
         Self { ports }
     }
 

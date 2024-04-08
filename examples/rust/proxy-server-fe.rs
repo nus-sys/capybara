@@ -318,6 +318,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         let client_qd = i32::from_be_bytes(buf[0..4].try_into().unwrap());
                         let buf = &buf[4..];
                         qts.push(libos.push2(client_qd.into(), buf).unwrap());
+                        server_log!("Sending response to client ({client_qd}): {}", std::str::from_utf8(buf).unwrap());
                         continue;
                     }
 
@@ -327,6 +328,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     tmpbuf[0..4].copy_from_slice(&i32::to_be_bytes(qd.into()));
                     tmpbuf[4..4 + buf.len()].copy_from_slice(buf);
                     qts.push(libos.push2(be_qd, &tmpbuf[0..4 + buf.len()]).unwrap());
+                    server_log!("Sending response to BE ({be_qd:?}): {}", std::str::from_utf8(buf).unwrap());
                 },
 
                 OperationResult::Failed(e) => {

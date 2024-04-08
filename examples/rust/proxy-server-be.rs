@@ -313,6 +313,10 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
                 // TCP Pop.
                 OperationResult::Pop(_, buf) => {
                     server_log!("POP complete");
+                    
+                    // Re-arm POP.
+                    qts.push(libos.pop(qd).expect("pop qtoken"));
+
                     let sent = push_data_and_run(&mut libos, qd, &mut buffer, buf, &mut qts);
                     server_log!("Issued {sent} PUSHes");
                 },

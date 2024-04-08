@@ -24,17 +24,17 @@ NODE9_MAC = '08:c0:eb:b6:c5:ad'
 ################## BUILD CONFIG #####################
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
-    'tcp-migration',
+    # 'tcp-migration',
     # 'manual-tcp-migration',
-    # 'capy-log',
+    'capy-log',
     # 'capy-profile',
-    'capy-time-log',
-    'server-reply-analysis',
+    #'capy-time-log',
+    #'server-reply-analysis',
 ]
 
 ################## TEST CONFIG #####################
 NUM_BACKENDS = 2
-SERVER_APP = 'http-server' # 'http-server', 'prism', 'redis-server'
+SERVER_APP = 'proxy-server' # 'http-server', 'prism', 'redis-server', 'proxy-server'
 CLIENT_APP = 'caladan' # 'wrk', 'caladan'
 NUM_THREADS = [1] # for wrk load generator
 REPEAT_NUM = 1
@@ -42,9 +42,9 @@ REPEAT_NUM = 1
 TCPDUMP = False
 EVAL_MIG_DELAY = False
 EVAL_POLL_INTERVAL = False
-EVAL_LATENCY_TRACE = True
-EVAL_SERVER_REPLY = True
-EVAL_RPS_SIGNAL = True
+EVAL_LATENCY_TRACE = False
+EVAL_SERVER_REPLY = False
+EVAL_RPS_SIGNAL = False
 EVAL_MIG_CPU_OVHD = False
 
 ################## WORKLOAD GENERATOR CONFIG #####################
@@ -78,14 +78,14 @@ REDIS_LOG = 0
 
 
 ### CALADAN ###
-CLIENT_PPS = [i for i in range(10, 10 + 1, 50000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [100] #[i for i in range(10, 10 + 1, 50000)]#[i for i in range(100000, 1_300_001, 100000)]
 import workload_spec_generator
-LOADSHIFTS = workload_spec_generator.main()
-LOADSHIFTS = '90000:30000,270000:20000,450000:20000,630000:20000,810000:30000/90000:120000'
-# LOADSHIFTS = ''
-ZIPF_ALPHA = '1.2' # 0.9
+#LOADSHIFTS = workload_spec_generator.main()
+#LOADSHIFTS = '90000:30000,270000:20000,450000:20000,630000:20000,810000:30000/90000:120000'
+LOADSHIFTS = ''
+ZIPF_ALPHA = ''#'1.2' # 0.9
 ONOFF = '0' # '0', '1'
-NUM_CONNECTIONS = [100]
+NUM_CONNECTIONS = [10]
 RUNTIME = 1
 
 #####################
