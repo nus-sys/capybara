@@ -57,7 +57,9 @@ use crate::capy_log_mig;
 
 pub enum TcpmigReceiveStatus {
     Ok,
-    Rejected,
+    SentReject,
+    Rejected(SocketAddrV4, SocketAddrV4),
+    ReturnedBySwitch(SocketAddrV4, SocketAddrV4),
     PrepareMigrationAcked(QDesc),
     StateReceived(TcpState),
     MigrationCompleted,
@@ -196,7 +198,7 @@ impl TcpMigPeer {
                 // In this case, remove the active migration.
                 capy_log_mig!("It returned back to itself, maybe it's the current-min-workload server");
                 self.active_migrations.remove(&remote); 
-                return Ok(TcpmigReceiveStatus::Ok)
+                return Ok(TcpmigReceiveStatus::ReturnedBySwitch(hdr.origin, hdr.client));
             }
         }
 
@@ -245,13 +247,14 @@ impl TcpMigPeer {
                 //self.is_currently_migrating = false;
                 capy_log_mig!("CONN_STATE_ACK ({})\n=======  MIGRATION COMPLETE! =======\n\n", remote);
             },
-            TcpmigReceiveStatus::Rejected => {
+            TcpmigReceiveStatus::Rejected(..) | TcpmigReceiveStatus::SentReject => {
                 // Remove active migration.
                 entry.remove();
                 capy_log_mig!("Removed rejected active migration: {remote}");
             },
             TcpmigReceiveStatus::Ok => (),
             TcpmigReceiveStatus::HeartbeatResponse(..) => panic!("heartbeat not handled earlier"),
+            TcpmigReceiveStatus::ReturnedBySwitch(..) => panic!("ReturnedBySwitch returned by active migration"),
         };
 
         Ok(status)

@@ -1003,9 +1003,25 @@ impl Inner {
         };
 
         match self.tcpmig.receive(ip_hdr, buf, ctx)? {
-            TcpmigReceiveStatus::Ok |
-                TcpmigReceiveStatus::Rejected |
-                TcpmigReceiveStatus::MigrationCompleted => {},
+            TcpmigReceiveStatus::Ok | TcpmigReceiveStatus::MigrationCompleted | TcpmigReceiveStatus::SentReject => {},
+
+            TcpmigReceiveStatus::Rejected(local, remote) => {
+                match self.established.get(&(local, remote)) {
+                    Some(s) => s.cb.enable_stats(&mut self.recv_queue_stats, &mut self.rps_stats),
+                    None => panic!("migration rejected for non-existent connection: {:?}", (local, remote)),
+                }
+            },
+
+            TcpmigReceiveStatus::ReturnedBySwitch(local, remote) => {
+                //#[cfg(not(feature = "manual-tcp-migration"))]
+                match self.established.get(&(local, remote)) {
+                    Some(s) => s.cb.enable_stats(&mut self.recv_queue_stats, &mut self.rps_stats),
+                    None => panic!("migration rejected for non-existent connection: {:?}", (local, remote)),
+                }
+
+                //#[cfg(feature = "manual-tcp-migration")]
+                
+            },
             
             TcpmigReceiveStatus::PrepareMigrationAcked(qd) => {
                 // Set the qd to be freed.

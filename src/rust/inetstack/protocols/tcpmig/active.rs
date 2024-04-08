@@ -130,7 +130,7 @@ impl ActiveMigration {
                             capy_log_mig!("[TX] MIG_REJECTED ({}, {})", hdr.origin, hdr.client);
                             capy_time_log!("SEND_MIG_REJECTED,({})", hdr.client);
                             self.send(hdr, empty_buffer());
-                            return Ok(TcpmigReceiveStatus::Rejected);
+                            return Ok(TcpmigReceiveStatus::SentReject);
                         } else {
                             let mut hdr = next_header(hdr, MigrationStage::PrepareMigrationAck);
                             hdr.flag_load = true;
@@ -160,6 +160,10 @@ impl ActiveMigration {
 
                         capy_log_mig!("PREPARE_MIG_ACK => ({}, {}) is PREPARED", hdr.origin, hdr.client);
                         return Ok(TcpmigReceiveStatus::PrepareMigrationAcked(self.qd.expect("no qd on origin side")));
+                    },
+                    MigrationStage::Rejected => {
+                        capy_time_log!("RECV_REJECTED,({})", hdr.client);
+                        return Ok(TcpmigReceiveStatus::Rejected(hdr.origin, hdr.client));
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected PREPARE_MIGRATION_ACK or REJECTED"))
                 }

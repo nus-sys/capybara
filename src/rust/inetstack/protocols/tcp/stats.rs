@@ -467,6 +467,11 @@ impl StatsHandle {
     /// Adds handle to list of polled stats handles.
     pub fn enable(&self, stats: &mut Stats, initial_val: usize) {
         capy_log!("Enable stats for {:?}", self.inner.conn);
+
+        if let Stat::Enabled(..) = self.inner.stat.get() {
+            panic!("Enabling already enabled stat");
+        }
+
         self.inner.stat.set(Stat::Enabled(initial_val));
 
         // Add to handles.
