@@ -827,7 +827,7 @@ impl InetStack {
             #[cfg(not(feature = "manual-tcp-migration"))]
             if let Some(conns_to_migrate) = self.ipv4.tcp.connections_to_reactively_migrate() {
                 for conn in conns_to_migrate {
-                    self.ipv4.tcp.initiate_migration(conn);
+                    self.ipv4.tcp.initiate_migration_by_addr(conn);
                 }
             }
             /* comment out this for recv_queue_len vs mig_lat eval */
@@ -942,7 +942,7 @@ impl InetStack {
 
     #[cfg(feature = "manual-tcp-migration")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
-        self.ipv4.tcp.initiate_migration(qd)
+        self.ipv4.tcp.initiate_migration_by_qd(qd)
     }
 
     pub fn global_recv_queue_length(&self) -> usize {

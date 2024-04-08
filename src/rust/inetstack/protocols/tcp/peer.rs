@@ -868,7 +868,7 @@ impl TcpPeer {
                 if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
                     drop(inner);
                     for conn in conns_to_migrate {
-                        self.initiate_migration(conn);
+                        self.initiate_migration_by_addr(conn);
                     }
                 }
             } else {
@@ -885,56 +885,12 @@ impl TcpPeer {
         inner.tcpmig.send_tcp_state(state);
     }
 
-    #[cfg(not(feature = "manual-tcp-migration"))]
-    pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
-        // capy_profile!("prepare");
-        capy_time_log!("INIT_MIG,({})", conn.1);
-
-        let mut inner = self.inner.borrow_mut();
-        let qd = *inner.qds.get(&conn).expect("no QD found for connection");
-
-        // Disable stats for this connection.
-        inner.established.get(&conn).expect("connection not in established table")
-            .cb.disable_stats();
-
-        inner.tcpmig.initiate_migration(conn, qd);
+    pub fn initiate_migration_by_addr(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
+        self.inner.borrow_mut().initiate_migration_by_addr(conn)
     }
     
-    #[cfg(feature = "manual-tcp-migration")]
-    pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
-        // capy_profile!("prepare");
-        capy_log_mig!("INIT MIG");
-        // capy_time_log!("INIT_MIG");
-        let mut inner = self.inner.borrow_mut();
-        let conn = match inner.sockets.get(&qd) {
-            None => {
-                debug!("No entry in `sockets` for fd: {:?}", qd);
-                return Err(Fail::new(EBADF, "socket does not exist"));
-            },
-            Some(Socket::Established { local, remote }) => {
-                (*local, *remote)
-            },
-            Some(..) => {
-                return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
-            },
-        };
-
-        // Disable stats for this connection.
-        inner.established.get(&conn).expect("connection not in established table")
-            .cb.disable_stats();
-
-        inner.tcpmig.initiate_migration(conn, qd);
-        Ok(())
-
-        /* NON-CONCURRENT MIGRATION */
-        /* if(conn.1.port() == 203){
-            capy_time_log!("INIT_MIG"); 
-            inner.tcpmig.initiate_migration(conn, qd);
-            Ok(())
-        }else{
-            return Err(Fail::new(EBADF, "this connection is not for migration"));
-        } */
-        /* NON-CONCURRENT MIGRATION */
+    pub fn initiate_migration_by_qd(&mut self, qd: QDesc) -> Result<(), Fail> {
+        self.inner.borrow_mut().initiate_migration_by_qd(qd)
     }
 
     pub fn poll_stats(&mut self) {
@@ -1013,13 +969,15 @@ impl Inner {
             },
 
             TcpmigReceiveStatus::ReturnedBySwitch(local, remote) => {
-                //#[cfg(not(feature = "manual-tcp-migration"))]
+                #[cfg(not(feature = "manual-tcp-migration"))]
                 match self.established.get(&(local, remote)) {
                     Some(s) => s.cb.enable_stats(&mut self.recv_queue_stats, &mut self.rps_stats),
                     None => panic!("migration rejected for non-existent connection: {:?}", (local, remote)),
                 }
 
-                //#[cfg(feature = "manual-tcp-migration")]
+                // Re-initiate another migration if manual migration returned by switch.
+                #[cfg(feature = "manual-tcp-migration")]
+                self.initiate_migration_by_addr((local, remote));
                 
             },
             
@@ -1117,6 +1075,54 @@ impl Inner {
         };
 
         Ok(())
+    }
+
+    pub fn initiate_migration_by_addr(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
+        // capy_profile!("prepare");
+        capy_time_log!("INIT_MIG,({})", conn.1);
+
+        let qd = *self.qds.get(&conn).expect("no QD found for connection");
+
+        // Disable stats for this connection.
+        self.established.get(&conn).expect("connection not in established table")
+            .cb.disable_stats();
+
+        self.tcpmig.initiate_migration(conn, qd);
+    }
+    
+    pub fn initiate_migration_by_qd(&mut self, qd: QDesc) -> Result<(), Fail> {
+        // capy_profile!("prepare");
+        capy_log_mig!("INIT MIG");
+        // capy_time_log!("INIT_MIG");
+        let conn = match self.sockets.get(&qd) {
+            None => {
+                debug!("No entry in `sockets` for fd: {:?}", qd);
+                return Err(Fail::new(EBADF, "socket does not exist"));
+            },
+            Some(Socket::Established { local, remote }) => {
+                (*local, *remote)
+            },
+            Some(..) => {
+                return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
+            },
+        };
+
+        // Disable stats for this connection.
+        self.established.get(&conn).expect("connection not in established table")
+            .cb.disable_stats();
+
+        self.tcpmig.initiate_migration(conn, qd);
+        Ok(())
+
+        /* NON-CONCURRENT MIGRATION */
+        /* if(conn.1.port() == 203){
+            capy_time_log!("INIT_MIG"); 
+            inner.tcpmig.initiate_migration(conn, qd);
+            Ok(())
+        }else{
+            return Err(Fail::new(EBADF, "this connection is not for migration"));
+        } */
+        /* NON-CONCURRENT MIGRATION */
     }
 }
 
