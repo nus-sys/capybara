@@ -189,6 +189,8 @@ impl Stats {
             while let Some(handle) = bucket.pop() {
                 capy_log_mig!("Chose: {:#?}", handle);
 
+                handle.inner.bucket_list_position.set(None);
+
                 // Remove handle.
                 let handle_index = handle.inner.handles_index.get().unwrap();
                 self.handles.swap_remove(handle_index);
@@ -255,6 +257,8 @@ impl Stats {
         'outer: for bucket in iter {
             while let Some(handle) = bucket.pop() {
                 capy_log_mig!("Chose: {:#?}", handle);
+
+                handle.inner.bucket_list_position.set(None);
 
                 // Remove handle.
                 let handle_index = handle.inner.handles_index.get().unwrap();
@@ -468,11 +472,16 @@ impl StatsHandle {
     pub fn enable(&self, stats: &mut Stats, initial_val: usize) {
         capy_log!("Enable stats for {:?}", self.inner.conn);
 
-        if let Stat::Enabled(..) = self.inner.stat.get() {
+        let old_stat = self.inner.stat.get();
+
+        if let Stat::Enabled(..) = old_stat {
             panic!("Enabling already enabled stat");
         }
 
         self.inner.stat.set(Stat::Enabled(initial_val));
+
+        // Update global stat.
+        stats.global_stat += initial_val;
 
         // Add to handles.
         self.inner.handles_index.set(Some(stats.handles.len()));
@@ -481,8 +490,6 @@ impl StatsHandle {
         // Add to buckets.
         stats.buckets.insert(self, initial_val);
 
-        // Update global stat.
-        stats.global_stat += initial_val;
     }
 
     /// Marks handle for removal from stats.
