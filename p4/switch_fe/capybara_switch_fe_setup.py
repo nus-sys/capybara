@@ -252,20 +252,27 @@ def set_bcast(ports):
 
 
 p4 = bfrt.capybara_switch_fe.pipe
-num_backends = 2
+num_backends = 4
 
 ### Setup L2 learning
 sl2 = capybara_switch_fe(default_ttl=10000)
 sl2.setup()
 set_bcast([24, 32, 36])
 
-bfrt.pre.node.entry(MULTICAST_NODE_ID=10000, MULTICAST_RID=10000,
-    MULTICAST_LAG_ID=[], DEV_PORT=[24]).push()
-bfrt.pre.node.entry(MULTICAST_NODE_ID=10001, MULTICAST_RID=10001,
-    MULTICAST_LAG_ID=[], DEV_PORT=[24]).push()
-bfrt.pre.mgid.entry(MGID=2, MULTICAST_NODE_ID=[10000, 10001],
-        MULTICAST_NODE_L1_XID_VALID=[False, False],
-            MULTICAST_NODE_L1_XID=[0, 0]).push()
+
+for i in range(num_backends):
+    bfrt.pre.node.entry(MULTICAST_NODE_ID=10000 + i, MULTICAST_RID=10000 + i,
+        MULTICAST_LAG_ID=[], DEV_PORT=[24]).push()
+
+mcast_node_ids = [i for i in range(10000, 10000 + num_backends)]
+xid_valid_list = [False] * num_backends
+xid_list = [0] * num_backends
+# print(mcast_node_ids)
+# print(xid_valid_list)
+# print(xid_list)
+bfrt.pre.mgid.entry(MGID=2, MULTICAST_NODE_ID=mcast_node_ids,
+        MULTICAST_NODE_L1_XID_VALID=xid_valid_list,
+            MULTICAST_NODE_L1_XID=xid_list).push()
 
 
 # p4.Ingress.min_workload_mac_hi32.reg.mod(REGISTER_INDEX=0, f1=0x08c0ebb6)
@@ -283,6 +290,8 @@ for i in range(num_backends):
     p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + i)
 
 
+p4.Egress.reg_min_rps_server_port.mod(REGISTER_INDEX=0, f1=0)
+p4.Egress.reg_round_robin_server_port.mod(REGISTER_INDEX=0, f1=0)
 
 port_mirror_setup_file="/home/singtel/inho/Capybara/capybara/p4/includes/setup_port_mirror.py" # <== To Modify and Add
 exec(open(port_mirror_setup_file).read()) # <== To Add

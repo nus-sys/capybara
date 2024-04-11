@@ -29,7 +29,7 @@
 #define BE_IP 0x0a000109
 
 
-#define NUM_BACKENDS 2
+#define NUM_BACKENDS 4
 
 
 const int MAC_TABLE_SIZE        = 65536;
