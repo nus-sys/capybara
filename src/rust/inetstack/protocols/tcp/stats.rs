@@ -189,8 +189,6 @@ impl Stats {
             while let Some(handle) = bucket.pop() {
                 capy_log_mig!("Chose: {:#?}", handle);
 
-                handle.inner.bucket_list_position.set(None);
-
                 // Remove handle.
                 let handle_index = handle.inner.handles_index.get().unwrap();
                 self.handles.swap_remove(handle_index);
@@ -201,6 +199,9 @@ impl Stats {
                 self.global_stat -= handle.inner.stat.get().expect_enabled("bucket list stat not enabled");
                 conns.push(handle.inner.conn);
                 should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
+
+                handle.inner.bucket_list_position.set(None);
+                handle.inner.stat.set(Stat::Disabled);
                 
                 if let Some(val) = self.max_proactive_migrations.as_mut() {
                     *val -= 1;
@@ -302,7 +303,7 @@ impl Stats {
                     let position = inner.bucket_list_position.get();
     
                     // Remove from handles. It will not be polled anymore.
-                    self.handles.swap_remove(i);
+                    let handle = self.handles.swap_remove(i);
                     if i < self.handles.len() {
                         self.handles[i].inner.handles_index.set(Some(i));
                     }
@@ -312,8 +313,10 @@ impl Stats {
                         self.buckets.remove(position);
                     }
 
+                    handle.inner.stat.set(Stat::Disabled);
+
                     // Update global stat.
-                    self.global_stat -= len;
+                    self.global_stat = self.global_stat.checked_sub(len).unwrap();
 
                     continue;
                 },
@@ -483,13 +486,15 @@ impl StatsHandle {
         // Update global stat.
         stats.global_stat += initial_val;
 
-        // Add to handles.
-        self.inner.handles_index.set(Some(stats.handles.len()));
-        stats.handles.push(self.clone());
+        // If stat was only marked for disable, it hasn't been removed from the BucketList. No need to add another entry.
+        if let Stat::Disabled = old_stat {
+            // Add to handles.
+            self.inner.handles_index.set(Some(stats.handles.len()));
+            stats.handles.push(self.clone());
 
-        // Add to buckets.
-        stats.buckets.insert(self, initial_val);
-
+            // Add to buckets.
+            stats.buckets.insert(self, initial_val);
+        }
     }
 
     /// Marks handle for removal from stats.
