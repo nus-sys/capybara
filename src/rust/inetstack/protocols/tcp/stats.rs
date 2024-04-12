@@ -76,6 +76,8 @@ struct StatsHandleInner {
     bucket_list_position: Cell<Option<(usize, usize)>>,
     /// Index of this stat in the tracked handles list.
     handles_index: Cell<Option<usize>>,
+    /// The value of the stat right before it was disabled.
+    stat_right_before_disable: Cell<Option<usize>>,
 }
 
 pub struct RollingAverage {
@@ -174,6 +176,7 @@ impl Stats {
         let mut conns = ArrayVec::new();
 
         let mut should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
+        let mut removed_stat = 0;
         if should_end {
             return None;
         }
@@ -186,22 +189,12 @@ impl Stats {
         let iter = right.iter_mut().chain(left.iter_mut().rev());
 
         'outer: for bucket in iter {
-            while let Some(handle) = bucket.pop() {
+            for handle in bucket.iter().rev() {
                 capy_log_mig!("Chose: {:#?}", handle);
 
-                // Remove handle.
-                let handle_index = handle.inner.handles_index.get().unwrap();
-                self.handles.swap_remove(handle_index);
-                if handle_index < self.handles.len() {
-                    self.handles[handle_index].inner.handles_index.set(Some(handle_index));
-                }
-
-                self.global_stat -= handle.inner.stat.get().expect_enabled("bucket list stat not enabled");
+                removed_stat += handle.inner.stat.get().expect_enabled("bucket list stat not enabled");
                 conns.push(handle.inner.conn);
-                should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
-
-                handle.inner.bucket_list_position.set(None);
-                handle.inner.stat.set(Stat::Disabled);
+                should_end = self.global_stat - removed_stat <= self.threshold || conns.remaining_capacity() == 0;
                 
                 if let Some(val) = self.max_proactive_migrations.as_mut() {
                     *val -= 1;
@@ -232,6 +225,7 @@ impl Stats {
     /// Returns `None` if no connections need to be migrated.
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_reactively_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
+        return None;
         if let Some(val) = self.max_reactive_migrations {
             if val <= 0 {
                 return None;
@@ -248,6 +242,7 @@ impl Stats {
         let mut conns = ArrayVec::new();
 
         let mut should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
+        let mut removed_stat = 0;
         let base_index = std::cmp::min((self.global_stat - self.threshold) >> BUCKET_SIZE_LOG2, self.buckets.buckets.len());
 
         capy_log_mig!("Need to migrate: base_index({})\nbuckets: {:#?}", base_index, self.buckets.buckets);
@@ -256,21 +251,12 @@ impl Stats {
         let iter = right.iter_mut().chain(left.iter_mut().rev());
 
         'outer: for bucket in iter {
-            while let Some(handle) = bucket.pop() {
+            for handle in bucket.iter().rev() {
                 capy_log_mig!("Chose: {:#?}", handle);
 
-                handle.inner.bucket_list_position.set(None);
-
-                // Remove handle.
-                let handle_index = handle.inner.handles_index.get().unwrap();
-                self.handles.swap_remove(handle_index);
-                if handle_index < self.handles.len() {
-                    self.handles[handle_index].inner.handles_index.set(Some(handle_index));
-                }
-
-                self.global_stat -= handle.inner.stat.get().expect_enabled("bucket list stat not enabled");
+                removed_stat += handle.inner.stat.get().expect_enabled("bucket list stat not enabled");
                 conns.push(handle.inner.conn);
-                should_end = self.global_stat <= self.threshold || conns.remaining_capacity() == 0;
+                should_end = self.global_stat - removed_stat <= self.threshold || conns.remaining_capacity() == 0;
                 
                 if let Some(val) = self.max_reactive_migrations.as_mut() {
                     *val -= 1;
@@ -304,6 +290,7 @@ impl Stats {
     
                     // Remove from handles. It will not be polled anymore.
                     let handle = self.handles.swap_remove(i);
+                    handle.inner.handles_index.set(None);
                     if i < self.handles.len() {
                         self.handles[i].inner.handles_index.set(Some(i));
                     }
@@ -311,6 +298,7 @@ impl Stats {
                     // Remove from buckets.
                     if let Some(position) = position {
                         self.buckets.remove(position);
+                        handle.inner.bucket_list_position.set(None);
                     }
 
                     handle.inner.stat.set(Stat::Disabled);
@@ -446,6 +434,7 @@ impl StatsHandle {
                 stat_to_update: Cell::new(None),
                 bucket_list_position: Cell::new(None),
                 handles_index: Cell::new(None),
+                stat_right_before_disable: Cell::new(None),
             })
         }
     }
@@ -472,10 +461,16 @@ impl StatsHandle {
     }
 
     /// Adds handle to list of polled stats handles.
-    pub fn enable(&self, stats: &mut Stats, initial_val: usize) {
+    /// If `use_old_value` is true, old value is used if present.
+    /// Otherwise `initial_val` is used.
+    pub fn enable(&self, stats: &mut Stats, use_old_value: bool, initial_val: usize) {
         capy_log!("Enable stats for {:?}", self.inner.conn);
 
         let old_stat = self.inner.stat.get();
+
+        let initial_val = if use_old_value {
+            self.inner.stat_right_before_disable.take().unwrap_or(initial_val)
+        } else { initial_val };
 
         if let Stat::Enabled(..) = old_stat {
             panic!("Enabling already enabled stat");
@@ -503,6 +498,7 @@ impl StatsHandle {
             capy_log!("Mark stats disabled for {:?}", self.inner.conn);
             self.inner.stat.set(Stat::MarkedForDisable(val));
             self.inner.handles_index.set(None);
+            self.inner.stat_right_before_disable.set(Some(val));
         }
     }
 }

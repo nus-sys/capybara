@@ -170,6 +170,8 @@ pub struct Inner {
     threshold_epsilon: f64,
     #[cfg(feature = "tcp-migration")]
     reactive_migration_enabled: bool,
+    #[cfg(feature = "tcp-migration")]
+    last_rps_signal: Option<(usize, usize)>,
 
     #[cfg(feature = "server-reply-analysis")]
     listening_port: u16,
@@ -673,6 +675,8 @@ impl Inner {
                 .expect("Invalid THRESHOLD_EPSILON value"),
             #[cfg(feature = "tcp-migration")]
             reactive_migration_enabled: false,
+            #[cfg(feature = "tcp-migration")]
+            last_rps_signal: None,
 
             #[cfg(feature = "server-reply-analysis")]
             listening_port: 0,
@@ -850,17 +854,25 @@ impl TcpPeer {
     }
 
     pub fn receive_rps_signal(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
+        let sum = NetworkEndian::read_u32(&buf[12..16]) as usize;
+        let individual = NetworkEndian::read_u32(&buf[16..20]) as usize;
+        capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
+
+        self.inner.borrow_mut().last_rps_signal = Some((sum, individual));
+        Ok(())
+    }
+
+    pub fn rps_signal_action(&mut self) {
         {
             let mut inner = self.inner.borrow_mut();
+            let (sum, individual) = match inner.last_rps_signal.take() {
+                Some(val) => val,
+                None => return,
+            };
 
-            let sum = NetworkEndian::read_u32(&buf[12..16]) as usize;
-            let individual = NetworkEndian::read_u32(&buf[16..20]) as usize;
             let threshold = (sum as f64 * inner.rps_threshold) as usize;
             let threshold_epsilon = (sum as f64 * (inner.rps_threshold + inner.threshold_epsilon)) as usize;
             
-            // eprintln!("sum: {}, individual: {}", sum, individual);
-            capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
-            // self.inner.borrow().rps_stats.print_bucket_status();
             #[cfg(not(feature = "manual-tcp-migration"))]
             if sum > inner.min_threshold && individual > threshold_epsilon {
                 inner.rps_stats.set_threshold(threshold);
@@ -876,7 +888,6 @@ impl TcpPeer {
             }
         }
         self.inner.borrow_mut().rps_stats.reset_stats();
-        Ok(())
     }
 
     pub fn migrate_out_and_send(&mut self, qd: QDesc) {

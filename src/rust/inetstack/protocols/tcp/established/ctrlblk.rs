@@ -1220,8 +1220,8 @@ use super::super::stats::Stats;
 #[cfg(feature = "tcp-migration")]
 impl ControlBlock {
     pub fn enable_stats(&self, recv_queue_stats: &mut Stats, rps_stats: &mut Stats) {
-        self.receiver.recv_queue_stats.enable(recv_queue_stats, self.receiver.recv_queue.borrow().len());
-        self.receiver.rps_stats.enable(rps_stats, 0);
+        self.receiver.recv_queue_stats.enable(recv_queue_stats, false, self.receiver.recv_queue.borrow().len());
+        self.receiver.rps_stats.enable(rps_stats, true, 0);
     }
 
     pub fn disable_stats(&self) {

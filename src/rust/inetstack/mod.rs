@@ -821,6 +821,9 @@ impl InetStack {
         {
             // Poll stats updates.
             self.ipv4.tcp.poll_stats();
+
+            // Perform RPS Signal reception action.
+            self.ipv4.tcp.rps_signal_action();
         
             // If overloaded, start migrations.
             /* comment out this for recv_queue_len vs mig_lat eval */
