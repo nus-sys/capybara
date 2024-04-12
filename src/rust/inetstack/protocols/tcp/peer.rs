@@ -1103,8 +1103,7 @@ impl Inner {
     
     pub fn initiate_migration_by_qd(&mut self, qd: QDesc) -> Result<(), Fail> {
         // capy_profile!("prepare");
-        capy_log_mig!("INIT MIG");
-        // capy_time_log!("INIT_MIG");
+        // capy_log_mig!("INIT MIG");
         let conn = match self.sockets.get(&qd) {
             None => {
                 debug!("No entry in `sockets` for fd: {:?}", qd);
@@ -1117,6 +1116,7 @@ impl Inner {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
         };
+        capy_time_log!("INIT_MIG,({})", conn.1);
 
         // Disable stats for this connection.
         self.established.get(&conn).expect("connection not in established table")
@@ -1126,9 +1126,9 @@ impl Inner {
         Ok(())
 
         /* NON-CONCURRENT MIGRATION */
-        /* if(conn.1.port() == 203){
-            capy_time_log!("INIT_MIG"); 
-            inner.tcpmig.initiate_migration(conn, qd);
+        /* if conn.1.port() == 203 {
+            capy_time_log!("INIT_MIG,({})", conn.1);
+            self.tcpmig.initiate_migration(conn, qd);
             Ok(())
         }else{
             return Err(Fail::new(EBADF, "this connection is not for migration"));

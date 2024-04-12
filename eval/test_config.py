@@ -24,17 +24,17 @@ NODE9_MAC = '08:c0:eb:b6:c5:ad'
 ################## BUILD CONFIG #####################
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
-    # 'tcp-migration',
+    'tcp-migration',
     # 'manual-tcp-migration',
-    'capy-log',
+    # 'capy-log',
     # 'capy-profile',
-    #'capy-time-log',
-    #'server-reply-analysis',
+    'capy-time-log',
+    'server-reply-analysis',
 ]
 
 ################## TEST CONFIG #####################
-NUM_BACKENDS = 2
-SERVER_APP = 'proxy-server' # 'http-server', 'prism', 'redis-server', 'proxy-server'
+NUM_BACKENDS = 4
+SERVER_APP = 'http-server' # 'http-server', 'prism', 'redis-server', 'proxy-server'
 CLIENT_APP = 'caladan' # 'wrk', 'caladan'
 NUM_THREADS = [1] # for wrk load generator
 REPEAT_NUM = 1
@@ -42,9 +42,9 @@ REPEAT_NUM = 1
 TCPDUMP = False
 EVAL_MIG_DELAY = False
 EVAL_POLL_INTERVAL = False
-EVAL_LATENCY_TRACE = False
-EVAL_SERVER_REPLY = False
-EVAL_RPS_SIGNAL = False
+EVAL_LATENCY_TRACE = True
+EVAL_SERVER_REPLY = True
+EVAL_RPS_SIGNAL = True
 EVAL_MIG_CPU_OVHD = False
 
 ################## WORKLOAD GENERATOR CONFIG #####################
@@ -52,10 +52,10 @@ EVAL_MIG_CPU_OVHD = False
 PHASE_INTERVAL = 100
 TOTAL_TIME = 5000 # Always in multiples of PHASE_INTERVAL
 WARMUP_RPS = 100
-SERVER_CAPACITY_RPS = 200 # HTTP: 450 REDIS: 200
+SERVER_CAPACITY_RPS = 450 # HTTP: 450 REDIS: 200
 TOTAL_RPS_MAX = int(SERVER_CAPACITY_RPS * 0.7) * NUM_BACKENDS
 STRESS_FACTOR = 1 #1.25, 0.75 
-MAX_RPS_LIMITS = (150, 300)# HTTP: (400, 600) REDIS: (150, 300)
+MAX_RPS_LIMITS = (400, 600)# HTTP: (400, 600) REDIS: (150, 300)
 RPS_LOWER_LIMIT = 10
 DURATION_LIMITS = (5, 20)
 TRANSITION_LIMITS = (5, 10)
@@ -63,14 +63,14 @@ RAND_SEED = 2402271237
 
 ################## ENV VARS #####################
 ### SERVER ###
-RECV_QUEUE_LEN_THRESHOLD = 7
+RECV_QUEUE_LEN_THRESHOLD = 20
 MIG_DELAYS = [0]
 MAX_PROACTIVE_MIGS = [0] # set element to '' if you don't want to set this env var
-MAX_REACTIVE_MIGS = [100000] # set element to '' if you don't want to set this env var
-MIG_PER_N = [10]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
+MAX_REACTIVE_MIGS = [0] # set element to '' if you don't want to set this env var
+MIG_PER_N = [0]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
 SESSION_DATA_SIZE = 1024 * 0 # bytes
 MIN_THRESHOLD = 50 # K rps
-RPS_THRESHOLD = 0.6
+RPS_THRESHOLD = 0.35
 THRESHOLD_EPSILON = 0.1 
 
 CAPY_LOG = 'all' # 'all', 'mig'
@@ -78,14 +78,14 @@ REDIS_LOG = 0
 
 
 ### CALADAN ###
-CLIENT_PPS = [100] #[i for i in range(10, 10 + 1, 50000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(10, 10 + 1, 50000)]#[i for i in range(100000, 1_300_001, 100000)]
 import workload_spec_generator
-#LOADSHIFTS = workload_spec_generator.main()
-#LOADSHIFTS = '90000:30000,270000:20000,450000:20000,630000:20000,810000:30000/90000:120000'
-LOADSHIFTS = ''
-ZIPF_ALPHA = ''#'1.2' # 0.9
+LOADSHIFTS = workload_spec_generator.main()
+# LOADSHIFTS = '90000:10000,270000:10000,450000:10000,630000:10000,810000:10000/90000:50000/90000:50000/90000:50000'
+# LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
+ZIPF_ALPHA = '1.2' # 0.9
 ONOFF = '0' # '0', '1'
-NUM_CONNECTIONS = [10]
+NUM_CONNECTIONS = [100]
 RUNTIME = 1
 
 #####################
