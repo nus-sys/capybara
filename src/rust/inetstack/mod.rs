@@ -800,7 +800,7 @@ impl InetStack {
         // Inho: After using a single RX queue, 
         // Redis shows poor tail latency without this on for some reason. 
         // So, purposely add this line for eval.  
-        #[cfg(feature = "tcp-migration")]
+        // #[cfg(feature = "tcp-migration")]
         self.poll_runtime_no_scheduler_poll();
 
 
@@ -815,7 +815,7 @@ impl InetStack {
         //     self.poll_runtime();
         // }
         // #[cfg(not(feature = "tcp-migration"))]
-        self.poll_runtime();
+        // self.poll_runtime();
 
         #[cfg(feature = "tcp-migration")]
         {
