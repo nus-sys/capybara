@@ -717,12 +717,14 @@ impl InetStack {
         let was_runtime_polled = self.poll_runtime_tcpmig(); */
         //self.prev_time = chrono::Local::now().time();
 
+        #[cfg(feature = "tcp-migration")]
+        self.poll_runtime_no_scheduler_poll();
         {
             #[cfg(feature = "profiler")]
             timer!("inetstack::poll_bg_work::poll");
             self.scheduler.poll();
         }
-        
+        #[cfg(not(feature = "tcp-migration"))]
         self.poll_runtime();
 
         /* #[cfg(feature = "tcp-migration")]
@@ -852,7 +854,7 @@ impl InetStack {
 
         // The state of fast migrate also indicates if any migration occured.
         // self.tcpmig_poll_state.is_fast_migrate_enabled()
-    }
+    }*/
 
     /// Exactly the same as `poll_runtime()` but does not poll the scheduler after every packet.
     fn poll_runtime_no_scheduler_poll(&mut self) {
@@ -871,7 +873,7 @@ impl InetStack {
                 }
             }
         }
-    } */
+    }
 
     pub fn take_migrated_data(&mut self, qd: QDesc) -> Result<Option<Buffer>, Fail> {
         unimplemented!()

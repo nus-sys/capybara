@@ -586,7 +586,7 @@ impl DPDKRuntime {
             let mut udp_action: Vec<rte_flow_action> = vec![mem::zeroed(); 2];
             udp_action[0].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_QUEUE;
             let mut queue_action: rte_flow_action_queue = mem::zeroed();
-            queue_action.index = 2*i + 1;
+            queue_action.index = 2*i;
             udp_action[0].conf = &mut queue_action as *mut _ as *mut std::os::raw::c_void;
             udp_action[1].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_END;
             
