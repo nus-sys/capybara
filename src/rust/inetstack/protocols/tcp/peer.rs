@@ -980,14 +980,14 @@ impl Inner {
             },
 
             TcpmigReceiveStatus::ReturnedBySwitch(local, remote) => {
-                #[cfg(not(feature = "manual-tcp-migration"))]
-                match self.established.get(&(local, remote)) {
-                    Some(s) => s.cb.enable_stats(&mut self.recv_queue_stats, &mut self.rps_stats),
-                    None => panic!("migration rejected for non-existent connection: {:?}", (local, remote)),
-                }
+                // #[cfg(not(feature = "manual-tcp-migration"))]
+                // match self.established.get(&(local, remote)) {
+                //     Some(s) => s.cb.enable_stats(&mut self.recv_queue_stats, &mut self.rps_stats),
+                //     None => panic!("migration rejected for non-existent connection: {:?}", (local, remote)),
+                // }
 
-                // Re-initiate another migration if manual migration returned by switch.
-                #[cfg(feature = "manual-tcp-migration")]
+                // // Re-initiate another migration if manual migration returned by switch.
+                // #[cfg(feature = "manual-tcp-migration")]
                 self.initiate_migration_by_addr((local, remote));
                 
             },

@@ -43,6 +43,37 @@ END {
 
 
 
+cat $exptid.server_reply_10002 | awk -F, '
+BEGIN { first_val = 0; }
+NR == 1 { first_val = $3; }
+{
+  tstamp = $3 - first_val;  
+  group = int(tstamp / 1000000);
+  num_conn[group] = $7;
+}
+END {
+  for (g in num_conn) {
+    print g","num_conn[g];
+  }
+}' > $exptid.server_ms_num_conn_10002
+
+
+cat $exptid.server_reply_10003 | awk -F, '
+BEGIN { first_val = 0; }
+NR == 1 { first_val = $3; }
+{
+  tstamp = $3 - first_val;  
+  group = int(tstamp / 1000000);
+  num_conn[group] = $7;
+}
+END {
+  for (g in num_conn) {
+    print g","num_conn[g];
+  }
+}' > $exptid.server_ms_num_conn_10003
+
+
+
 awk -F, '$4 != 18245' $exptid.server_reply | sort -t, -k2,2n > $exptid.server_reply_sorted
 
 

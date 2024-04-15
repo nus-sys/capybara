@@ -124,22 +124,22 @@ impl ActiveMigration {
                         // capy_profile_merge_previous!("prepare_ack");
 
                         // Decide if migration should be accepted or not and send corresponding segment.
-                        if ctx.is_under_load {
-                            let mut hdr = next_header(hdr, MigrationStage::Rejected);
-                            self.last_sent_stage = MigrationStage::Rejected;
-                            capy_log_mig!("[TX] MIG_REJECTED ({}, {})", hdr.origin, hdr.client);
-                            capy_time_log!("SEND_MIG_REJECTED,({})", hdr.client);
-                            self.send(hdr, empty_buffer());
-                            return Ok(TcpmigReceiveStatus::SentReject);
-                        } else {
-                            let mut hdr = next_header(hdr, MigrationStage::PrepareMigrationAck);
-                            hdr.flag_load = true;
-                            self.last_sent_stage = MigrationStage::PrepareMigrationAck;
-                            capy_log_mig!("[TX] PREPARE_MIG_ACK ({}, {})", hdr.origin, hdr.client);
-                            capy_time_log!("SEND_PREPARE_MIG_ACK,({})", hdr.client);
-                            self.send(hdr, empty_buffer());
-                            return Ok(TcpmigReceiveStatus::Ok);
-                        }
+                        // if ctx.is_under_load {
+                        //     let mut hdr = next_header(hdr, MigrationStage::Rejected);
+                        //     self.last_sent_stage = MigrationStage::Rejected;
+                        //     capy_log_mig!("[TX] MIG_REJECTED ({}, {})", hdr.origin, hdr.client);
+                        //     capy_time_log!("SEND_MIG_REJECTED,({})", hdr.client);
+                        //     self.send(hdr, empty_buffer());
+                        //     return Ok(TcpmigReceiveStatus::SentReject);
+                        // } else {
+                        let mut hdr = next_header(hdr, MigrationStage::PrepareMigrationAck);
+                        hdr.flag_load = true;
+                        self.last_sent_stage = MigrationStage::PrepareMigrationAck;
+                        capy_log_mig!("[TX] PREPARE_MIG_ACK ({}, {})", hdr.origin, hdr.client);
+                        capy_time_log!("SEND_PREPARE_MIG_ACK,({})", hdr.client);
+                        self.send(hdr, empty_buffer());
+                        return Ok(TcpmigReceiveStatus::Ok);
+                        // }
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected PREPARE_MIGRATION"))
                 }
