@@ -1,6 +1,8 @@
 from bfrtcli import *
+from netaddr import EUI, IPAddress
 
-class prism():
+
+class capybara_switch_fe():
     #
     # Helper Functions to deal with ports
     #
@@ -115,7 +117,7 @@ class prism():
         bfrt.complete_operations()
 
     def __init__(self, default_ttl=60000):
-        self.p4 = bfrt.prism.pipe
+        self.p4 = bfrt.capybara_switch_fe.pipe
         self.all_ports  = [port.key[b'$DEV_PORT']
                            for port in bfrt.port.port.get(regex=1,
                                                           return_ents=True,
@@ -136,13 +138,13 @@ class prism():
         # print("Done")
 
         # Enable migration learning
-        print("Initializing learning on TCP migration ... ", end='', flush=True)
-        try:
-            self.p4.IngressDeparser.migration_digest.callback_deregister()
-        except:
-            pass
-        self.p4.IngressDeparser.migration_digest.callback_register(self.learning_migration)
-        print("Done")
+        # print("Initializing learning on TCP migration ... ", end='', flush=True)
+        # try:
+        #     self.p4.IngressDeparser.migration_digest.callback_deregister()
+        # except:
+        #     pass
+        # self.p4.IngressDeparser.migration_digest.callback_register(self.learning_migration)
+        # print("Done")
         
 
         # Enable aging on SMAC
@@ -159,8 +161,8 @@ class prism():
 
     @staticmethod
     def aging_cb(dev_id, pipe_id, direction, parser_id, entry):
-        smac = bfrt.prism.pipe.Ingress.smac
-        dmac = bfrt.prism.pipe.Ingress.dmac
+        smac = bfrt.capybara_switch_fe.pipe.Ingress.smac
+        dmac = bfrt.capybara_switch_fe.pipe.Ingress.dmac
 
         mac_addr = entry.key[b'hdr.ethernet.src_mac']
 
@@ -174,8 +176,8 @@ class prism():
 
     @staticmethod
     def learning_cb(dev_id, pipe_id, direction, parser_id, session, msg):
-        smac = bfrt.prism.pipe.Ingress.smac
-        dmac = bfrt.prism.pipe.Ingress.dmac
+        smac = bfrt.capybara_switch_fe.pipe.Ingress.smac
+        dmac = bfrt.capybara_switch_fe.pipe.Ingress.dmac
 
         for digest in msg:
             port     = digest["ingress_port"]
@@ -204,29 +206,27 @@ class prism():
 
     @staticmethod
     def learning_migration(dev_id, pipe_id, direction, parser_id, session, msg):
-        # migrate_request = bfrt.prism.pipe.Ingress.migrate_request
-        # migrate_reply = bfrt.prism.pipe.Ingress.migrate_reply
+        # migrate_request = bfrt.capybara_switch_fe.pipe.Ingress.migrate_request
+        # migrate_reply = bfrt.capybara_switch_fe.pipe.Ingress.migrate_reply
         
         for digest in msg:
-            src_mac        =   digest["src_mac"]
-            dst_mac        =    digest["dst_mac"]
-            src_ip         =   digest["src_ip"];
-            # src_port         =   digest["src_port"];
-            dst_ip         =   digest["dst_ip"];
-            # dst_port         =   digest["dst_port"];
-            # meta_ip         =   digest["meta_ip"];
-            # meta_port         =   digest["meta_port"];
-            base_type           = digest["type"];
-            meta_type           = digest["meta_type"];
+            src_mac     = digest["src_mac"]
+            src_ip      = digest["src_ip"]
+            src_port      = digest["src_port"]
+            
+            dst_mac     = digest["dst_mac"]
+            dst_ip      = digest["dst_ip"]
+            dst_port      = digest["dst_port"]
+
             hash_digest1         =   digest["hash_digest1"];
             # hash_digest         =   digest["hash_digest"];
 
             # print("Hash: {}\n".format(hash_digest), end="", flush=True)
             # print("src: {}:{}, dst: {}:{}, meta: {},{}\nHash1: {} and Hash2: {}\n".format(
             #     ip(src_ip), src_port, ip(dst_ip), dst_port, ip(meta_ip), meta_port, hash_digest1, hash_digest2), end="", flush=True)
-
-            print("\n{}:{} => {}:{} , hash1: {}, type: {}, meta_type: {}\n".format(
-                mac(src_mac), ip(src_ip), mac(dst_mac), ip(dst_ip), hash_digest1, base_type, meta_type), end="", flush=True)
+            print("Hash: {}\n".format(hash_digest1), end="", flush=True)
+            print("\n{}:{}:{} => {}:{}:{} \n".format(
+                mac(src_mac), ip(src_ip), src_port, mac(dst_mac), ip(dst_ip), dst_port), end="", flush=True)
 
 
             # Since we do not have access to self, we have to use
@@ -251,8 +251,54 @@ def set_bcast(ports):
                 MULTICAST_NODE_L1_XID=[0]).push()
 
 
+p4 = bfrt.capybara_switch_fe.pipe
+num_backends = 2
+
 ### Setup L2 learning
-sl2 = prism(default_ttl=10000)
+sl2 = capybara_switch_fe(default_ttl=10000)
 sl2.setup()
 set_bcast([24, 32, 36])
+
+
+for i in range(num_backends):
+    bfrt.pre.node.entry(MULTICAST_NODE_ID=10000 + i, MULTICAST_RID=10000 + i,
+        MULTICAST_LAG_ID=[], DEV_PORT=[24]).push()
+
+mcast_node_ids = [i for i in range(10000, 10000 + num_backends)]
+xid_valid_list = [False] * num_backends
+xid_list = [0] * num_backends
+# print(mcast_node_ids)
+# print(xid_valid_list)
+# print(xid_list)
+bfrt.pre.mgid.entry(MGID=2, MULTICAST_NODE_ID=mcast_node_ids,
+        MULTICAST_NODE_L1_XID_VALID=xid_valid_list,
+            MULTICAST_NODE_L1_XID=xid_list).push()
+
+
+# p4.Ingress.min_workload_mac_hi32.reg.mod(REGISTER_INDEX=0, f1=0x08c0ebb6)
+# p4.Ingress.min_workload_mac_lo16.reg.mod(REGISTER_INDEX=0, f1=0xc5ad)
+# p4.Ingress.min_workload_ip.reg.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.9'))
+# p4.Ingress.min_workload_port.reg.mod(REGISTER_INDEX=0, f1=10001)
+
+for i in range(65536):
+    p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = i % num_backends)
+
+# for i in range(num_backends):
+p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=0, f1=0x08c0ebb6)
+p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=0, f1=0xe805)
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.8'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=0, f1=10008)
+
+p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=1, f1=0x08c0ebb6)
+p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=1, f1=0xc5ad)
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=1, f1=IPAddress('10.0.1.9'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=1, f1=10009)
+
+p4.Egress.reg_min_rps_server_port.mod(REGISTER_INDEX=0, f1=0)
+# p4.Egress.reg_round_robin_server_port.mod(REGISTER_INDEX=0, f1=0)
+
+port_mirror_setup_file="/home/singtel/inho/Capybara/capybara/p4/includes/setup_port_mirror.py" # <== To Modify and Add
+exec(open(port_mirror_setup_file).read()) # <== To Add
+
+
 bfrt.complete_operations()

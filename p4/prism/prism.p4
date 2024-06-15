@@ -312,7 +312,7 @@ control Ingress(
             bit<1> holder_1b_12;
             bit<1> holder_1b_13;
 
-            if(hdr.prism_req_base.isValid()){
+            if(hdr.prism_req_base.isValid()){ // Prism control messages
                 counter_update.execute(0);
                 // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
                 
@@ -324,7 +324,7 @@ control Ingress(
                 hash2 = hash1;
                 meta.hash1 = hash1;
                 prism_reply();
-            }else{
+            }else{ // TCP packets
                 hash.apply(hdr.ipv4.src_ip, hdr.tcp.src_port, hash1);
                 hash.apply(hdr.ipv4.dst_ip, hdr.tcp.dst_port, hash2);
 

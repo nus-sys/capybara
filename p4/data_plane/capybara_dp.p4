@@ -12,6 +12,7 @@ struct my_ingress_headers_t {
     tcp_h                       tcp;
     udp_h                       udp;
     tcpmig_h                    tcpmig;
+    heartbeat_h                 heartbeat;
 }
 
 struct my_ingress_metadata_t {
@@ -24,6 +25,7 @@ struct my_ingress_metadata_t {
     bit<16> hash3;
     
     bit<1> load;
+    bit<1> start_migration;
     bit<1> result00;
     bit<1> result01;
     bit<1> result02;
@@ -126,6 +128,7 @@ parser IngressParser(
 
         transition select(pkt.lookahead<bit<32>>()) {
             MIGRATION_SIGNATURE: parse_tcpmig;
+            HEARTBEAT_SIGNATURE: parse_heartbeat;
             default: accept;
         }
     }
@@ -133,6 +136,12 @@ parser IngressParser(
     state parse_tcpmig {
         pkt.extract(hdr.tcpmig);
         meta.load = hdr.tcpmig.flag[0:0];
+        meta.start_migration = hdr.tcpmig.flag[5:5]; // PREPARE_MIGRATION: 00100000
+        transition accept;
+    }
+
+    state parse_heartbeat {
+        pkt.extract(hdr.heartbeat);
         transition accept;
     }
 }
@@ -188,7 +197,11 @@ control Ingress(
     MigrationReply32b1() origin_ip_1;
     MigrationReply16b1() origin_port_1;
 
-
+    MinimumWorkload() min_workload;
+    MinimumWorkload32b() min_workload_mac_hi32;
+    MinimumWorkload16b() min_workload_mac_lo16;
+    MinimumWorkload32b() min_workload_ip;
+    MinimumWorkload16b() min_workload_port;
 
 
     
@@ -242,7 +255,7 @@ control Ingress(
                 counter_update.execute(0);
                 // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
                 // meta.hash1 = hash1;
-                target_mac = hdr.ethernet.src_mac;
+                target_mac = hdr.ethernet.src_mac; // Q. why not directly use hdr.ethernet.src_mac?
                 origin_mac = hdr.ethernet.dst_mac;
                 hash.apply(hdr.tcpmig.client_ip, hdr.tcpmig.client_port, hash1);
                 hash2 = hash1;    
@@ -297,6 +310,18 @@ control Ingress(
             origin_ip_1.apply(hash2, hdr.tcpmig.origin_ip, meta, hdr.ipv4.src_ip);
             origin_port_1.apply(hash2, hdr.tcpmig.origin_port, meta, hdr.tcp.src_port);
 
+        }else if(hdr.heartbeat.isValid() || meta.start_migration == 1){
+            bit<32> temp_32b;
+            bit<16> temp_16b;
+
+            bit<1> holder_1b_00;
+            min_workload.apply(0, hdr, meta, holder_1b_00);
+            meta.result00 = holder_1b_00; // if it's 1, min_workload has been updated (addresses should be updated too)
+            min_workload_mac_hi32.apply(0, hdr.ethernet.src_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
+            min_workload_mac_lo16.apply(0, hdr.ethernet.src_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
+            min_workload_ip.apply(0, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
+            min_workload_port.apply(0, hdr.udp.src_port, meta, hdr.udp.dst_port);
+               
         }
 
         l2_forwarding.apply();

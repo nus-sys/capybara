@@ -1,6 +1,8 @@
 #include <core.p4>
 #include <tna.p4>
 
+#include "includes/port_mirror.p4" // <== To Add
+
 #define ETHERTYPE_TPID    0x8100
 #define ETHERTYPE_IPV4  0x0800
 #define ETHERTYPE_ARP   0x0806
@@ -8,16 +10,32 @@
 #define IP_PROTOCOL_UDP 0x11
 #define IP_PROTOCOL_TCP 0x06
 #define IP_PROTOCOL_TCPMIG 0xC0
-
+#define UDP_DSTPORT_PKTGEN 7777
+#define PIPE_0_RECIRC 68
 
 #define IPV4_HOST_SIZE 1024
 
 #define MIGRATION_SIGNATURE 0xCAFEDEAD
+#define HEARTBEAT_SIGNATURE 0xCAFECAFE
+#define RPS_SIGNAL_SIGNATURE 0xABCDABCD
+
+// #define FE_MAC 0xb8cef62a2f95
+// #define FE_IP 0x0a000101
+#define FE_MAC 0x08c0ebb6e805
+#define FE_IP 0x0a000108
+#define FE_PORT 10000 
+
+#define BE_MAC 0x08c0ebb6c5ad
+#define BE_IP 0x0a000109
+
+
+#define NUM_BACKENDS 4
+
 
 const int MAC_TABLE_SIZE        = 65536;
 const bit<3> L2_LEARN_DIGEST = 1;
 const bit<3> TCP_MIGRATION_DIGEST = 2;
-const int register_size = 1 << 16;
+const int TWO_POWER_SIXTEEN = 1 << 16;
 
 
 struct pair {
@@ -120,11 +138,24 @@ header tcpmig_h {
     // bit<16> checksum;
 }
 
+header heartbeat_h {
+    bit<32>  queue_len;
+}
+
+
+header rps_signal_h {
+    bit<32>  signature;
+    bit<32>  sum;
+    bit<32>  individual;
+}
+
+
+
 
 // PRISM HEADERS
 
 header prism_req_base_h {
-    bit<8>  type;
+    bit<8>  type; // 0: add, 1: delete, 2: chown, 3: lock, 4: unlock
     bit<16>  status;
 
     bit<32>  peer_addr; // peer: client
