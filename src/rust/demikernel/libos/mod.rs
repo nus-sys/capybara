@@ -293,6 +293,7 @@ impl LibOS {
         crate::capy_time_log_dump!(dump);
     }
 
+    #[cfg(feature = "catnip-libos")]
     pub fn dpdk_print_eth_stats() {
         CatnipLibOS::dpdk_print_eth_stats();
     }
@@ -300,6 +301,7 @@ impl LibOS {
 
 extern "C" fn exit_dump() {
     eprintln!("Exiting process.");
+    #[cfg(feature = "catnip-libos")]
     LibOS::dpdk_print_eth_stats();
     LibOS::capylog_dump(&mut std::io::stderr().lock());
 }

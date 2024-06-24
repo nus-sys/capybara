@@ -872,50 +872,52 @@ impl InetStack {
         // capy_profile!("poll_tcpmig()");
         // let recv_time: NaiveTime = chrono::Local::now().time();
 
-        // Get TCPMIG packets.
-        let tcpmig_batch = {
-            // capy_profile!("receive_tcpmig");
+        #[cfg(feature = "catnip-libos")]{
+            // Get TCPMIG packets.
+            let tcpmig_batch = {
+                // capy_profile!("receive_tcpmig");
 
-            // Soundness: Inetstack runtime is always DPDKRuntime.
-            unsafe { self.rt.as_dpdk_runtime().unwrap_unchecked() }.receive_tcpmig()
-        };
-        
-        //capy_time_log!("poll_dpdk_interval,{},{}", recv_time, self.prev_time);
-
-        // Reset poll state, and disallow fast migrations initially since TCP DPDK queue might have unpolled packets.
-        self.tcpmig_state.poll_state.reset();
-        
-        for pkt in tcpmig_batch {
-            // Parse the packet. If it is a PREPARE_MIG_ACK, 
-            if let Err(e) = self.do_receive(pkt) {
-                warn!("Dropped packet: {:?}", e);
-            }
-            // Get qd to free if a connection was/will be migrated out.
-            let qd_to_remove = match self.tcpmig_state.poll_state.take_qd() {
-                None => continue,
-                Some(qd) => qd,
+                // Soundness: Inetstack runtime is always DPDKRuntime.
+                unsafe { self.rt.as_dpdk_runtime().unwrap_unchecked() }.receive_tcpmig()
             };
-
-            // Control only enters here if a PREPARE_ACK was received.
-
-            // Fast migration is disabled, so TCP queue hasn't been polled yet. Poll it.
-            /* COMMENT OUT THIS FOR MIG_DELAY EVAL */
-            if !self.tcpmig_state.poll_state.is_fast_migrate_enabled() {
-                // Poll the TCP DPDK queue.
-                capy_log_mig!("PREPARE_MIG_ACK slow path entered");
-                self.poll_runtime_no_scheduler_poll();
-
-                // Migrate out the pending connection.
-                self.ipv4.tcp.migrate_out_and_send(qd_to_remove);
-
-                // Enable fast migration now that TCP queue has been flushed.
-                self.tcpmig_state.poll_state.enable_fast_migrate();
-            }
-            /* COMMENT OUT THIS FOR MIG_DELAY EVAL */
             
-            // Track the QD as migrated.
-            assert!(self.tcpmig_state.migrated_qds.insert(qd_to_remove));
-            capy_log_mig!("Freeing QD {qd_to_remove:?}");
+            //capy_time_log!("poll_dpdk_interval,{},{}", recv_time, self.prev_time);
+
+            // Reset poll state, and disallow fast migrations initially since TCP DPDK queue might have unpolled packets.
+            self.tcpmig_state.poll_state.reset();
+            
+            for pkt in tcpmig_batch {
+                // Parse the packet. If it is a PREPARE_MIG_ACK, 
+                if let Err(e) = self.do_receive(pkt) {
+                    warn!("Dropped packet: {:?}", e);
+                }
+                // Get qd to free if a connection was/will be migrated out.
+                let qd_to_remove = match self.tcpmig_state.poll_state.take_qd() {
+                    None => continue,
+                    Some(qd) => qd,
+                };
+
+                // Control only enters here if a PREPARE_ACK was received.
+
+                // Fast migration is disabled, so TCP queue hasn't been polled yet. Poll it.
+                /* COMMENT OUT THIS FOR MIG_DELAY EVAL */
+                if !self.tcpmig_state.poll_state.is_fast_migrate_enabled() {
+                    // Poll the TCP DPDK queue.
+                    capy_log_mig!("PREPARE_MIG_ACK slow path entered");
+                    self.poll_runtime_no_scheduler_poll();
+
+                    // Migrate out the pending connection.
+                    self.ipv4.tcp.migrate_out_and_send(qd_to_remove);
+
+                    // Enable fast migration now that TCP queue has been flushed.
+                    self.tcpmig_state.poll_state.enable_fast_migrate();
+                }
+                /* COMMENT OUT THIS FOR MIG_DELAY EVAL */
+                
+                // Track the QD as migrated.
+                assert!(self.tcpmig_state.migrated_qds.insert(qd_to_remove));
+                capy_log_mig!("Freeing QD {qd_to_remove:?}");
+            }
         }
         // self.prev_time = recv_time;
 

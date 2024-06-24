@@ -43,7 +43,7 @@ pub trait NetworkRuntime {
     /// Receives a batch of [PacketBuf].
     fn receive(&self) -> ArrayVec<Buffer, RECEIVE_BATCH_SIZE>;
 
-    #[cfg(feature = "tcp-migration")]
+    #[cfg(feature = "catnip-libos")]
     /// Returns self as [DPDKRuntime] if catnip.
     fn as_dpdk_runtime(&self) -> Option<&crate::catnip::runtime::DPDKRuntime> { None }
 }
