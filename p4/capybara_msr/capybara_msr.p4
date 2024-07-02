@@ -21,7 +21,7 @@ struct my_ingress_headers_t {
 }
 
 struct my_ingress_metadata_t { // client ip and port in meta
-    port_mirror_meta_t port_mirror_meta; // <== To Add
+    // port_mirror_meta_t port_mirror_meta; // <== To Add
 
 
     index_t backend_idx;
@@ -216,7 +216,7 @@ control Ingress(
 
     #include "../forwarding.p4"
 
-    PortMirroringIngress() port_mirroring_ingress; // <== To Add
+    // PortMirroringIngress() port_mirroring_ingress; // <== To Add
 
 
     calc_hash(CRCPolynomial<bit<32>>(
@@ -331,8 +331,8 @@ control Ingress(
     }
 
     apply {
-        port_mirroring_ingress.apply(hdr.bridged_meta, meta.port_mirror_meta, ig_intr_md.ingress_port,
-                                    ig_intr_md.ingress_mac_tstamp, ig_dprsr_md.mirror_type); // <== To Add
+        // port_mirroring_ingress.apply(hdr.bridged_meta, meta.port_mirror_meta, ig_intr_md.ingress_port,
+        //                             ig_intr_md.ingress_mac_tstamp, ig_dprsr_md.mirror_type); // <== To Add
         // if(hdr.heartbeat.isValid() || hdr.tcpmig.flag == 0b00100000){
 
         //     hdr.udp.checksum = 0;
@@ -398,8 +398,8 @@ control Ingress(
 
                 // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
                 hdr.udp.checksum = 0;
-                hdr.ethernet.dst_mac = BE_MAC;
-                hdr.ipv4.dst_ip = BE_IP;
+                // hdr.ethernet.dst_mac = BE_MAC;
+                // hdr.ipv4.dst_ip = BE_IP;
             }
 
             if(meta.flag[0:0] == 1){ // chown
@@ -468,7 +468,7 @@ control IngressDeparser(packet_out pkt,
     /* Intrinsic */
     in    ingress_intrinsic_metadata_for_deparser_t  ig_dprsr_md)
 {
-    PortMirroringCommonDeparser() port_mirroring_deparser; // <== To Add
+    // PortMirroringCommonDeparser() port_mirroring_deparser; // <== To Add
     Digest <migration_digest_t>() migration_digest;
 
     Checksum()  ipv4_checksum;
@@ -476,7 +476,7 @@ control IngressDeparser(packet_out pkt,
     // Checksum()  udp_checksum;
 
     apply {
-        port_mirroring_deparser.apply(meta.port_mirror_meta, ig_dprsr_md.mirror_type); // <== To Add
+        // port_mirroring_deparser.apply(meta.port_mirror_meta, ig_dprsr_md.mirror_type); // <== To Add
 
         if (ig_dprsr_md.digest_type == TCP_MIGRATION_DIGEST) {
             migration_digest.pack({
@@ -551,6 +551,7 @@ control IngressDeparser(packet_out pkt,
 }
 
 
+
 /*************************************************************************
  ****************  E G R E S S   P R O C E S S I N G   *******************
  *************************************************************************/
@@ -558,26 +559,12 @@ control IngressDeparser(packet_out pkt,
 /***********************  H E A D E R S  ************************/
 
 struct my_egress_headers_t {
-    ethernet_h          ethernet;
-    ipv4_h              ipv4;
-    tcp_h               tcp;
-    udp_h               udp;
-    tcpmig_h            tcpmig;
-    rps_signal_h        rps_signal;
+    ethernet_h   ethernet;
 }
 
 /********  G L O B A L   E G R E S S   M E T A D A T A  *********/
 
 struct my_egress_metadata_t {
-    port_mirror_meta_t  port_mirror_meta; // <== To Add
-    bit<16>             udp_dst_port;
-    bit<8>              active_reg_idx;
-    bit<8>              snapshot_reg_idx;
-    bit<16>             tcp_hdr_len;
-
-    bit<1>              is_min_rps_updated;
-    bit<16>             min_rps_server_port;
-    bit<8>              flag;
 }
 
 /***********************  P A R S E R  **************************/
@@ -589,62 +576,17 @@ parser EgressParser(packet_in        pkt,
     /* Intrinsic */
     out egress_intrinsic_metadata_t  eg_intr_md)
 {
-    PortMirroringEgressParser() port_mirror_parser; // <== To Add
     /* This is a mandatory state, required by Tofino Architecture */
     state start {
-        meta.udp_dst_port = 0;
-        meta.active_reg_idx = 0;
-        meta.snapshot_reg_idx = 0;
-        meta.tcp_hdr_len = 0;
-        meta.is_min_rps_updated = 0;
-        meta.flag = 0;
         pkt.extract(eg_intr_md);
-        port_mirror_parser.apply(pkt, meta.port_mirror_meta); // <== To Add 
         transition parse_ethernet;
     }
 
     state parse_ethernet {
         pkt.extract(hdr.ethernet);
         transition select(hdr.ethernet.ether_type) {
-            ETHERTYPE_IPV4:  parse_ipv4;
             default: accept;
         }
-    }
-
-    state parse_ipv4 {
-        pkt.extract(hdr.ipv4);
-        transition select(hdr.ipv4.protocol){
-            IP_PROTOCOL_TCP: parse_tcp;
-            IP_PROTOCOL_UDP: parse_udp;
-            default: accept;
-        }
-    }
-
-    state parse_tcp {
-        pkt.extract(hdr.tcp);
-        // meta.tcp_hdr_len[5:2] = hdr.tcp.data_offset;
-        transition accept;
-    }
-
-    state parse_udp {
-        pkt.extract(hdr.udp);
-        meta.udp_dst_port = hdr.udp.dst_port;
-        transition select(pkt.lookahead<bit<32>>()) {
-            MIGRATION_SIGNATURE: parse_tcpmig;
-            RPS_SIGNAL_SIGNATURE: parse_rps_signal;
-            default: accept;
-        }
-    }
-
-    state parse_tcpmig {
-        pkt.extract(hdr.tcpmig);
-        meta.flag = hdr.tcpmig.flag;
-        transition accept;
-    }
-
-    state parse_rps_signal {
-        pkt.extract(hdr.rps_signal);
-        transition accept;
     }
 }
 
@@ -660,249 +602,7 @@ control Egress(
     inout egress_intrinsic_metadata_for_deparser_t     eg_dprsr_md,
     inout egress_intrinsic_metadata_for_output_port_t  eg_oport_md)
 {
-    PortMirroringEgress() port_mirroring_egress; // <== To Add
-    
-    // bit<1> value register does not allow conditional statement because it uses a different (simpler) ALU
-    // so I use bit<8> to workaround.
-    Register<bit<8>, _> (32w1) reg_active; 
-    RegisterAction<bit<8>, _, bit<8>>(reg_active) update_active_reg_idx = {
-        void apply(inout bit<8> val, out bit<8> return_val) {
-            if(val == 0){
-                val = 1;
-            }else {
-                val = 0;
-            }
-            return_val = val;
-        }
-    };
-    action exec_update_active_reg_idx(){
-        meta.active_reg_idx = update_active_reg_idx.execute(0);
-    }
-    RegisterAction<bit<8>, _, bit<8>>(reg_active) read_active_reg_idx = {
-        void apply(inout bit<8> val, out bit<8> return_val) {
-            return_val = val;
-        }
-    };
-    action exec_read_active_reg_idx(){
-        meta.active_reg_idx = read_active_reg_idx.execute(0);
-    }
-    RegisterAction<bit<8>, _, bit<8>>(reg_active) read_snapshot_reg_idx = {
-        void apply(inout bit<8> val, out bit<8> return_val) {
-            if(val == 0){
-                return_val = 1;
-            }else {
-                return_val = 0;
-            }
-        }
-    };
-    action exec_read_snapshot_reg_idx(){
-        meta.snapshot_reg_idx = read_snapshot_reg_idx.execute(0);
-    }
-
-    Register<bit<16>, bit<8>> (32w256) reg_rid_to_svrport; 
-    RegisterAction<bit<16>, _, bit<16>>(reg_rid_to_svrport) convert_rid_to_svrport = {
-        void apply(inout bit<16> val, out bit<16> return_val) {
-            return_val = val;
-        }
-    };
-    action exec_convert_rid_to_svrport(){
-        hdr.udp.dst_port = convert_rid_to_svrport.execute(eg_intr_md.egress_rid);
-    }
-
-
-    Register<bit<32>, _> (32w2) reg_sum_rps;
-    RegisterAction<bit<32>, _, bit<32>>(reg_sum_rps) init_reg_sum_rps = {
-        void apply(inout bit<32> val) {
-            val = 0;
-        }
-    };
-    action exec_init_reg_sum_rps(){
-        init_reg_sum_rps.execute(meta.active_reg_idx);
-    }
-    RegisterAction<bit<32>, _, bit<32>>(reg_sum_rps) read_reg_sum_rps = {
-        void apply(inout bit<32> val, out bit<32> return_val) {
-            return_val = val;
-        }
-    };
-    action exec_read_reg_sum_rps(){
-        hdr.rps_signal.sum = read_reg_sum_rps.execute(meta.snapshot_reg_idx);
-    }
-    RegisterAction<bit<32>, _, bit<32>>(reg_sum_rps) add_reg_sum_rps = {
-        void apply(inout bit<32> val) {
-            val = val + 1;
-        }
-    };
-    action exec_add_reg_sum_rps(){
-        add_reg_sum_rps.execute(meta.active_reg_idx);
-    }
-
-    Register<bit<32>, bit<16>> (TWO_POWER_SIXTEEN) reg_individual_rps_0;
-    RegisterAction<bit<32>, bit<16>, bit<32>>(reg_individual_rps_0) read_reg_individual_rps_0 = {
-        void apply(inout bit<32> val, out bit<32> return_val) {
-            return_val = val;
-            val = 0;
-        }
-    };
-    action exec_read_reg_individual_rps_0(){
-        hdr.rps_signal.individual = read_reg_individual_rps_0.execute(hdr.udp.dst_port);
-    }
-    RegisterAction<bit<32>, bit<16>, bit<32>>(reg_individual_rps_0) add_reg_individual_rps_0 = {
-        void apply(inout bit<32> val) {
-            val = val + 1;
-        }
-    };
-    action exec_add_reg_individual_rps_0(){
-        add_reg_individual_rps_0.execute(hdr.tcp.dst_port);
-    }
-
-    Register<bit<32>, bit<16>> (TWO_POWER_SIXTEEN) reg_individual_rps_1;
-    RegisterAction<bit<32>, bit<16>, bit<32>>(reg_individual_rps_1) read_reg_individual_rps_1 = {
-        void apply(inout bit<32> val, out bit<32> return_val) {
-            return_val = val;
-            val = 0;
-        }
-    };
-    action exec_read_reg_individual_rps_1(){
-        hdr.rps_signal.individual = read_reg_individual_rps_1.execute(hdr.udp.dst_port);
-    }
-    RegisterAction<bit<32>, bit<16>, bit<32>>(reg_individual_rps_1) add_reg_individual_rps_1 = {
-        void apply(inout bit<32> val) {
-            val = val + 1;
-        }
-    };
-    action exec_add_reg_individual_rps_1(){
-        add_reg_individual_rps_1.execute(hdr.tcp.dst_port);
-    }
-
-    Register<bit<32>, _> (1) reg_min_rps;
-    RegisterAction<bit<32>, _, bit<1>>(reg_min_rps) init_reg_min_rps = {
-        void apply(inout bit<32> val) {
-            // if(val == 0){
-            val = TWO_POWER_SIXTEEN;
-            // }
-        }
-    };
-    action exec_init_reg_min_rps(){
-        init_reg_min_rps.execute(0);
-    }
-    RegisterAction<bit<32>, _, bit<1>>(reg_min_rps) poll_reg_min_rps = {
-        void apply(inout bit<32> val, out bit<1> return_val) {
-            if(val > hdr.rps_signal.individual){
-                val = hdr.rps_signal.individual;
-                return_val = 1;
-            }else{
-                return_val = 0;
-            }
-        }
-    };
-    action exec_poll_reg_min_rps(){
-        meta.is_min_rps_updated = poll_reg_min_rps.execute(0);
-    }
-
-    Register<bit<16>, bit<8>> (1) reg_min_rps_server_port;
-    RegisterAction<bit<16>, bit<8>, bit<16>>(reg_min_rps_server_port) write_reg_min_rps_server_port = {
-        void apply(inout bit<16> val) {
-            if(meta.is_min_rps_updated == 1) {
-                val = hdr.udp.dst_port;
-            }
-        }
-    };
-    action exec_write_reg_min_rps_server_port(){
-        write_reg_min_rps_server_port.execute(0);
-    }
-    RegisterAction<bit<16>, bit<8>, bit<16>>(reg_min_rps_server_port) read_reg_min_rps_server_port = {
-        void apply(inout bit<16> val, out bit<16> return_val) {
-            return_val = val;
-        }
-    };
-    action exec_read_reg_min_rps_server_port(){
-        hdr.udp.dst_port = read_reg_min_rps_server_port.execute(0);
-    }
-
-    Register< bit<16>, _> (1) reg_round_robin_server_port; // value, key
-    RegisterAction<bit<16>, _, bit<16>>(reg_round_robin_server_port) read_round_robin_server_port = {
-        void apply(inout bit<16> val, out bit<16> rv) {
-            rv = val+10000;
-            if(val == NUM_BACKENDS-1){
-                val = 0;
-            }else{
-                val = val + 1;    
-            }
-        }
-    };
-    action exec_read_round_robin_server_port(){
-        hdr.udp.dst_port = read_round_robin_server_port.execute(0);
-    }
-
-    action drop() {
-        eg_dprsr_md.drop_ctl = 1;
-    }
-
-    Register<bit<32>, _> (32w1) counter;
-    RegisterAction<bit<32>, _, bit<32>>(counter) counter_update = {
-        void apply(inout bit<32> val, out bit<32> rv) {
-            rv = val;
-            val = val + 1;
-        }
-    };
-    // table tbl_individual_rps { 
-    //     key = {
-    //         meta.flag : exact;
-    //     }
-    //     actions = {
-    //         exec_read_reg_min_rps_server_port;
-    //         NoAction;
-    //     }
-    //     const entries = {
-    //         0b00100000 : exec_read_reg_min_rps_server_port();
-    //     }
-    //     size = 16;
-    // }
-
     apply {
-        port_mirroring_egress.apply(hdr.ethernet.src_mac, meta.port_mirror_meta, eg_intr_md.egress_port,
-                        eg_prsr_md.global_tstamp, eg_dprsr_md.mirror_type); // <== To Add
-        
-        if(eg_intr_md.egress_port == PIPE_0_RECIRC){
-            exec_update_active_reg_idx();
-            exec_init_reg_sum_rps();
-            exec_init_reg_min_rps();
-        }else if(hdr.rps_signal.isValid()){
-            hdr.udp.dst_port = eg_intr_md.egress_rid;
-            exec_read_snapshot_reg_idx();
-            exec_read_reg_sum_rps();
-            if(meta.snapshot_reg_idx == 0){
-                exec_read_reg_individual_rps_0();
-            }else{
-                exec_read_reg_individual_rps_1();
-            }
-
-            exec_poll_reg_min_rps();
-            // if(meta.is_min_rps_updated == 1){
-            exec_write_reg_min_rps_server_port();
-            // }
-            // if(meta.flag == 0b00100000){
-            //     exec_read_reg_min_rps_server_port();
-            // }
-            if(hdr.rps_signal.sum == 0){
-                drop();
-            }
-            // tbl_individual_rps.apply();
-        }else if(hdr.tcp.isValid() && hdr.tcp.flags[1:1] != 1 && hdr.ipv4.total_len != 40 && eg_intr_md.egress_port == 24){
-            
-            exec_read_active_reg_idx();
-            exec_add_reg_sum_rps();
-            if(meta.active_reg_idx == 0){
-                exec_add_reg_individual_rps_0();
-            }else{
-                exec_add_reg_individual_rps_1();
-            }
-        }else if(hdr.tcpmig.isValid() && meta.flag == 0b00100000) { // PREPARE_MIG
-            exec_read_reg_min_rps_server_port();
-            // exec_read_round_robin_server_port();
-            // counter_update.execute(0);
-        }
-        // tbl_individual_rps.apply();
     }
 }
 
@@ -915,11 +615,7 @@ control EgressDeparser(packet_out pkt,
     /* Intrinsic */
     in    egress_intrinsic_metadata_for_deparser_t  eg_dprsr_md)
 {
-    PortMirroringCommonDeparser() port_mirroring_deparser; // <== To Add
-
     apply {
-        port_mirroring_deparser.apply(meta.port_mirror_meta, eg_dprsr_md.mirror_type); // <== To Add
-
         pkt.emit(hdr);
     }
 }
