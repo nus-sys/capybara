@@ -224,8 +224,8 @@ control Ingress(
             init=32w0xFFFFFFFF, xor=32w0xFFFFFFFF)) hash;
     
 
-    Register< index_t, _> (TWO_POWER_SIXTEEN) reg_be_idx; // value, key
-    RegisterAction<index_t, _, index_t>(reg_be_idx) get_be_idx = {
+    Register< index_t, index_t> (TWO_POWER_SIXTEEN) reg_be_idx; // value, key
+    RegisterAction<index_t, index_t, index_t>(reg_be_idx) get_be_idx = { // value, key, out
         void apply(inout index_t val, out index_t rv) {
             rv = val;
             // if(val == NUM_BACKENDS-1){
