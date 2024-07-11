@@ -72,29 +72,29 @@ control Ingress(
     inout ingress_intrinsic_metadata_for_tm_t        ig_tm_md)
 {
 
-action l2_forward(PortId_t port) {
-    ig_tm_md.ucast_egress_port=port;
-}
-
-action broadcast() {
-    ig_tm_md.mcast_grp_a = 1;
-    ig_tm_md.level2_exclusion_id = ig_intr_md.ingress_port;
-}
-
-table l2_forwarding_decision {
-    key = {
-        hdr.ethernet.dst_addr : exact;
+    action l2_forward(PortId_t port) {
+        ig_tm_md.ucast_egress_port=port;
     }
-    actions = {
-        l2_forward;
-        broadcast;
-    }
-}
 
-apply {
-    l2_forwarding_decision.apply();
-    ig_tm_md.bypass_egress = 1;
-}
+    action broadcast() {
+        ig_tm_md.mcast_grp_a = 1;
+        ig_tm_md.level2_exclusion_id = ig_intr_md.ingress_port;
+    }
+
+    table l2_forwarding_decision {
+        key = {
+            hdr.ethernet.dst_addr : exact;
+        }
+        actions = {
+            l2_forward;
+            broadcast;
+        }
+    }
+
+    apply {
+        l2_forwarding_decision.apply();
+        ig_tm_md.bypass_egress = 1;
+    }
 }
 
     /*********************  D E P A R S E R  ************************/
