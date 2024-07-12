@@ -14,7 +14,7 @@
 
 #define BIP_p40_p42 0xc613c923 // 198.19.201.35 
 #define DIP_p42 0xc613c82a // 198.19.200.42
-
+#define VIP 0xc613c922 // 198.19.201.34
 
 /*************************************************************************
  ***********************  H E A D E R S  *********************************
@@ -125,10 +125,13 @@ control Ingress(
     // }
 
     apply {
-        hdr.ethernet.src_mac = meta.dst_mac;
-        hdr.ethernet.dst_mac = meta.src_mac;
-        hdr.ipv4.src_ip = BIP_p40_p42;
-        hdr.ipv4.dst_ip = DIP_p42;
+	if(hdr.ipv4.dst_ip == VIP){
+        	hdr.ethernet.src_mac = meta.dst_mac;
+        	hdr.ethernet.dst_mac = meta.src_mac;
+        	hdr.ipv4.src_ip = BIP_p40_p42;
+        	hdr.ipv4.dst_ip = DIP_p42;
+	}
+	ig_tm_md.ucast_egress_port = ig_intr_md.ingress_port;
     }
 }
 
