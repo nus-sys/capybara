@@ -47,6 +47,11 @@ header ipv4_h {
     bit<32>  dst_ip;
 } // 20
 
+header ipv4_options_h {
+    varbit<320> data;
+}
+
+
 /*************************************************************************
  **************  I N G R E S S   P R O C E S S I N G   *******************
  *************************************************************************/
@@ -56,6 +61,7 @@ header ipv4_h {
 struct my_ingress_headers_t {
     ethernet_h           ethernet;
     ipv4_h               ipv4;
+    ipv4_options_h     ipv4_options;
 }
 
     /******  G L O B A L   I N G R E S S   M E T A D A T A  *********/
@@ -88,6 +94,28 @@ parser IngressParser(packet_in        pkt,
 
     state parse_ipv4 {
         pkt.extract(hdr.ipv4);
+        transition select(hdr.ipv4.ihl) {
+            0x5 : parse_ipv4_no_options;
+            0x6 &&& 0xE : parse_ipv4_options;
+            0x8 &&& 0x8 : parse_ipv4_options;
+            /* 
+             * Packets with other values of IHL are illegal and will be
+             * dropped by the parser
+             */
+        }
+    }
+
+    state parse_ipv4_options {
+        pkt.extract(
+            hdr.ipv4_options,
+            ((bit<32>)hdr.ipv4.ihl - 5) * 32);
+        
+        transition parse_ipv4_no_options;
+    }
+
+    state parse_ipv4_no_options {
+        // parser_md.l4_lookup = pkt.lookahead<l4_lookup_t>();
+        
         transition accept;
     }
 
@@ -126,12 +154,12 @@ control Ingress(
     // }
 
     apply {
-        if(hdr.ipv4.dst_ip == VIP){
+        if(true){
             hdr.ethernet.src_mac = meta.dst_mac;
             hdr.ethernet.dst_mac = meta.src_mac;
             hdr.ipv4.src_ip = BIP_p40_p42;
-            hdr.ipv4.dst_ip = DIP_p42;
-            ig_tm_md.ucast_egress_port = ig_intr_md.ingress_port;
+            hdr.ipv4.dst_ip = 0x0a000109;
+            ig_tm_md.ucast_egress_port = 24;
         }
     }
 }
@@ -145,7 +173,24 @@ control IngressDeparser(packet_out pkt,
     /* Intrinsic */
     in    ingress_intrinsic_metadata_for_deparser_t  ig_dprsr_md)
 {
+    Checksum() ipv4_checksum; 
     apply {
+        if (hdr.ipv4.isValid()) {
+            hdr.ipv4.hdr_checksum = ipv4_checksum.update({
+                hdr.ipv4.version,
+                hdr.ipv4.ihl,
+                hdr.ipv4.diffserv,
+                hdr.ipv4.total_len,
+                hdr.ipv4.identification,
+                hdr.ipv4.flags,
+                hdr.ipv4.frag_offset,
+                hdr.ipv4.ttl,
+                hdr.ipv4.protocol,
+                hdr.ipv4.src_ip,
+                hdr.ipv4.dst_ip,
+                hdr.ipv4_options.data
+            });
+        }
         pkt.emit(hdr);
     }
 }
