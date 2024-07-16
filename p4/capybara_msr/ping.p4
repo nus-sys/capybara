@@ -152,14 +152,21 @@ control Ingress(
     //         broadcast;
     //     }
     // }
+    action exec_return_to_7050a() {
+        hdr.ethernet.src_mac = meta.dst_mac;
+        hdr.ethernet.dst_mac = meta.src_mac;
+        ig_tm_md.ucast_egress_port = ig_intr_md.ingress_port;
+    }
 
     apply {
-        if(true){
-            hdr.ethernet.src_mac = meta.dst_mac;
-            hdr.ethernet.dst_mac = meta.src_mac;
+        exec_return_to_7050a();
+        if(hdr.ipv4.dst_ip == VIP){
             hdr.ipv4.src_ip = BIP_p40_p42;
-            hdr.ipv4.dst_ip = 0x0a000109;
-            ig_tm_md.ucast_egress_port = 24;
+            hdr.ipv4.dst_ip = DIP_p42;
+        }
+        else if (hdr.ipv4.dst_ip == BIP_p40_p42){
+            hdr.ipv4.src_ip = VIP;
+            hdr.ipv4.dst_ip = DIP_p40;
         }
     }
 }
