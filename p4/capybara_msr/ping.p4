@@ -1,12 +1,13 @@
 /* -*- P4_16 -*- */
-#include <core.p4>
-#if __TARGET_TOFINO__ == 3
-#include <t3na.p4>
-#elif __TARGET_TOFINO__ == 2
-#include <t2na.p4>
-#else
-#include <tna.p4>
-#endif
+// #include <core.p4>
+// #if __TARGET_TOFINO__ == 3
+// #include <t3na.p4>
+// #elif __TARGET_TOFINO__ == 2
+// #include <t2na.p4>
+// #else
+// #include <tna.p4>
+// #endif
+#include "../capybara_header.h"
 
 /*************************************************************************
  ************* C O N S T A N T S    A N D   T Y P E S  *******************
@@ -25,27 +26,27 @@
 /*  The actual sets of headers processed by each gress can differ */
 
 /* Standard ethernet header */
-header ethernet_h {
-    bit<48>   dst_mac;
-    bit<48>   src_mac;
-    bit<16>   ether_type;
-}
+// header ethernet_h {
+//     bit<48>   dst_mac;
+//     bit<48>   src_mac;
+//     bit<16>   ether_type;
+// }
 
 
-header ipv4_h {
-    bit<4>   version;
-    bit<4>   ihl;
-    bit<8>   diffserv;
-    bit<16>  total_len;
-    bit<16>  identification;
-    bit<3>   flags;
-    bit<13>  frag_offset;
-    bit<8>   ttl;
-    bit<8>   protocol;
-    bit<16>  hdr_checksum;
-    bit<32>  src_ip;
-    bit<32>  dst_ip;
-} // 20
+// header ipv4_h {
+//     bit<4>   version;
+//     bit<4>   ihl;
+//     bit<8>   diffserv;
+//     bit<16>  total_len;
+//     bit<16>  identification;
+//     bit<3>   flags;
+//     bit<13>  frag_offset;
+//     bit<8>   ttl;
+//     bit<8>   protocol;
+//     bit<16>  hdr_checksum;
+//     bit<32>  src_ip;
+//     bit<32>  dst_ip;
+// } // 20
 
 header ipv4_options_h {
     varbit<320> data;
@@ -62,6 +63,8 @@ struct my_ingress_headers_t {
     ethernet_h           ethernet;
     ipv4_h               ipv4;
     ipv4_options_h     ipv4_options;
+    tcp_h                       tcp;
+    udp_h                       udp;
 }
 
     /******  G L O B A L   I N G R E S S   M E T A D A T A  *********/
@@ -69,6 +72,7 @@ struct my_ingress_headers_t {
 struct my_ingress_metadata_t {
     bit<48> src_mac;
     bit<48> dst_mac;
+    bit<16> l4_payload_checksum;
 }
 
     /***********************  P A R S E R  **************************/
@@ -79,13 +83,19 @@ parser IngressParser(packet_in        pkt,
     /* Intrinsic */
     out ingress_intrinsic_metadata_t  ig_intr_md)
 {
+    Checksum() tcp_checksum;
+
     /* This is a mandatory state, required by Tofino Architecture */
      state start {
+        meta.l4_payload_checksum  = 0;
+        
         pkt.extract(ig_intr_md);
         pkt.advance(PORT_METADATA_SIZE);
 	    pkt.extract(hdr.ethernet);
+        
         meta.src_mac = hdr.ethernet.src_mac;
         meta.dst_mac = hdr.ethernet.dst_mac;
+
         transition select(hdr.ethernet.ether_type){
             0x0800: parse_ipv4;
             default: accept;
@@ -94,6 +104,13 @@ parser IngressParser(packet_in        pkt,
 
     state parse_ipv4 {
         pkt.extract(hdr.ipv4);
+
+        tcp_checksum.subtract({
+            hdr.ipv4.src_ip,
+            hdr.ipv4.dst_ip,
+            8w0, hdr.ipv4.protocol
+        });
+
         transition select(hdr.ipv4.ihl) {
             0x5 : parse_ipv4_no_options;
             0x6 &&& 0xE : parse_ipv4_options;
@@ -116,9 +133,40 @@ parser IngressParser(packet_in        pkt,
     state parse_ipv4_no_options {
         // parser_md.l4_lookup = pkt.lookahead<l4_lookup_t>();
         
+        transition select(hdr.ipv4.protocol){
+            IP_PROTOCOL_TCP: parse_tcp;
+            IP_PROTOCOL_UDP: parse_udp;
+            default: accept;
+        }
+    }
+
+    state parse_tcp {
+        pkt.extract(hdr.tcp);
+
+        /* Calculate Payload _m */
+        tcp_checksum.subtract({
+            hdr.tcp.src_port,
+            hdr.tcp.dst_port,
+            hdr.tcp.seq_no,
+            hdr.tcp.ack_no,
+            hdr.tcp.data_offset, hdr.tcp.res, hdr.tcp.flags,
+            hdr.tcp.window,
+            hdr.tcp.checksum,
+            hdr.tcp.urgent_ptr
+        });
+
+        meta.l4_payload_checksum = tcp_checksum.get();
+
         transition accept;
     }
 
+    state parse_udp {
+        pkt.extract(hdr.udp);
+        transition select(pkt.lookahead<bit<32>>()) {
+            // MIGRATION_SIGNATURE: parse_tcpmig;
+            default: accept;
+        }
+    }
 }
 
     /***************** M A T C H - A C T I O N  *********************/
@@ -159,6 +207,10 @@ control Ingress(
     }
 
     apply {
+        if(hdr.udp.isValid()){
+            hdr.udp.checksum = 0;
+        }
+
         exec_return_to_7050a();
         if(hdr.ipv4.dst_ip == VIP){
             hdr.ipv4.src_ip = BIP_p40_p42;
@@ -181,21 +233,37 @@ control IngressDeparser(packet_out pkt,
     in    ingress_intrinsic_metadata_for_deparser_t  ig_dprsr_md)
 {
     Checksum() ipv4_checksum; 
+    Checksum()  tcp_checksum;
+
     apply {
-        if (hdr.ipv4.isValid()) {
-            hdr.ipv4.hdr_checksum = ipv4_checksum.update({
-                hdr.ipv4.version,
-                hdr.ipv4.ihl,
-                hdr.ipv4.diffserv,
-                hdr.ipv4.total_len,
-                hdr.ipv4.identification,
-                hdr.ipv4.flags,
-                hdr.ipv4.frag_offset,
-                hdr.ipv4.ttl,
-                hdr.ipv4.protocol,
+        hdr.ipv4.hdr_checksum = ipv4_checksum.update({
+            hdr.ipv4.version,
+            hdr.ipv4.ihl,
+            hdr.ipv4.diffserv,
+            hdr.ipv4.total_len,
+            hdr.ipv4.identification,
+            hdr.ipv4.flags,
+            hdr.ipv4.frag_offset,
+            hdr.ipv4.ttl,
+            hdr.ipv4.protocol,
+            hdr.ipv4.src_ip,
+            hdr.ipv4.dst_ip,
+            hdr.ipv4_options.data
+        });
+        if (hdr.tcp.isValid()) {
+            hdr.tcp.checksum = tcp_checksum.update({
                 hdr.ipv4.src_ip,
                 hdr.ipv4.dst_ip,
-                hdr.ipv4_options.data
+                8w0, hdr.ipv4.protocol,
+                hdr.tcp.src_port,
+                hdr.tcp.dst_port,
+                hdr.tcp.seq_no,
+                hdr.tcp.ack_no,
+                hdr.tcp.data_offset, hdr.tcp.res, hdr.tcp.flags,
+                hdr.tcp.window,
+                hdr.tcp.urgent_ptr,
+                /* Any headers past TCP */
+                meta.l4_payload_checksum
             });
         }
         pkt.emit(hdr);
