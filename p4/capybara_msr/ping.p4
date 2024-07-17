@@ -22,31 +22,6 @@
  ***********************  H E A D E R S  *********************************
  *************************************************************************/
 
-/*  Define all the headers the program will recognize             */
-/*  The actual sets of headers processed by each gress can differ */
-
-/* Standard ethernet header */
-// header ethernet_h {
-//     bit<48>   dst_mac;
-//     bit<48>   src_mac;
-//     bit<16>   ether_type;
-// }
-
-
-// header ipv4_h {
-//     bit<4>   version;
-//     bit<4>   ihl;
-//     bit<8>   diffserv;
-//     bit<16>  total_len;
-//     bit<16>  identification;
-//     bit<3>   flags;
-//     bit<13>  frag_offset;
-//     bit<8>   ttl;
-//     bit<8>   protocol;
-//     bit<16>  hdr_checksum;
-//     bit<32>  src_ip;
-//     bit<32>  dst_ip;
-// } // 20
 
 header ipv4_options_h {
     varbit<320> data;
@@ -65,6 +40,7 @@ struct my_ingress_headers_t {
     ipv4_options_h     ipv4_options;
     tcp_h                       tcp;
     udp_h                       udp;
+    tcpmig_h                    tcpmig;
 }
 
     /******  G L O B A L   I N G R E S S   M E T A D A T A  *********/
@@ -73,6 +49,10 @@ struct my_ingress_metadata_t {
     bit<48> src_mac;
     bit<48> dst_mac;
     bit<16> l4_payload_checksum;
+
+    value32b_t client_ip;
+    value16b_t client_port;
+    bit<8> flag;
 }
 
     /***********************  P A R S E R  **************************/
@@ -88,6 +68,9 @@ parser IngressParser(packet_in        pkt,
     /* This is a mandatory state, required by Tofino Architecture */
      state start {
         meta.l4_payload_checksum  = 0;
+        meta.client_ip = 0;
+        meta.client_port = 0;
+        meta.flag = 0;
         
         pkt.extract(ig_intr_md);
         pkt.advance(PORT_METADATA_SIZE);
@@ -163,9 +146,17 @@ parser IngressParser(packet_in        pkt,
     state parse_udp {
         pkt.extract(hdr.udp);
         transition select(pkt.lookahead<bit<32>>()) {
-            // MIGRATION_SIGNATURE: parse_tcpmig;
+            MIGRATION_SIGNATURE: parse_tcpmig;
             default: accept;
         }
+    }
+
+    state parse_tcpmig {
+        pkt.extract(hdr.tcpmig);
+        meta.client_ip = hdr.tcpmig.client_ip;
+        meta.client_port = hdr.tcpmig.client_port;
+        meta.flag = hdr.tcpmig.flag;
+        transition accept;
     }
 }
 
@@ -207,18 +198,22 @@ control Ingress(
     }
 
     apply {
-        if(hdr.udp.isValid()){
-            hdr.udp.checksum = 0;
-        }
+        if(hdr.ipv4.isValid()){
+            exec_return_to_7050a();
 
-        exec_return_to_7050a();
-        if(hdr.ipv4.dst_ip == VIP){
-            hdr.ipv4.src_ip = BIP_p40_p42;
-            hdr.ipv4.dst_ip = DIP_p42;
-        }
-        else if (hdr.ipv4.dst_ip == BIP_p40_p42){
-            hdr.ipv4.src_ip = VIP;
-            hdr.ipv4.dst_ip = DIP_p40;
+            if(hdr.udp.isValid()){
+                hdr.udp.checksum = 0;
+            }
+
+            
+            if(hdr.ipv4.dst_ip == VIP){
+                hdr.ipv4.src_ip = BIP_p40_p42;
+                hdr.ipv4.dst_ip = DIP_p42;
+            }
+            else if (hdr.ipv4.dst_ip == BIP_p40_p42){
+                hdr.ipv4.src_ip = VIP;
+                hdr.ipv4.dst_ip = DIP_p40;
+            }
         }
     }
 }
