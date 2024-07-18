@@ -173,24 +173,25 @@ control Ingress(
     inout ingress_intrinsic_metadata_for_tm_t        ig_tm_md)
 {
 
-    // action l2_forward(PortId_t port) {
-    //     ig_tm_md.ucast_egress_port=port;
-    // }
+    action ip_rewriting(bit<32> srcip, bit<32> dstip) {
+        hdr.ipv4.src_ip = srcip;
+        hdr.ipv4.dst_ip = dstip;
+    }
 
     // action broadcast() {
     //     ig_tm_md.mcast_grp_a = 1;
     //     ig_tm_md.level2_exclusion_id = ig_intr_md.ingress_port;
     // }
 
-    // table l2_forwarding_decision {
-    //     key = {
-    //         hdr.ethernet.dst_addr : exact;
-    //     }
-    //     actions = {
-    //         l2_forward;
-    //         broadcast;
-    //     }
-    // }
+    table tbl_ip_rewriting {
+        key = {
+            hdr.ipv4.dst_ip : exact;
+        }
+        actions = {
+            ip_rewriting;
+            @defaultonly NoAction();
+        }
+    }
     action exec_return_to_7050a() {
         hdr.ethernet.src_mac = meta.dst_mac;
         hdr.ethernet.dst_mac = meta.src_mac;
@@ -204,16 +205,16 @@ control Ingress(
             if(hdr.udp.isValid()){
                 hdr.udp.checksum = 0;
             }
-
+            tbl_ip_rewriting.apply();
             
-            if(hdr.ipv4.dst_ip == VIP){
-                hdr.ipv4.src_ip = BIP_p40_p42;
-                hdr.ipv4.dst_ip = DIP_p42;
-            }
-            else if (hdr.ipv4.dst_ip == BIP_p40_p42){
-                hdr.ipv4.src_ip = VIP;
-                hdr.ipv4.dst_ip = DIP_p40;
-            }
+            // if(hdr.ipv4.dst_ip == VIP){
+            //     hdr.ipv4.src_ip = BIP_p40_p42;
+            //     hdr.ipv4.dst_ip = DIP_p42;
+            // }
+            // else if (hdr.ipv4.dst_ip == BIP_p40_p42){
+            //     hdr.ipv4.src_ip = VIP;
+            //     hdr.ipv4.dst_ip = DIP_p40;
+            // }
         }
     }
 }
