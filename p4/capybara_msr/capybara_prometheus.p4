@@ -201,20 +201,10 @@ control Ingress(
     apply {
         if(hdr.ipv4.isValid()){
             exec_return_to_7050a();
-
+            tbl_ip_rewriting.apply();
             if(hdr.udp.isValid()){
                 hdr.udp.checksum = 0;
             }
-            tbl_ip_rewriting.apply();
-            
-            // if(hdr.ipv4.dst_ip == VIP){
-            //     hdr.ipv4.src_ip = BIP_p40_p42;
-            //     hdr.ipv4.dst_ip = DIP_p42;
-            // }
-            // else if (hdr.ipv4.dst_ip == BIP_p40_p42){
-            //     hdr.ipv4.src_ip = VIP;
-            //     hdr.ipv4.dst_ip = DIP_p40;
-            // }
         }
     }
 }

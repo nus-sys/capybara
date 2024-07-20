@@ -145,9 +145,16 @@ def set_bcast(ports):
                 MULTICAST_NODE_L1_XID=[0]).push()
 
 
-BIP_p40_p42 = '198.19.201.35'
+BIP_p40_p41 = '198.19.201.35'
+BIP_p40_p42 = '198.19.201.36'
+BIP_p41_p42 = '198.19.201.37'
+BIP_p42_p41 = '198.19.201.38'
+
+
 DIP_p40 = '198.19.200.40'
+DIP_p41 = '198.19.200.41'
 DIP_p42 = '198.19.200.42'
+
 VIP = '198.19.201.34'
 
 p4 = bfrt.capybara_prometheus.pipe
@@ -155,13 +162,23 @@ p4 = bfrt.capybara_prometheus.pipe
 p4.Ingress.tbl_ip_rewriting.clear()
 p4.Ingress.tbl_ip_rewriting.add_with_ip_rewriting(
     dst_ip = IPAddress(VIP), 
-    srcip = IPAddress(BIP_p40_p42), 
+    srcip = IPAddress(BIP_p40_p41), 
+    dstip = IPAddress(DIP_p41) 
+)
+p4.Ingress.tbl_ip_rewriting.add_with_ip_rewriting(
+    dst_ip = IPAddress(BIP_p40_p41), 
+    srcip = IPAddress(VIP), 
+    dstip = IPAddress(DIP_p40) 
+)
+p4.Ingress.tbl_ip_rewriting.add_with_ip_rewriting(
+    dst_ip = IPAddress(BIP_p41_p42), 
+    srcip = IPAddress(BIP_p42_p41), 
     dstip = IPAddress(DIP_p42) 
 )
 p4.Ingress.tbl_ip_rewriting.add_with_ip_rewriting(
-    dst_ip = IPAddress(BIP_p40_p42), 
-    srcip = IPAddress(VIP), 
-    dstip = IPAddress(DIP_p40) 
+    dst_ip = IPAddress(BIP_p42_p41), 
+    srcip = IPAddress(BIP_p41_p42), 
+    dstip = IPAddress(DIP_p41) 
 )
 
 bfrt.complete_operations()
