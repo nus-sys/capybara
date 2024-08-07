@@ -288,11 +288,11 @@ control Ingress(
             bit<1> holder_1b_01;
             bit<1> holder_1b_02;
             bit<1> holder_1b_03;
-            hash1 = 0;
-            hash2 = 0;
+            // hash1 = 0;
+            // hash2 = 0;
             if(hdr.tcp.isValid()){
-                // hash.apply(hdr.ipv4.src_ip, hdr.tcp.src_port, hash1);
-                // hash.apply(hdr.ipv4.dst_ip, hdr.tcp.dst_port, hash2);
+                hash.apply(hdr.ipv4.src_ip, hdr.tcp.src_port, hash1);
+                hash.apply(hdr.ipv4.dst_ip, hdr.tcp.dst_port, hash2);
                 if(hdr.tcp.flags == 0b00000010 && hdr.ipv4.dst_ip == DIP_p41){ // SYN to p41
                     // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
 
@@ -316,8 +316,8 @@ control Ingress(
                 }
             }
             else if(hdr.tcpmig.isValid()){
-                // hash.apply(meta.client_ip, meta.client_port, hash1);
-                // hash2 = hash1;
+                hash.apply(meta.client_ip, meta.client_port, hash1);
+                hash2 = hash1;
                 hdr.udp.checksum = 0;
             }
 
