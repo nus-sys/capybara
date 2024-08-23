@@ -304,8 +304,8 @@ control Ingress(
                     // exec_read_backend_mac_lo16();
                     // exec_read_backend_ip();
                     // exec_read_backend_port();
-                    meta.owner_ip = DIP_p41;
-                    meta.owner_port = SERVER_PORT;
+                    meta.owner_ip = hdr.ipv4.dst_ip;
+                    meta.owner_port = hdr.tcp.dst_port;
                     
                     hash2 = hash1;
                     meta.initial_distribution = 1; // initial migration from FE (switch) to a BE
