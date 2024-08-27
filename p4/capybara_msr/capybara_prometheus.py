@@ -1,7 +1,7 @@
 # manufactured base on cluster hardware sheet 2022.12.04
 from bfrtcli import *
 from netaddr import EUI, IPAddress
-class ping():
+class capybara_prometheus():
     #
     # Helper Functions to deal with ports
     #
@@ -122,7 +122,7 @@ class ping():
         bfrt.complete_operations()
 
     def __init__(self, default_ttl=60000):
-        self.p4 = bfrt.ping.pipe
+        self.p4 = bfrt.capybara_prometheus.pipe
         # self.all_ports  = [port.key[b'$DEV_PORT']
         #                    for port in bfrt.port.port.get(regex=1,
         #                                                   return_ents=True,
@@ -145,26 +145,61 @@ def set_bcast(ports):
                 MULTICAST_NODE_L1_XID=[0]).push()
 
 
-p4 = bfrt.ping.pipe
+# BIP_p40_p41 = '198.19.201.35'
+# BIP_p40_p42 = '198.19.201.36'
+# BIP_p41_p42 = '198.19.201.37'
+# BIP_p42_p41 = '198.19.201.38'
+BIP_p40 = '198.19.201.35'
+BIP_p41 = '198.19.201.36'
+BIP_p42 = '198.19.201.37'
 
-### Setup L2 learning
-sl2 = ping(default_ttl=10000)
-sl2.setup()
 
-routes = (
-    (0x08c0ebb6cd5d, 32, '100G'), # node7
-    (0x08c0ebb6e805, 36, '100G'), # node8
-    (0x08c0ebb6c5ad, 24, '100G'), # node9
-    #
+DIP_p40 = '198.19.200.40'
+DIP_p41 = '198.19.200.41'
+DIP_p42 = '198.19.200.42'
+
+VIP = '198.19.201.34'
+
+p4 = bfrt.capybara_prometheus.pipe
+
+table_list = bfrt.info(return_info=True, print_info=False)
+for table in list(table_list):
+    if table['type'] == 'REGISTER':
+        print("Clearing table {:<40} ... \n".
+                format(table['full_name']),
+                end='', flush=True)
+        table['node'].clear(batch=True)
+
+p4.Ingress.tbl_ip_rewriting.clear()
+p4.Ingress.tbl_ip_rewriting.add_with_ip_rewriting(
+    src_ip = IPAddress(DIP_p40),
+    dst_ip = IPAddress(VIP), 
+    srcip = IPAddress(BIP_p40), 
+    dstip = IPAddress(DIP_p41) 
 )
-port = bfrt.port.port
-for _, dev_port, speed in routes:
-    formatted_speed = 'BF_SPEED_{}'.format(speed)
-    port.add(
-        DEV_PORT=dev_port,
-        PORT_ENABLE=True,
-        SPEED=formatted_speed,
-        FEC='BF_FEC_TYP_NONE',
-        AUTO_NEGOTIATION='PM_AN_FORCE_DISABLE'
-    )
+p4.Ingress.tbl_ip_rewriting.add_with_ip_rewriting(
+    src_ip = IPAddress(DIP_p41),
+    dst_ip = IPAddress(BIP_p40), 
+    srcip = IPAddress(VIP), 
+    dstip = IPAddress(DIP_p40) 
+)
+p4.Ingress.tbl_ip_rewriting.add_with_ip_rewriting(
+    src_ip = IPAddress(DIP_p42),
+    dst_ip = IPAddress(BIP_p40), 
+    srcip = IPAddress(VIP), 
+    dstip = IPAddress(DIP_p40) 
+)
+p4.Ingress.tbl_ip_rewriting.add_with_ip_rewriting(
+    src_ip = IPAddress(DIP_p41),
+    dst_ip = IPAddress(BIP_p42), 
+    srcip = IPAddress(BIP_p41), 
+    dstip = IPAddress(DIP_p42) 
+)
+p4.Ingress.tbl_ip_rewriting.add_with_ip_rewriting(
+    src_ip = IPAddress(DIP_p42),
+    dst_ip = IPAddress(BIP_p41), 
+    srcip = IPAddress(BIP_p42), 
+    dstip = IPAddress(DIP_p41) 
+)
+
 bfrt.complete_operations()
