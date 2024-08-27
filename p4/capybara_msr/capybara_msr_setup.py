@@ -252,7 +252,7 @@ def set_bcast(ports):
 
 
 p4 = bfrt.capybara_msr.pipe
-num_backends = 2
+num_backends = 1
 
 ### Setup L2 learning
 sl2 = capybara_msr(default_ttl=10000)
@@ -266,12 +266,12 @@ for i in range(65536):
 p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=0, f1=0x08c0ebb6)
 p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=0, f1=0xe805)
 p4.Ingress.backend_ip.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.8'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=0, f1=10008)
+p4.Ingress.backend_port.mod(REGISTER_INDEX=0, f1=10000)
 
-p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=1, f1=0x08c0ebb6)
-p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=1, f1=0xc5ad)
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=1, f1=IPAddress('10.0.1.9'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=1, f1=10009)
+# p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=1, f1=0x08c0ebb6)
+# p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=1, f1=0xc5ad)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=1, f1=IPAddress('10.0.1.9'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=1, f1=10009)
 
 
 

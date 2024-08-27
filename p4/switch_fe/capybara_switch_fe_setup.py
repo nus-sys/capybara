@@ -291,7 +291,7 @@ for i in range(num_backends):
 
 
 p4.Egress.reg_min_rps_server_port.mod(REGISTER_INDEX=0, f1=0)
-p4.Egress.reg_round_robin_server_port.mod(REGISTER_INDEX=0, f1=0)
+# p4.Egress.reg_round_robin_server_port.mod(REGISTER_INDEX=0, f1=0)
 
 port_mirror_setup_file="/home/singtel/inho/Capybara/capybara/p4/includes/setup_port_mirror.py" # <== To Modify and Add
 exec(open(port_mirror_setup_file).read()) # <== To Add
