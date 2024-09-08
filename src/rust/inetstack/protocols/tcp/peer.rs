@@ -400,7 +400,7 @@ impl TcpPeer {
 
         let socket: Socket = Socket::Established { local, remote };
 
-        // eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
+        capy_log!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
 
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         match inner.sockets.insert(new_qd, socket) {

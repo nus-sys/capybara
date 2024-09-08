@@ -148,6 +148,10 @@ name = "http-server"
 path = "examples/rust/http-server.rs"
 
 [[example]]
+name = "capybara-switch"
+path = "examples/rust/capybara-switch.rs"
+
+[[example]]
 name = "proxy-server-fe"
 path = "examples/rust/proxy-server-fe.rs"
 
