@@ -620,6 +620,20 @@ impl InetStack {
         }
     }
 
+    pub fn capybara_switch(&mut self) {
+        loop {
+            let batch = self.rt.receive();
+            if batch.is_empty() {
+                continue;
+            }
+            for pkt in batch {
+                if let Err(e) = self.do_receive(pkt) {
+                    warn!("Dropped packet: {:?}", e);
+                }
+            }
+        }
+    }
+
     /// Waits for any operation to complete.
     /// 
     /// The length of `qrs` and `indices` needs to be at least as big as `qts`. If `qrs` is not big enough, all results are not written to it.
@@ -781,7 +795,11 @@ impl InetStack {
         }
         match header.ether_type() {
             EtherType2::Arp => self.arp.receive(payload),
-            EtherType2::Ipv4 => self.ipv4.receive(payload),
+            EtherType2::Ipv4 => self.ipv4.receive(
+                payload, 
+                #[cfg(feature = "capybara-switch")]
+                header,
+            ),
             EtherType2::Ipv6 => Ok(()), // Ignore for now.
         }
     }

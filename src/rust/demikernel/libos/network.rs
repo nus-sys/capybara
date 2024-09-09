@@ -76,6 +76,14 @@ impl NetworkLibOS {
         }
     }
 
+    pub fn capybara_switch(&mut self) {
+        match self {
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.capybara_switch(),
+            _ => panic!("capybara_switch is only supported on Catnip"),
+        }
+    }
+
     pub fn wait_any_nonblocking2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]

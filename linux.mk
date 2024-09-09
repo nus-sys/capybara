@@ -247,21 +247,20 @@ http-server-fe:
 
 capybara-switch:
 	sudo -E \
-	LIBOS=catnip \
 	NUM_CORES=1 \
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
-	taskset --cpu-list 1 \
+	numactl -m0 taskset --cpu-list 1 \
 	$(ELF_DIR)/capybara-switch.elf 10.0.1.8:10000 10.0.1.8:10001
 
 http-server-be0:
-	sudo -E CAPYBARA_LOG="tcpmig" RUST_BACKTRACE=full \
-	CORE_ID=1 \
-	MIG_DELAY=0 \
-	RECV_QUEUE_LEN=0 \
-	CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
+	sudo -E \
+	NUM_CORES=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	numactl -m0 taskset --cpu-list 1 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
 
 http-server-be1:

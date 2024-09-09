@@ -307,9 +307,6 @@ impl ApplicationState for ConnectionState {
 }
 
 fn capybara_switch(tcp_address: SocketAddrV4, udp_address: SocketAddrV4) -> Result<()> {
-    
-    let mut queue_length_vec: Vec<(usize, usize)> = Vec::new();
-    
     ctrlc::set_handler(move || {
         eprintln!("Received Ctrl-C signal.");
         std::process::exit(0);
@@ -318,89 +315,83 @@ fn capybara_switch(tcp_address: SocketAddrV4, udp_address: SocketAddrV4) -> Resu
     
     let libos_name: LibOSName = LibOSName::from_env().unwrap().into();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
-    let sockqd: QDesc = libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0).expect("created socket");
-
-    libos.bind(sockqd, tcp_address).expect("bind TCP socket");
-    libos.listen(sockqd, 300).expect("listen TCP socket");
 
     let mut qts: Vec<QToken> = Vec::new();
-    let mut connstate: HashMap<QDesc, Rc<RefCell<ConnectionState>>> = HashMap::new();
-
-    qts.push(libos.accept(sockqd).expect("accept"));
-
     // Create qrs filled with garbage.
     let mut qrs: Vec<(QDesc, OperationResult)> = Vec::with_capacity(2000);
     qrs.resize_with(2000, || (0.into(), OperationResult::Connect));
     let mut indices: Vec<usize> = Vec::with_capacity(2000);
     indices.resize(2000, 0);
     
-    loop {
-        let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, None).expect("result");
+    // let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, None).expect("result");
+    libos.capybara_switch();
+    // loop {
+    //     let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, None).expect("result");
             
-        server_log!("\n\n======= OS: I/O operations have been completed, take the results! =======");
+    //     server_log!("\n\n======= OS: I/O operations have been completed, take the results! =======");
 
-        let results = &qrs[..result_count];
-        let indices = &indices[..result_count];
+    //     let results = &qrs[..result_count];
+    //     let indices = &indices[..result_count];
 
-        for (index, (qd, result)) in indices.iter().zip(results.iter()).rev() {
-            let (index, qd) = (*index, *qd);
-            qts.swap_remove(index);
+    //     for (index, (qd, result)) in indices.iter().zip(results.iter()).rev() {
+    //         let (index, qd) = (*index, *qd);
+    //         qts.swap_remove(index);
 
-            #[cfg(feature = "manual-tcp-migration")]
-            let mut should_migrate_this_qd = false;
+    //         #[cfg(feature = "manual-tcp-migration")]
+    //         let mut should_migrate_this_qd = false;
 
-            match result {
-                OperationResult::Accept(new_qd) => {
-                    let new_qd = *new_qd;
-                    server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);                    
-                    // Pop from new_qd
-                    match libos.pop(new_qd) {
-                        Ok(pop_qt) => {
-                            qts.push(pop_qt)
-                        },
-                        Err(e) => panic!("pop qt: {}", e),
-                    }
-                    // Re-arm accept
-                    qts.push(libos.accept(qd).expect("accept qtoken"));
+    //         match result {
+    //             OperationResult::Accept(new_qd) => {
+    //                 let new_qd = *new_qd;
+    //                 server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);                    
+    //                 // Pop from new_qd
+    //                 match libos.pop(new_qd) {
+    //                     Ok(pop_qt) => {
+    //                         qts.push(pop_qt)
+    //                     },
+    //                     Err(e) => panic!("pop qt: {}", e),
+    //                 }
+    //                 // Re-arm accept
+    //                 qts.push(libos.accept(qd).expect("accept qtoken"));
 
-                },
+    //             },
 
-                OperationResult::Push => {
-                    server_log!("PUSH complete");
-                },
+    //             OperationResult::Push => {
+    //                 server_log!("PUSH complete");
+    //             },
 
-                OperationResult::Pop(_, recvbuf) => {
-                    server_log!("POP complete");
-                    // let mut state = connstate.get_mut(&qd).unwrap().borrow_mut();
+    //             OperationResult::Pop(None, recvbuf) => {
+    //                 server_log!("POP complete");
+    //                 // let mut state = connstate.get_mut(&qd).unwrap().borrow_mut();
                     
-                    push_data_and_run(&mut libos, qd, &recvbuf, &mut qts);
+    //                 push_data_and_run(&mut libos, qd, &recvbuf, &mut qts);
 
-                    //server_log!("Issued PUSH => {} pushes pending", state.pushing);
-                    // server_log!("Issued {sent} PUSHes");
+    //                 //server_log!("Issued PUSH => {} pushes pending", state.pushing);
+    //                 // server_log!("Issued {sent} PUSHes");
                     
-                    // queue next pop
-                    qts.push(libos.pop(qd).expect("pop qt"));
-                    server_log!("Issued POP");
-                },
+    //                 // queue next pop
+    //                 qts.push(libos.pop(qd).expect("pop qt"));
+    //                 server_log!("Issued POP");
+    //             },
 
-                OperationResult::Failed(e) => {
-                    match e.errno {
-                        #[cfg(feature = "tcp-migration")]
-                        demikernel::ETCPMIG => { server_log!("migrated {:?} polled", qd) },
-                        _ => panic!("operation failed: {}", e),
-                    }
-                }
+    //             OperationResult::Failed(e) => {
+    //                 match e.errno {
+    //                     #[cfg(feature = "tcp-migration")]
+    //                     demikernel::ETCPMIG => { server_log!("migrated {:?} polled", qd) },
+    //                     _ => panic!("operation failed: {}", e),
+    //                 }
+    //             }
 
-                _ => {
-                    panic!("Unexpected op: RESULT: {:?}", result);
-                },
-            }
-        }
-        // #[cfg(feature = "profiler")]
-        // profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
+    //             _ => {
+    //                 panic!("Unexpected op: RESULT: {:?}", result);
+    //             },
+    //         }
+    //     }
+    //     // #[cfg(feature = "profiler")]
+    //     // profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
         
-        server_log!("******* APP: Okay, handled the results! *******");
-    }
+    //     server_log!("******* APP: Okay, handled the results! *******");
+    // }
 
     eprintln!("server stopping");
 

@@ -173,13 +173,14 @@ libdpdk = [ "dpdk-rs" ]
 mlx4 = [ "dpdk-rs/mlx4" ]
 mlx5 = [ "dpdk-rs/mlx5" ]
 profiler = [ ]
+
 tcp-migration = [ ]
 manual-tcp-migration = [ "tcp-migration" ]
-
 capy-profile = [ ]
 capy-log = [ ]
 capy-time-log = [ ]
 server-reply-analysis = [ ]
+capybara-switch = [ ]
 
 #=======================================================================================================================fe
 # Profile
