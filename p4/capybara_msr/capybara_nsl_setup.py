@@ -2,7 +2,7 @@ from bfrtcli import *
 from netaddr import EUI, IPAddress
 
 
-class capybara_msr():
+class capybara_nsl():
     #
     # Helper Functions to deal with ports
     #
@@ -117,7 +117,7 @@ class capybara_msr():
         bfrt.complete_operations()
 
     def __init__(self, default_ttl=60000):
-        self.p4 = bfrt.capybara_msr.pipe
+        self.p4 = bfrt.capybara_nsl.pipe
         self.all_ports  = [port.key[b'$DEV_PORT']
                            for port in bfrt.port.port.get(regex=1,
                                                           return_ents=True,
@@ -161,8 +161,8 @@ class capybara_msr():
 
     @staticmethod
     def aging_cb(dev_id, pipe_id, direction, parser_id, entry):
-        smac = bfrt.capybara_msr.pipe.Ingress.smac
-        dmac = bfrt.capybara_msr.pipe.Ingress.dmac
+        smac = bfrt.capybara_nsl.pipe.Ingress.smac
+        dmac = bfrt.capybara_nsl.pipe.Ingress.dmac
 
         mac_addr = entry.key[b'hdr.ethernet.src_mac']
 
@@ -176,8 +176,8 @@ class capybara_msr():
 
     @staticmethod
     def learning_cb(dev_id, pipe_id, direction, parser_id, session, msg):
-        smac = bfrt.capybara_msr.pipe.Ingress.smac
-        dmac = bfrt.capybara_msr.pipe.Ingress.dmac
+        smac = bfrt.capybara_nsl.pipe.Ingress.smac
+        dmac = bfrt.capybara_nsl.pipe.Ingress.dmac
 
         for digest in msg:
             port     = digest["ingress_port"]
@@ -206,8 +206,8 @@ class capybara_msr():
 
     @staticmethod
     def learning_migration(dev_id, pipe_id, direction, parser_id, session, msg):
-        # migrate_request = bfrt.capybara_msr.pipe.Ingress.migrate_request
-        # migrate_reply = bfrt.capybara_msr.pipe.Ingress.migrate_reply
+        # migrate_request = bfrt.capybara_nsl.pipe.Ingress.migrate_request
+        # migrate_reply = bfrt.capybara_nsl.pipe.Ingress.migrate_reply
         
         for digest in msg:
             src_mac     = digest["src_mac"]
@@ -251,11 +251,11 @@ def set_bcast(ports):
                 MULTICAST_NODE_L1_XID=[0]).push()
 
 
-p4 = bfrt.capybara_msr.pipe
+p4 = bfrt.capybara_nsl.pipe
 num_backends = 1
 
 ### Setup L2 learning
-sl2 = capybara_msr(default_ttl=10000)
+sl2 = capybara_nsl(default_ttl=10000)
 sl2.setup()
 set_bcast([24, 32, 36])
 
