@@ -203,6 +203,10 @@ test-unit-rust:
 
 
 
+ENV += CAPY_LOG=all
+ENV += LIBOS=catnip
+
+
 tcp-echo:
 	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
 	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
@@ -233,19 +237,30 @@ tcpmig-client:
 
 http-server-fe:
 	sudo -E \
+	LIBOS=catnip \
 	IS_FRONTEND=1 \
-	CONFIG_PATH=$(CONFIG_DIR)/fe_config.yaml \
+	NUM_CORES=4 \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 0 \
 	$(ELF_DIR)/http-server.elf 10.0.1.8:10000
 
-http-server-be0:
-	sudo -E CAPYBARA_LOG="tcpmig" RUST_BACKTRACE=full \
-	CORE_ID=1 \
-	MIG_DELAY=0 \
-	RECV_QUEUE_LEN=0 \
-	CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
+capybara-switch:
+	sudo -E \
+	NUM_CORES=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	numactl -m0 taskset --cpu-list 1 \
+	$(ELF_DIR)/capybara-switch.elf 10.0.1.8:10000 10.0.1.8:10001
+
+http-server-be0:
+	sudo -E \
+	NUM_CORES=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	numactl -m0 taskset --cpu-list 1 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
 
 http-server-be1:
@@ -329,7 +344,8 @@ be-dpdk-ctrl:
 
 fe-dpdk-ctrl:
 	sudo -E RUST_LOG="debug" \
-	CONFIG_PATH=$(CONFIG_DIR)/fe_dpdk_ctrl_config.yaml \
+	NUM_CORES=4 \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 4 \
 	$(ELF_DIR)/dpdk-ctrl.elf

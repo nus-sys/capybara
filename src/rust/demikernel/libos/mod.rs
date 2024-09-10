@@ -104,6 +104,12 @@ impl LibOS {
         }
     }
 
+    pub fn capybara_switch(&mut self) {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.capybara_switch(),
+        }
+    }
+
     pub fn wait_any_nonblocking2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.wait_any_nonblocking2(qts, qrs, indices),

@@ -82,4 +82,9 @@ impl Ethernet2Header {
     pub fn ether_type(&self) -> EtherType2 {
         self.ether_type
     }
+
+    #[cfg(feature = "capybara-switch")]
+    pub fn set_dst_addr(&mut self, addr: MacAddress) {
+        self.dst_addr = addr;
+    }
 }

@@ -326,4 +326,9 @@ impl Ipv4Header {
         }
         !state as u16
     }
+
+    #[cfg(feature = "capybara-switch")]
+    pub fn set_dest_addr(&mut self, addr: Ipv4Addr) {
+        self.dst_addr = addr;
+    }
 }

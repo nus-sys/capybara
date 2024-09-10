@@ -37,6 +37,9 @@ use ::std::{
     time::Duration,
 };
 
+#[cfg(feature = "capybara-switch")]
+use crate::inetstack::Ethernet2Header;
+
 #[cfg(test)]
 use crate::runtime::QDesc;
 
@@ -104,8 +107,13 @@ impl Peer {
         })
     }
 
-    pub fn receive(&mut self, buf: Buffer) -> Result<(), Fail> {
-        let (header, payload) = Ipv4Header::parse(buf)?;
+    pub fn receive(
+        &mut self, 
+        buf: Buffer,
+        #[cfg(feature = "capybara-switch")]
+        eth_hdr: Ethernet2Header,
+    ) -> Result<(), Fail> {
+        let (mut header, payload) = Ipv4Header::parse(buf)?;
         debug!("Ipv4 received {:?}", header);
         if header.get_dest_addr() != self.local_ipv4_addr && !header.get_dest_addr().is_broadcast() {
             return Err(Fail::new(ENOTCONN, "invalid destination address"));
@@ -113,7 +121,12 @@ impl Peer {
 
         match header.get_protocol() {
             IpProtocol::ICMPv4 => self.icmpv4.receive(&header, payload),
-            IpProtocol::TCP => self.tcp.receive(&header, payload),
+            IpProtocol::TCP => self.tcp.receive(
+                &mut header, 
+                payload,
+                #[cfg(feature = "capybara-switch")]
+                eth_hdr,
+            ),
             IpProtocol::UDP => {
                 #[cfg(feature = "tcp-migration")]
                 if TcpMigHeader::is_tcpmig(&payload) {

@@ -175,6 +175,9 @@ pub struct Inner {
 
     #[cfg(feature = "server-reply-analysis")]
     listening_port: u16,
+
+    #[cfg(feature = "capybara-switch")]
+    backend_servers: arrayvec::ArrayVec<(MacAddress, SocketAddrV4), 2>,
 }
 
 pub struct TcpPeer {
@@ -307,8 +310,18 @@ impl TcpPeer {
         }
     }
 
-    pub fn receive(&self, ip_header: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
-        self.inner.borrow_mut().receive(ip_header, buf)
+    pub fn receive(&self, 
+        ip_header: &mut Ipv4Header, 
+        buf: Buffer,
+        #[cfg(feature = "capybara-switch")]
+        eth_hdr: Ethernet2Header,
+    ) -> Result<(), Fail> {
+        self.inner.borrow_mut().receive(
+            ip_header, 
+            buf, 
+            #[cfg(feature = "capybara-switch")]
+            eth_hdr,
+        )
     }
 
     // Marks the target socket as passive.
@@ -400,7 +413,7 @@ impl TcpPeer {
 
         let socket: Socket = Socket::Established { local, remote };
 
-        // eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
+        capy_log!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
 
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         match inner.sockets.insert(new_qd, socket) {
@@ -627,6 +640,16 @@ impl Inner {
         dead_socket_tx: mpsc::UnboundedSender<QDesc>,
         _dead_socket_rx: mpsc::UnboundedReceiver<QDesc>,
     ) -> Self {
+        
+        #[cfg(feature = "capybara-switch")]
+        let backend_servers = arrayvec::ArrayVec::from([
+            (MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]), 
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10000)),
+            
+            (MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]), 
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10001)),
+        ]);
+
         let mut rng: SmallRng = SmallRng::from_seed(rng_seed);
         let ephemeral_ports: EphemeralPorts = EphemeralPorts::new(&mut rng);
         let nonce: u32 = rng.gen();
@@ -680,9 +703,12 @@ impl Inner {
 
             #[cfg(feature = "server-reply-analysis")]
             listening_port: 0,
+            #[cfg(feature = "capybara-switch")]
+            backend_servers: backend_servers,
         }
     }
 
+    #[cfg(not(feature = "capybara-switch"))]
     fn receive(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         capy_log!("\n\n[RX]");
         
@@ -781,6 +807,51 @@ impl Inner {
         debug!("Sending RST for {:?}, {:?}", local, remote);
         capy_log!("Sending RST for {:?}, {:?}", local, remote);
         self.send_rst(&local, &remote)?;
+        Ok(())
+    }
+
+
+    #[cfg(feature = "capybara-switch")]
+    fn receive(&mut self, 
+        ip_hdr: &mut Ipv4Header, 
+        buf: Buffer,
+        #[cfg(feature = "capybara-switch")]
+        mut eth_hdr: Ethernet2Header,
+    ) -> Result<(), Fail> {
+        use dpdk_rs::iphdr;
+
+        capy_log!("\n\nCAPYBARA_SWITCH [RX]");
+        
+        let (mut tcp_hdr, mut data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
+        let local = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
+        let remote = SocketAddrV4::new(ip_hdr.get_src_addr(), tcp_hdr.src_port);
+        capy_log!("{:?} => {:?}", remote, local);
+        capy_log!("SERVER RECEIVE TCP seq_num: {}, data length: {}", tcp_hdr.seq_num, data.len());
+        if tcp_hdr.syn {
+            static mut BE_IDX: usize = 0;
+            capy_log!("SYN");
+            let (be_mac, be_sockaddr) = self.backend_servers[unsafe{BE_IDX}];
+            eprintln!("Element at index {}: {:?}", unsafe{BE_IDX}, self.backend_servers[unsafe{BE_IDX}]);
+            
+            eprintln!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
+            
+            eth_hdr.set_dst_addr(be_mac);
+            ip_hdr.set_dest_addr(*be_sockaddr.ip());
+            eprintln!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
+            
+            
+            let segment = TcpSegment {
+                ethernet2_hdr: eth_hdr,
+                ipv4_hdr: *ip_hdr,
+                tcp_hdr,
+                data: None,
+                tx_checksum_offload: self.tcp_config.get_rx_checksum_offload(),
+            };
+            self.rt.transmit(Box::new(segment));
+
+
+            unsafe{ BE_IDX += 1; }
+        }
         Ok(())
     }
 
