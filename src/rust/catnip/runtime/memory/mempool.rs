@@ -46,7 +46,7 @@ impl MemoryPool {
             0 => {
                 let num_cores: usize = match std::env::var("NUM_CORES") {
                     Ok(val) => val.parse::<usize>().unwrap(),
-                    Err(_) => panic!("NUM_CORES environment variable is not set"),
+                    Err(_) => 1,
                 };
                 println!("Running as primary process, n_cores: {}", num_cores);
                 unsafe{ println!("name: {:?}\npool_size * num_cores: {:?}\ncache_size: {:?}\ndata_room_size: {:?}\nrte_socket_id: {:?}\n", 

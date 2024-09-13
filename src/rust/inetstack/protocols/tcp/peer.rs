@@ -177,7 +177,10 @@ pub struct Inner {
     listening_port: u16,
 
     #[cfg(feature = "capybara-switch")]
-    backend_servers: arrayvec::ArrayVec<(MacAddress, SocketAddrV4), 2>,
+    backend_servers: arrayvec::ArrayVec<SocketAddrV4, 3>,
+
+    #[cfg(feature = "capybara-switch")]
+    migration_directory: HashMap<SocketAddrV4, SocketAddrV4>,
 }
 
 pub struct TcpPeer {
@@ -643,11 +646,11 @@ impl Inner {
         
         #[cfg(feature = "capybara-switch")]
         let backend_servers = arrayvec::ArrayVec::from([
-            (MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]), 
-            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10000)),
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10000),
+             
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10001),
             
-            (MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xc5, 0xad]), 
-            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10001)),
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10002),
         ]);
 
         let mut rng: SmallRng = SmallRng::from_seed(rng_seed);
@@ -705,6 +708,8 @@ impl Inner {
             listening_port: 0,
             #[cfg(feature = "capybara-switch")]
             backend_servers: backend_servers,
+            #[cfg(feature = "capybara-switch")]
+            migration_directory: HashMap::new(),
         }
     }
 
@@ -823,35 +828,78 @@ impl Inner {
         capy_log!("\n\nCAPYBARA_SWITCH [RX]");
         
         let (mut tcp_hdr, mut data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
-        let local = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
-        let remote = SocketAddrV4::new(ip_hdr.get_src_addr(), tcp_hdr.src_port);
-        capy_log!("{:?} => {:?}", remote, local);
+        let dst_addr = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
+        let src_addr = SocketAddrV4::new(ip_hdr.get_src_addr(), tcp_hdr.src_port);
+        capy_log!("{:?} => {:?}", src_addr, dst_addr);
         capy_log!("SERVER RECEIVE TCP seq_num: {}, data length: {}", tcp_hdr.seq_num, data.len());
-        if tcp_hdr.syn {
+        if tcp_hdr.syn && !tcp_hdr.ack {
             static mut BE_IDX: usize = 0;
             capy_log!("SYN");
-            let (be_mac, be_sockaddr) = self.backend_servers[unsafe{BE_IDX}];
-            eprintln!("Element at index {}: {:?}", unsafe{BE_IDX}, self.backend_servers[unsafe{BE_IDX}]);
             
-            eprintln!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
+            let be_sockaddr = self.backend_servers[unsafe{BE_IDX}];
+            let be_mac = match self.arp.try_query(*be_sockaddr.ip()){
+                Some(mac) => mac,
+                None => panic!("MAC of this BE is not cached"),
+            };
+            
+            // capy_log!("Element at index {}: {:?}", unsafe{BE_IDX}, self.backend_servers[unsafe{BE_IDX}]);
+            
+            // capy_log!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
             
             eth_hdr.set_dst_addr(be_mac);
-            ip_hdr.set_dest_addr(*be_sockaddr.ip());
-            eprintln!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
-            
+            ip_hdr.set_dst_addr(*be_sockaddr.ip());
+            tcp_hdr.set_dst_port(be_sockaddr.port());
+            // capy_log!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
+
+            if self.migration_directory.insert(src_addr, be_sockaddr).is_some() {
+                panic!("duplicate queue descriptor in established sockets table");
+            }
             
             let segment = TcpSegment {
                 ethernet2_hdr: eth_hdr,
                 ipv4_hdr: *ip_hdr,
                 tcp_hdr,
-                data: None,
+                data: Some(data),
                 tx_checksum_offload: self.tcp_config.get_rx_checksum_offload(),
             };
             self.rt.transmit(Box::new(segment));
 
 
-            unsafe{ BE_IDX += 1; }
+            unsafe{ BE_IDX = (BE_IDX + 1) % self.backend_servers.len(); }
+        }else {
+            let src_matching_addr = self.migration_directory.get(&src_addr);
+            let dst_matching_addr = self.migration_directory.get(&dst_addr);
+            // capy_log!("{:?}, {:?}", src_matching_addr, dst_matching_addr);
+            match (src_matching_addr, dst_matching_addr) {
+                (Some(target_sockaddr), None) => {
+                    let target_mac = match self.arp.try_query(*target_sockaddr.ip()){
+                        Some(mac) => mac,
+                        None => panic!("MAC of this BE is not cached"),
+                    };
+                    eth_hdr.set_dst_addr(target_mac);
+                    ip_hdr.set_dst_addr(*target_sockaddr.ip());
+                    tcp_hdr.set_dst_port(target_sockaddr.port());
+                },
+                (None, Some(_)) => {
+                    eth_hdr.set_src_addr(self.local_link_addr);
+                    ip_hdr.set_src_addr(self.local_ipv4_addr);
+                    tcp_hdr.set_src_port(10000);
+                    // capy_log!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
+                },
+                (Some(_), Some(_)) => panic!("Both src and dst are matching in migration directory"),
+                (None, None) => panic!("No matching entry in migration_directory"),
+            }
+
+            let segment = TcpSegment {
+                ethernet2_hdr: eth_hdr,
+                ipv4_hdr: *ip_hdr,
+                tcp_hdr,
+                data: Some(data),
+                tx_checksum_offload: self.tcp_config.get_rx_checksum_offload(),
+            };
+            self.rt.transmit(Box::new(segment));
         }
+        
         Ok(())
     }
 

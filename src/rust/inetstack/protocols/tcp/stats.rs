@@ -125,8 +125,8 @@ impl Stats {
             buckets: BucketList::new(),
             handles: Vec::new(),
             
-            threshold: std::env::var("RECV_QUEUE_LEN_THRESHOLD").expect("No RECV_QUEUE_LEN_THRESHOLD specified")
-                .parse().expect("RECV_QUEUE_LEN_THRESHOLD should be a number"),
+            threshold: std::env::var("RECV_QUEUE_LEN_THRESHOLD").unwrap_or_else(|_| "2048".to_string())
+                .parse().unwrap(),
 
             max_proactive_migrations: std::env::var("MAX_PROACTIVE_MIGS")
                 .map(|e| Some(e.parse().expect("MAX_PROACTIVE_MIGS should be a number")))

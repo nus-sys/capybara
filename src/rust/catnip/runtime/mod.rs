@@ -263,7 +263,7 @@ impl DPDKRuntime {
                 )?;
                 let num_cores: u16 = match std::env::var("NUM_CORES") {
                     Ok(val) => val.parse::<u16>().unwrap(),
-                    Err(_) => panic!("NUM_CORES environment variable is not set"),
+                    Err(_) => 1,
                 };
                 println!("num_cores: {}", num_cores);
                 Self::init_flow_rules();
@@ -302,7 +302,7 @@ impl DPDKRuntime {
     ) -> Result<(), Error> {
         let num_cores: u16 = match std::env::var("NUM_CORES") {
             Ok(val) => val.parse::<u16>().unwrap(),
-            Err(_) => panic!("NUM_CORES environment variable is not set"),
+            Err(_) => 1,
         };
         let rx_rings = num_cores * 2;
         let tx_rings = num_cores * 2;
@@ -516,6 +516,7 @@ impl DPDKRuntime {
             let mut flow_tcp_mask: rte_tcp_hdr = mem::zeroed();
             flow_tcp.dst_port = u16::to_be(port);
             flow_tcp_mask.dst_port = u16::MAX;
+            #[cfg(feature = "capybara-switch")] { flow_tcp_mask.dst_port = u16::MIN; }
             tcp_pattern[2].spec = &mut flow_tcp as *mut _ as *mut std::os::raw::c_void;
             tcp_pattern[2].mask = &mut flow_tcp_mask as *mut _ as *mut std::os::raw::c_void;
         

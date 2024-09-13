@@ -627,6 +627,7 @@ impl InetStack {
                 continue;
             }
             for pkt in batch {
+                capy_log!("[RX]");
                 if let Err(e) = self.do_receive(pkt) {
                     warn!("Dropped packet: {:?}", e);
                 }
@@ -788,11 +789,11 @@ impl InetStack {
         timer!("inetstack::engine::receive");
         let (header, payload) = Ethernet2Header::parse(bytes)?;
         debug!("Engine received {:?}", header);
-        if self.local_link_addr != header.dst_addr() && !header.dst_addr().is_broadcast() {
-            // ToDo: Add support for is_multicast() to MacAddress type.  Then remove following trace and restore return.
-            trace!("Need to add && !header.dst_addr().is_multicast()");
-            //return Err(Fail::new(EINVAL, "physical destination address mismatch"));
-        }
+        // if self.local_link_addr != header.dst_addr() && !header.dst_addr().is_broadcast() {
+        //     // ToDo: Add support for is_multicast() to MacAddress type.  Then remove following trace and restore return.
+        //     trace!("Need to add && !header.dst_addr().is_multicast()");
+        //     //return Err(Fail::new(EINVAL, "physical destination address mismatch"));
+        // }
         match header.ether_type() {
             EtherType2::Arp => self.arp.receive(payload),
             EtherType2::Ipv4 => self.ipv4.receive(
@@ -955,6 +956,7 @@ impl InetStack {
                 break;
             }
             for pkt in batch {
+                capy_log!("[RX] pkt");
                 if let Err(e) = self.do_receive(pkt) {
                     warn!("Dropped packet: {:?}", e);
                 }

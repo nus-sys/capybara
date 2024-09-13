@@ -328,7 +328,12 @@ impl Ipv4Header {
     }
 
     #[cfg(feature = "capybara-switch")]
-    pub fn set_dest_addr(&mut self, addr: Ipv4Addr) {
+    pub fn set_dst_addr(&mut self, addr: Ipv4Addr) {
         self.dst_addr = addr;
+    }
+
+    #[cfg(feature = "capybara-switch")]
+    pub fn set_src_addr(&mut self, addr: Ipv4Addr) {
+        self.src_addr = addr;
     }
 }

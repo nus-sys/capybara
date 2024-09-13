@@ -115,9 +115,9 @@ impl Peer {
     ) -> Result<(), Fail> {
         let (mut header, payload) = Ipv4Header::parse(buf)?;
         debug!("Ipv4 received {:?}", header);
-        if header.get_dest_addr() != self.local_ipv4_addr && !header.get_dest_addr().is_broadcast() {
-            return Err(Fail::new(ENOTCONN, "invalid destination address"));
-        }
+        // if header.get_dest_addr() != self.local_ipv4_addr && !header.get_dest_addr().is_broadcast() {
+        //     return Err(Fail::new(ENOTCONN, "invalid destination address"));
+        // }
 
         match header.get_protocol() {
             IpProtocol::ICMPv4 => self.icmpv4.receive(&header, payload),

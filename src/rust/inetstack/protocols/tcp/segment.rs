@@ -453,6 +453,16 @@ impl TcpHeader {
         self.option_list[self.num_options] = option;
         self.num_options += 1;
     }
+
+    #[cfg(feature = "capybara-switch")]
+    pub fn set_dst_port(&mut self, port: u16) {
+        self.dst_port = port;
+    }
+
+    #[cfg(feature = "capybara-switch")]
+    pub fn set_src_port(&mut self, port: u16) {
+        self.src_port = port;
+    }
 }
 
 fn tcp_checksum(ipv4_header: &Ipv4Header, header: &[u8], data: &[u8]) -> u16 {
