@@ -6,7 +6,7 @@
 //==============================================================================
 
 use crate::{
-    capy_log_mig, capy_profile, capy_time_log, inetstack::{
+    capy_log_mig, capy_profile, capy_profile_total, capy_time_log, inetstack::{
         futures::operation::FutureOperation,
         operations::OperationResult,
         protocols::{
@@ -785,6 +785,7 @@ impl InetStack {
     /// allow the correct protocol to handle it. The underlying protocol will futher parse the data
     /// and inform the correct task that its data has arrived.
     fn do_receive(&mut self, bytes: Buffer) -> Result<(), Fail> {
+        capy_profile_total!("do_receive");
         #[cfg(feature = "profiler")]
         timer!("inetstack::engine::receive");
         let (header, payload) = Ethernet2Header::parse(bytes)?;
@@ -819,15 +820,16 @@ impl InetStack {
         // Inho: After using a single RX queue, 
         // Redis shows poor tail latency without this on for some reason. 
         // So, purposely add this line for eval.  
-        #[cfg(feature = "tcp-migration")]
+        // #[cfg(feature = "tcp-migration")]{
         self.poll_runtime_no_scheduler_poll();
         {
             #[cfg(feature = "profiler")]
             timer!("inetstack::poll_bg_work::poll");
             self.scheduler.poll();
         }
-        #[cfg(not(feature = "tcp-migration"))]
-        self.poll_runtime();
+        // }
+        // #[cfg(not(feature = "tcp-migration"))]
+        // self.poll_runtime();
 
         // #[cfg(feature = "tcp-migration")]
         // if !was_runtime_polled {
@@ -879,6 +881,25 @@ impl InetStack {
                 }
                 // TODO: This is a workaround for https://github.com/demikernel/inetstack/issues/149.
                 self.scheduler.poll();
+            }
+        }
+    }
+    /// Exactly the same as `poll_runtime()` but does not poll the scheduler after every packet.
+    fn poll_runtime_no_scheduler_poll(&mut self) {
+        for _ in 0..MAX_RECV_ITERS {
+            let batch = {
+                #[cfg(feature = "profiler")]
+                timer!("inetstack::poll_bg_work::for::receive");
+                self.rt.receive()
+            };
+            if batch.is_empty() {
+                break;
+            }
+            for pkt in batch {
+                capy_log!("[RX] pkt");
+                if let Err(e) = self.do_receive(pkt) {
+                    warn!("Dropped packet: {:?}", e);
+                }
             }
         }
     }
@@ -944,25 +965,6 @@ impl InetStack {
         self.tcpmig_state.poll_state.is_fast_migrate_enabled()
     }
 
-    /// Exactly the same as `poll_runtime()` but does not poll the scheduler after every packet.
-    fn poll_runtime_no_scheduler_poll(&mut self) {
-        for _ in 0..MAX_RECV_ITERS {
-            let batch = {
-                #[cfg(feature = "profiler")]
-                timer!("inetstack::poll_bg_work::for::receive");
-                self.rt.receive()
-            };
-            if batch.is_empty() {
-                break;
-            }
-            for pkt in batch {
-                capy_log!("[RX] pkt");
-                if let Err(e) = self.do_receive(pkt) {
-                    warn!("Dropped packet: {:?}", e);
-                }
-            }
-        }
-    }
 
     #[cfg(feature = "manual-tcp-migration")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {

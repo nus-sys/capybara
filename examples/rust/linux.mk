@@ -45,12 +45,13 @@ all-examples:
 #	@echo "$(CARGO) build --example tcpmig-client $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example tcpmig-client $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
+#	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS)"
 	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
 	$(CARGO) build --example capybara-switch $(CARGO_FEATURES) $(CARGO_FLAGS) --features=capybara-switch
-#	$(CARGO) build --example proxy-server-fe $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
-#	$(CARGO) build --example proxy-server-be $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
+#,capy-profile
+	$(CARGO) build --example proxy-server-fe $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
+	$(CARGO) build --example proxy-server-be $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
 #capy-profile,capy-time-log
 
 clean:

@@ -36,42 +36,47 @@ def kill_procs():
     cmd = [f'sudo pkill -INT -e iokerneld ; \
             sudo pkill -INT -f synthetic ; \
             sudo pkill -INT -e dpdk-ctrl.elf ; \
-           sudo pkill -INT -e phttp-bench ; \
-           sudo pkill -INT -f tcpdump ; \
-            sudo pkill -INT -e {SERVER_APP} ']
+            sudo pkill -INT -e phttp-bench ; \
+            sudo pkill -INT -f tcpdump ; \
+            sudo pkill -INT -f http-server ; \
+            sudo pkill -INT -e {SERVER_APP}']
     # print(cmd)
     if TCPDUMP:
         cmd[0] += ' ; sudo pkill -INT -f -e tcpdump'
     # cmd = [f'sudo pkill -INT -f Capybara && sleep 2 && sudo pkill -f Capybara && sudo pkill -f caladan']
-    kill_tasks = []
+    
+    # print(cmd)
     for node in ALL_NODES:
+        # kill_tasks = []
+        # print(node)
         host = pyrem.host.RemoteHost(node)
         task = host.run(cmd, quiet=False)
         # print(task)
-        kill_tasks.append(task)
+        # kill_tasks.append(task)
+        pyrem.task.Parallel([task], aggregate=True).start(wait=True)
     
-    pyrem.task.Parallel(kill_tasks, aggregate=True).start(wait=True)
+    # print(kill_tasks)
     print('KILLED CAPYBARA PROCESSES')
 
 
 def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     global experiment_id
-    
-    print('SETUP SWITCH')
-    cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
-           /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
-    if SERVER_APP == 'prism' or SERVER_APP == 'proxy-server':
+    if SERVER_APP != "capybara-switch":
+        print('SETUP SWITCH')
         cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
-           /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/prism/prism_setup.py"']
+            /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
+        if SERVER_APP == 'prism' or SERVER_APP == 'proxy-server':
+            cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
+            /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/prism/prism_setup.py"']
 
-    result = subprocess.run(
-        cmd,
-        shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=True,
-    ).stdout.decode()
-    # print(result + '\n\n')
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=True,
+        ).stdout.decode()
+        # print(result + '\n\n')
 
     if SERVER_APP == 'proxy-server':
         print('RUNNING FRONTEND')
@@ -155,6 +160,31 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
         print(f'{NUM_BACKENDS} Backend{"s are" if NUM_BACKENDS != 1 else " is"} running')
         return
     
+    elif SERVER_APP == 'capybara-switch':
+        print('RUNNING CAPYBARA ENDHOST SWITCH')
+        host = pyrem.host.RemoteHost(FRONTEND_NODE) 
+        
+
+        cmd = [f'cd {CAPYBARA_PATH} && \
+            sudo -E \
+            CAPY_LOG={CAPY_LOG} \
+            LIBOS={LIBOS} \
+            NUM_CORES=1 \
+            MTU=1500 \
+            MSS=1500 \
+            NUM_BACKENDS={NUM_BACKENDS} \
+            CONFIG_PATH={CAPYBARA_PATH}/config/node8_config.yaml \
+            LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
+            PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
+            taskset --cpu-list 1 numactl -m0 \
+            {CAPYBARA_PATH}/bin/examples/rust/capybara-switch.elf 10.0.1.8:10000 10.0.1.8:10001 \
+            > {DATA_PATH}/{experiment_id}.capybara_switch 2>&1']
+        
+        task = host.run(cmd, quiet=False)
+        pyrem.task.Parallel([task], aggregate=True).start(wait=False)    
+        time.sleep(2)
+        print(f'CAPYBARA ENDHOST SWITCH is running')
+    
     print('RUNNING BACKENDS')
     host = pyrem.host.RemoteHost(BACKEND_NODE)
 
@@ -187,13 +217,13 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     server_tasks = []
     for j in range(NUM_BACKENDS): 
         run_cmd = ''
-        if SERVER_APP == 'http-server':
-            run_cmd = f'{CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP}.elf 10.0.1.9:1000{j}'
+        if SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch':
+            run_cmd = f'{CAPYBARA_PATH}/bin/examples/rust/http-server.elf 10.0.1.9:1000{j}'
         elif SERVER_APP == 'redis-server':
             run_cmd = f'make run-redis-server'
         
         
-        if SERVER_APP == 'http-server' or SERVER_APP == 'redis-server':
+        if SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'redis-server':
             cmd = [f'cd {CAPYBARA_PATH} && \
                 {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
                 sudo -E \
@@ -213,7 +243,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 NUM_CORES=4 \
                 RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
-                {f"CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml" if SERVER_APP == "http-server" else ""} \
+                {f"CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml" if SERVER_APP == "http-server" or SERVER_APP == "capybara-switch" else ""} \
                 {f"CONF=redis{j}" if SERVER_APP == "redis-server" else ""} \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
                 PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
@@ -233,6 +263,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
         else:
             print(f'Invalid server app: {SERVER_APP}')
             exit(1)
+        # print(cmd)
         task = host.run(cmd, quiet=False)
         server_tasks.append(task)
     pyrem.task.Parallel(server_tasks, aggregate=True).start(wait=False)    
@@ -652,7 +683,7 @@ def run_eval():
                                         time.sleep(3)
                                         print('iokerneld is running')
                                     
-                                    if SERVER_APP == 'http-server' or SERVER_APP == 'prism' or SERVER_APP == 'proxy-server':
+                                    if SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'prism' or SERVER_APP == 'proxy-server':
                                         if CLIENT_APP == 'wrk':
                                             cmd = [f'sudo numactl -m0 {HOME}/wrk-tools/wrk/wrk \
                                                 -t{num_thread} \
@@ -827,6 +858,8 @@ if __name__ == '__main__':
     # exit(1)
     # parse_result()
     # parse_mig_delay("20240318-093754.379579")
+    
+    # kill_procs()
     # exit()
 
     if len(sys.argv) > 1 and sys.argv[1] == 'build':

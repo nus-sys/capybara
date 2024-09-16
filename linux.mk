@@ -237,11 +237,11 @@ tcpmig-client:
 
 http-server-fe:
 	sudo -E \
-	LIBOS=catnip \
 	IS_FRONTEND=1 \
 	NUM_CORES=4 \
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
 	taskset --cpu-list 0 \
 	$(ELF_DIR)/http-server.elf 10.0.1.8:10000
 
@@ -256,7 +256,8 @@ capybara-switch:
 
 http-server-be0:
 	sudo -E \
-	NUM_CORES=1 \
+	NUM_CORES=4 \
+	CORE_ID=1 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
@@ -264,12 +265,13 @@ http-server-be0:
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
 
 http-server-be1:
-	sudo -E CAPYBARA_LOG="tcpmig" \
+	sudo -E \
+	NUM_CORES=4 \
 	CORE_ID=2 \
-	MIG_DELAY=0 \
-	RECV_QUEUE_LEN=3000 \
-	CONFIG_PATH=$(CONFIG_DIR)/be1_config.yaml \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	numactl -m0 taskset --cpu-list 2 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10001
 
 http-server-be2:
@@ -460,13 +462,19 @@ redis-server: all-libs
 	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) make redis-server
 
 redis-server-mig: all-libs
-	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 make redis-server
+	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 make redis-cli redis-server BUILD_TLS=yes
 
 redis-server-mig-manual: all-libs
 	cd ../capybara-redis && DEMIKERNEL_REPO_DIR=$(DEMIKERNEL_REPO_DIR) DEMIKERNEL_LOG_IO=$(DEMIKERNEL_LOG_IO) DEMIKERNEL_TCPMIG=1 MANUAL_TCPMIG=1 make redis-server
 
 run-redis-server:
 	cd ../capybara-redis && sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/node$(NODE)_config.yaml LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) numactl -m0 ./src/redis-server $(CONF).conf
+
+run-redis-server-node8:
+	cd ../capybara-redis && sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml CAPY_LOG=all RUST_LOG="debug" NUM_CORES=4 CORE_ID=1 LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) numactl -m0 ./src/redis-server config/node8_10001.conf
+
+run-test:
+	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml CAPY_LOG=all RUST_LOG="debug" NUM_CORES=4 CORE_ID=1 LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) numactl -m0 $(ELF_DIR)/http-server.elf 10.0.1.8:10000
 
 clean-redis:
 	cd ../capybara-redis && make distclean

@@ -29,6 +29,7 @@ macro_rules! __capy_time_log {
 #[macro_export]
 macro_rules! __capy_time_log_dump {
     ($dump:expr) => {
+        eprintln!("__capy_time_log_dump");
         $crate::capylog::time_log::__write_time_log_data($dump).expect("capy_time_log_dump failed");
     };
 }

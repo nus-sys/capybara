@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 use crate::{
+    capy_log, 
     catnip::DPDKRuntime,
     runtime::{
         memory::MemoryRuntime,
@@ -75,6 +76,7 @@ pub fn pack_result(rt: Rc<DPDKRuntime>, result: OperationResult, qd: QDesc, qt: 
             },
             Err(e) => {
                 warn!("Operation Failed: {:?}", e);
+                capy_log!("[0] Operation Failed: {:?}", e);
                 demi_qresult_t {
                     qr_opcode: demi_opcode_t::DEMI_OPC_FAILED,
                     qr_qd: qd.into(),
@@ -85,6 +87,7 @@ pub fn pack_result(rt: Rc<DPDKRuntime>, result: OperationResult, qd: QDesc, qt: 
         },
         OperationResult::Failed(e) => {
             warn!("Operation Failed: {:?}", e);
+            capy_log!("[1] Operation Failed: {:?}", e);
             demi_qresult_t {
                 qr_opcode: demi_opcode_t::DEMI_OPC_FAILED,
                 qr_qd: qd.into(),

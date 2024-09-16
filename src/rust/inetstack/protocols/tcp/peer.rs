@@ -108,7 +108,7 @@ use crate::inetstack::protocols::{
 #[cfg(feature = "profiler")]
 use crate::timer;
 
-use crate::{capy_profile, capy_log, capy_log_mig};
+use crate::{capy_profile, capy_profile_total, capy_log, capy_log_mig};
 
 //==============================================================================
 // Enumerations
@@ -177,10 +177,12 @@ pub struct Inner {
     listening_port: u16,
 
     #[cfg(feature = "capybara-switch")]
-    backend_servers: arrayvec::ArrayVec<SocketAddrV4, 3>,
+    backend_servers: arrayvec::ArrayVec<SocketAddrV4, 4>,
 
     #[cfg(feature = "capybara-switch")]
     migration_directory: HashMap<SocketAddrV4, SocketAddrV4>,
+    #[cfg(feature = "capybara-switch")]
+    num_backends: usize,
 }
 
 pub struct TcpPeer {
@@ -651,6 +653,8 @@ impl Inner {
             SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10001),
             
             SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10002),
+
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10003),
         ]);
 
         let mut rng: SmallRng = SmallRng::from_seed(rng_seed);
@@ -710,6 +714,11 @@ impl Inner {
             backend_servers: backend_servers,
             #[cfg(feature = "capybara-switch")]
             migration_directory: HashMap::new(),
+            #[cfg(feature = "capybara-switch")]
+            num_backends: std::env::var("NUM_BACKENDS")
+                .unwrap_or_else(|_| String::from("1"))
+                .parse::<usize>()
+                .expect("Invalid NUM_BACKENDS value"),
         }
     }
 
@@ -823,7 +832,15 @@ impl Inner {
         #[cfg(feature = "capybara-switch")]
         mut eth_hdr: Ethernet2Header,
     ) -> Result<(), Fail> {
-        use dpdk_rs::iphdr;
+        #[cfg(feature = "capy-log")]{
+            static mut COUNTER: usize = 0;
+            unsafe{ 
+                COUNTER += 1; 
+                if COUNTER % 100000 == 0{
+                    capy_time_log!("{}", COUNTER);
+                }
+            }
+        }
 
         capy_log!("\n\nCAPYBARA_SWITCH [RX]");
         
@@ -865,8 +882,9 @@ impl Inner {
             self.rt.transmit(Box::new(segment));
 
 
-            unsafe{ BE_IDX = (BE_IDX + 1) % self.backend_servers.len(); }
+            unsafe{ BE_IDX = (BE_IDX + 1) % self.num_backends; }
         }else {
+            capy_profile_total!("capybara-switch");
             let src_matching_addr = self.migration_directory.get(&src_addr);
             let dst_matching_addr = self.migration_directory.get(&dst_addr);
             // capy_log!("{:?}, {:?}", src_matching_addr, dst_matching_addr);

@@ -67,6 +67,7 @@ macro_rules! capy_time_log {
 #[macro_export]
 macro_rules! capy_time_log_dump {
     ($dump:expr) => {
+        eprintln!("capy_time_log_dump");
         $crate::invoke_if_feature!("capy-time-log", crate::capylog::time_log::__capy_time_log_dump, $dump)
     };
 }

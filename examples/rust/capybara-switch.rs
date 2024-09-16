@@ -55,6 +55,7 @@ macro_rules! server_log {
 fn capybara_switch(tcp_address: SocketAddrV4, udp_address: SocketAddrV4) -> Result<()> {
     ctrlc::set_handler(move || {
         eprintln!("Received Ctrl-C signal.");
+        LibOS::capylog_dump(&mut std::io::stderr().lock());
         std::process::exit(0);
     }).expect("Error setting Ctrl-C handler");
     

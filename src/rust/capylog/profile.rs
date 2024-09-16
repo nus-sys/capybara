@@ -8,7 +8,7 @@ use std::{time::{Duration, Instant}, collections::HashMap};
 static mut DATA: Option<Vec<(&str, Duration)>> = None;
 
 #[allow(unused)]
-static mut TOTAL_DATA: Option<HashMap<&str, Duration>> = None;
+static mut TOTAL_DATA: Option<HashMap<&str, (u64, Duration)>> = None;
 
 //==============================================================================
 // Macros
@@ -93,7 +93,9 @@ impl Drop for __MergeDroppedObject {
 impl Drop for __TotalDroppedObject {
     fn drop(&mut self) {
         let time = self.begin.elapsed();
-        *total_data().entry(self.name).or_default() += time;
+        let entry = total_data().entry(self.name).or_insert((0, Duration::default()));
+        entry.0 += 1; // Increment total duration
+        entry.1 += time;    // Increment count
     }
 }
 
@@ -149,9 +151,9 @@ pub(crate) fn __write_profiler_data<W: std::io::Write>(w: &mut W) -> std::io::Re
     }
 
     eprintln!("\n[CAPYLOG] dumping total profiler data");
-    let data: &HashMap<&str, Duration> = total_data();
-    for (name, datum) in data {
-        write!(w, "{},{}\n", name, datum.as_nanos())?;
+    let data: &HashMap<&str, (u64, Duration)> = total_data();
+    for (name, (count, duration)) in data {
+        write!(w, "{},{},{}\n", name, count, duration.as_nanos())?;  // Also print the count
     }
     Ok(())
 }
@@ -164,7 +166,7 @@ fn data() -> &'static mut Vec<(&'static str, Duration)> {
 
 #[allow(unused)]
 #[inline]
-fn total_data() -> &'static mut HashMap<&'static str, Duration> {
+fn total_data() -> &'static mut HashMap<&'static str, (u64, Duration)> {
     unsafe { TOTAL_DATA.as_mut().expect("capy-log profiler not initialised") }
 }
 

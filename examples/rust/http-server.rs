@@ -333,6 +333,13 @@ impl ApplicationState for ConnectionState {
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
+    #[cfg(feature = "tcp-migration")]{
+        eprintln!("TCP MIGRATION ENABLED");
+    }
+    #[cfg(not(feature = "tcp-migration"))]{
+        eprintln!("TCP MIGRATION DISABLED");
+    }
+    
     unsafe{ SERVER_PORT = local.port() };
     let mut request_count = 0;
     let mut queue_length_vec: Vec<(usize, usize)> = Vec::new();
