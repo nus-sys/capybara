@@ -24,18 +24,18 @@ NODE9_MAC = '08:c0:eb:b6:c5:ad'
 ################## BUILD CONFIG #####################
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
-    # 'tcp-migration',
+    'tcp-migration',
     # 'manual-tcp-migration',
-    # 'capy-log',
+    'capy-log',
     # 'capy-profile',
     # 'capy-time-log',
     # 'server-reply-analysis',
 ]
 
 ################## TEST CONFIG #####################
-NUM_BACKENDS = 4
-SERVER_APP = 'proxy-server' # 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
-CLIENT_APP = 'caladan' # 'wrk', 'caladan'
+NUM_BACKENDS = 1
+SERVER_APP = 'prism' # 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
+CLIENT_APP = 'wrk' # 'wrk', 'caladan'
 NUM_THREADS = [1] # for wrk load generator
 REPEAT_NUM = 1
 
@@ -74,7 +74,7 @@ RPS_THRESHOLD = 0.35
 THRESHOLD_EPSILON = 0.1 
 
 CAPY_LOG = 'all' # 'all', 'mig'
-REDIS_LOG = 0
+REDIS_LOG = 1 # 1, 0
 
 
 ### CALADAN ###
@@ -92,3 +92,7 @@ RUNTIME = 10
 # build command: run_eval.py [build [clean]]
 # builds based on SERVER_APP
 # cleans redis before building if clean
+
+# Commands:
+# $ python3 -u run_eval.py 2>&1 | tee -a /homes/inho/capybara-data/experiment_history.txt
+# $ python3 -u run_eval.py build

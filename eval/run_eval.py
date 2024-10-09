@@ -844,10 +844,14 @@ def run_compile():
         features += feat + ','
 
     # if SERVER_APP == 'http-server':
-    os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-examples-rust")
+    
     if SERVER_APP == 'redis-server':
+        os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-libs")
         clean = 'make clean-redis &&' if len(sys.argv) > 2 and sys.argv[2] == 'clean' else ''
         return os.system(f'cd {CAPYBARA_PATH} && {clean} EXAMPLE_FEATURES={features} REDIS_LOG={REDIS_LOG} make redis-server{mig}')
+    else :
+        return os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-examples-rust")
+    
     # else:
     #     print(f'Invalid server app: {SERVER_APP}')
     #     exit(1)
