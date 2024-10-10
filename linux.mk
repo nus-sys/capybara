@@ -25,6 +25,7 @@ endif
 
 export BINDIR ?= $(CURDIR)/bin
 export INCDIR ?= $(CURDIR)/include
+export LIBDIR ?= $(CURDIR)/lib
 export SRCDIR = $(CURDIR)/src
 export BUILD_DIR := $(CURDIR)/target/release
 ifeq ($(BUILD),dev)
@@ -39,12 +40,20 @@ endif
 export CARGO ?= $(shell which cargo || echo "$(HOME)/.cargo/bin/cargo" )
 export CARGO_FLAGS += --profile $(BUILD)
 
+# C
+export CFLAGS := -I $(INCDIR)
+ifeq ($(DEBUG),yes)
+export CFLAGS += -O0
+else
+export CFLAGS += -O3
+endif
+
 #=======================================================================================================================
 # Libraries
 #=======================================================================================================================
 
-export DEMIKERNEL_LIB := $(BUILD_DIR)/libdemikernel.so
-export LIBS := $(DEMIKERNEL_LIB)
+export DEMIKERNEL_LIB := libdemikernel.so
+export LIBS := $(BUILD_DIR)/$(DEMIKERNEL_LIB)
 
 #=======================================================================================================================
 # Build Parameters
@@ -69,7 +78,11 @@ CARGO_FEATURES += $(FEATURES)
 
 #=======================================================================================================================
 
-all: all-libs all-tests all-examples
+all: init | all-libs all-tests all-examples
+
+init:
+	mkdir -p $(LIBDIR)
+	git config --local core.hooksPath .githooks
 
 # Builds documentation.
 doc:
@@ -79,19 +92,36 @@ doc:
 install:
 	mkdir -p $(INSTALL_PREFIX)/include $(INSTALL_PREFIX)/lib
 	cp -rf $(INCDIR)/* $(INSTALL_PREFIX)/include/
-	cp -f  $(DEMIKERNEL_LIB) $(INSTALL_PREFIX)/lib/
+	cp -rf  $(LIBDIR)/* $(INSTALL_PREFIX)/lib/
+	cp -f $(CURDIR)/scripts/config/default.yaml $(INSTALL_PREFIX)/config.yaml
 
 #=======================================================================================================================
 # Libs
 #=======================================================================================================================
 
 # Builds all libraries.
-all-libs:
+all-libs: all-shim all-libs-demikernel
+
+all-libs-demikernel:
 	@echo "LD_LIBRARY_PATH: $(LD_LIBRARY_PATH)"
 	@echo "PKG_CONFIG_PATH: $(PKG_CONFIG_PATH)"
-	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)"
-	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
+	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS)"
+	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS)
+	cp -f $(BUILD_DIR)/$(DEMIKERNEL_LIB) $(LIBDIR)/$(DEMIKERNEL_LIB)
 
+all-shim: all-libs-demikernel
+	$(MAKE) -C shim all BINDIR=$(BINDIR)/shim
+
+clean-libs: clean-shim clean-libs-demikernel
+
+clean-libs-demikernel:
+	rm -f $(LIBDIR)/$(DEMIKERNEL_LIB)
+	rm -rf target ; \
+	rm -f Cargo.lock ; \
+	$(CARGO) clean
+
+clean-shim:
+	$(MAKE) -C shim clean BINDIR=$(BINDIR)/shim
 #=======================================================================================================================
 # Tests
 #=======================================================================================================================
@@ -481,3 +511,15 @@ clean-redis:
 
 clean-redis-data:
 	cd ../capybara-redis && sudo rm -rf dir_master dir_slave
+
+
+# REDIS + TLS #
+
+redis-server-node8:
+	cd ../capybara-redis/src && \
+	sudo -E \
+	$(ENV) \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	LD_PRELOAD=$(LIBDIR)/libshim.so \
+	./redis-server ../config/node8.conf
