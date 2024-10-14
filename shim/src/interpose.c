@@ -187,6 +187,7 @@ static inline void init(void)
 
 int close(int sockfd)
 {
+    fprintf(stderr, "interpose.c::close (sockfd: %d)\n", sockfd);
     INTERPOSE_CALL(int, libc_close, __close, sockfd);
 }
 
@@ -353,8 +354,8 @@ int getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 
 ssize_t read(int sockfd, void *buf, size_t count)
 {
-    if(sockfd >= 500)
-        fprintf(stderr, "interpose.c::read (sockfd: %d, size: %lu)\n", sockfd, count);
+    // if(sockfd >= 500)
+    fprintf(stderr, "interpose.c::read (sockfd: %d, size: %lu)\n", sockfd, count);
     INTERPOSE_CALL(ssize_t, libc_read, __read, sockfd, buf, count);
 }
 
@@ -471,7 +472,7 @@ int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event)
 
 int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout)
 {
-    // fprintf(stderr, "interpose.c::epoll_wait\n");
+    // fprintf(stderr, "interpose.c::epoll_wait (epfd: %d, events: %p, maxevents: %d, timeout: %d)\n", epfd, events, maxevents, timeout);
     init_libc();
 
     if (UNLIKELY(in_init) || UNLIKELY(is_reentrant_demi_call()))

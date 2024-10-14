@@ -185,6 +185,7 @@ impl LibOS {
 
     /// Pushes a scatter-gather array to a TCP socket.
     pub fn push(&mut self, fd: QDesc, sga: &demi_sgarray_t) -> Result<QToken, Fail> {
+        eprintln!("[DEMI] push");
         match self {
             LibOS::NetworkLibOS(libos) => libos.push(fd, sga),
         }

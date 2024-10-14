@@ -30,8 +30,8 @@ extern int __demi_pop(demi_qtoken_t *qt_out, int qd);
 extern demi_sgarray_t __demi_sgaalloc(size_t size);
 extern int __demi_sgafree(demi_sgarray_t *sga);
 extern int __demi_wait(demi_qresult_t *qr_out, demi_qtoken_t qt, const struct timespec *timeout);
-extern int __demi_wait_any(demi_qresult_t *qr_out, int *ready_offset, const demi_qtoken_t qts[], int num_qts,
-                           const struct timespec *timeout);
+extern int __demi_wait_any(demi_qresult_t *qrs_out, size_t *ready_offsets, size_t *qrs_count,
+                    demi_qtoken_t qts[], size_t num_qts, long long timeout_us);
 extern int __demi_getsockopt(int sockfd, int level, int optname,
         void *optval, socklen_t *optlen);
 extern int __demi_setsockopt(int sockfd, int level, int optname,

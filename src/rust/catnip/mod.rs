@@ -14,12 +14,10 @@ use self::{
     runtime::DPDKRuntime,
 };
 use crate::{
-    demikernel::config::Config,
-    inetstack::{
+    capy_log, demikernel::config::Config, inetstack::{
         operations::OperationResult,
         InetStack,
-    },
-    runtime::{
+    }, runtime::{
         fail::Fail,
         libdpdk::load_mlx_driver,
         memory::MemoryRuntime,
@@ -33,11 +31,10 @@ use crate::{
         },
         QDesc,
         QToken,
-    },
-    scheduler::{
+    }, scheduler::{
         Scheduler,
         SchedulerHandle,
-    },
+    }
 };
 use std::time::Duration;
 use ::std::{
@@ -85,6 +82,10 @@ impl CatnipLibOS {
             config.tcp_checksum_offload(),
             config.udp_checksum_offload(),
         ));
+        let mtu = config.mtu();
+        capy_log!("CatnipLibOS::MTU: {}", mtu);
+        let use_jumbo_frames = config.use_jumbo_frames();
+        capy_log!("CatnipLibOS::Use Jumbo Frames?: {:?}", use_jumbo_frames);
         let now: Instant = Instant::now();
         let clock: TimerRc = TimerRc(Rc::new(Timer::new(now)));
         let scheduler: Scheduler = Scheduler::default();
@@ -118,6 +119,7 @@ impl CatnipLibOS {
         #[cfg(feature = "profiler")]
         timer!("catnip::push");
         trace!("push(): qd={:?}", qd);
+        capy_log!("[0] pushing");
         match self.rt.clone_sgarray(sga) {
             Ok(buf) => {
                 if buf.len() == 0 {

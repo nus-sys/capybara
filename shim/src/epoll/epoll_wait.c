@@ -41,15 +41,16 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
         errno = EINVAL;
         return -1;
     }
-
+    // fprintf(stderr, "VALID EPFD\n");
     // We intentionally set the timeout to zero, because
     // millisecond timeouts are too coarse-grain for Demikernel.
     timeout = 0;
 
-    struct timespec abstime = {timeout / 1000, timeout * 1000 * 1000};
+    long long timeout_us = (timeout == -1) ? -1 : (timeout * 1000);
 
-    demi_qresult_t qr;
-    int ready_offset;
+    demi_qresult_t qrs[MAX_EVENTS];
+    int ready_offsets[MAX_EVENTS];
+    size_t qrs_count = MAX_EVENTS;
     demi_qtoken_t qts[MAX_EVENTS];
     struct demi_event *evs[MAX_EVENTS];
 
@@ -57,15 +58,20 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
 
     if (nevents > 0)
     {
-        int ret = __demi_wait_any(&qr, &ready_offset, qts, nevents, &abstime);
+        // fprintf(stderr, "HERE0 (nevents: %d)\n", nevents);
+        int ret = __demi_wait_any(qrs, ready_offsets, &qrs_count, qts, nevents, timeout_us);
         if (ret != 0)
         {
             ERROR("demi_timedwait() failed - %s", strerror(ret));
             return 0;
         }
 
-        evs[ready_offset]->qr = qr;
-        switch (evs[ready_offset]->qr.qr_opcode)
+        for (size_t i = 0; i < qrs_count; i++)
+        {
+            size_t ready_offset = ready_offsets[i];
+
+            evs[ready_offset]->qr = qrs[i];
+            switch (evs[ready_offset]->qr.qr_opcode)
             {
                 case DEMI_OPC_ACCEPT:
                 {
@@ -79,15 +85,16 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
                     queue_man_set_accept_result(evs[ready_offset]->sockqd, evs[ready_offset]);
                 }
                 break;
+
                 case DEMI_OPC_CONNECT:
                 {
                     // TODO: implement.
                     UNIMPLEMETED("parse result of demi_connect()");
                 }
                 break;
+
                 case DEMI_OPC_POP:
                 {
-
                     // Fill in event.
                     events[nevents].events = evs[ready_offset]->ev.events;
                     events[nevents].data.fd = evs[ready_offset]->sockqd;
@@ -100,10 +107,11 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
                     queue_man_set_pop_result(evs[ready_offset]->sockqd, evs[ready_offset]);
                 }
                 break;
+
                 case DEMI_OPC_PUSH:
                 {
                     // TODO: implement.
-                    UNIMPLEMETED("parse result of demi_push()")
+                    UNIMPLEMETED("parse result of demi_push()");
                 }
                 break;
 
@@ -138,7 +146,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
 
                     WARN("operation failed - %s", strerror(evs[ready_offset]->qr.qr_value.err));
                     errno = EINTR;
-                    return (-1);
+                    return -1;
                 }
                 break;
 
@@ -149,6 +157,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
                 }
                 break;
             }
+        }
     }
 
     return (nevents);

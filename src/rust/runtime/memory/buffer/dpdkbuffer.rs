@@ -5,7 +5,7 @@
 // Imports
 //==============================================================================
 
-use crate::runtime::fail::Fail;
+use crate::{capy_log, runtime::fail::Fail};
 use ::dpdk_rs::{
     rte_mbuf,
     rte_mempool,
@@ -51,6 +51,7 @@ impl DPDKBuffer {
 
     /// Removes `len` bytes at the end of the target [Mbuf].
     pub fn trim(&mut self, nbytes: usize) {
+        capy_log!("dpdkbuffer.rs::trim() nbytes: {}, len: {}", nbytes, self.len());
         assert!(nbytes <= self.len());
         if unsafe { rte_pktmbuf_trim(self.ptr, nbytes as u16) } != 0 {
             panic!("rte_pktmbuf_trim failed");

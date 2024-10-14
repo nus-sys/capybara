@@ -37,11 +37,13 @@ ssize_t __send(int sockfd, const void *buf, size_t len, int flags)
     demi_qtoken_t qt = -1;
     demi_qresult_t qr;
     demi_sgarray_t sga = __demi_sgaalloc(len);
+    printf("sga.sga_numsegs: %zu\n", sga.sga_numsegs);
     assert(sga.sga_numsegs == 1);
     len = MIN(len, sga.sga_segs[0].sgaseg_len);
     memcpy(sga.sga_segs[0].sgaseg_buf, buf, len);
     assert(__demi_push(&qt, sockfd, &sga) == 0);
     assert(__demi_wait(&qr, qt, NULL) == 0);
+    printf("qr.qr_opcode: %d\n", qr.qr_opcode);
     assert(qr.qr_opcode == DEMI_OPC_PUSH);
     __demi_sgafree(&sga);
 

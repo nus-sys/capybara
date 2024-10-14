@@ -4,10 +4,11 @@
 #=======================================================================================================================
 # Default Paths
 #=======================================================================================================================
-export PREFIX := $(HOME)
-export INSTALL_PREFIX := $(HOME)
-export PKG_CONFIG_PATH := $(shell find $(PREFIX)/lib/ -name '*pkgconfig*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
-export LD_LIBRARY_PATH := $(HOME)/lib:$(shell find $(PREFIX)/lib/ -name '*x86_64-linux-gnu*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
+
+export PREFIX ?= $(HOME)
+export INSTALL_PREFIX ?= $(HOME)
+export PKG_CONFIG_PATH ?= $(shell find $(PREFIX)/lib/ -name '*pkgconfig*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
+export LD_LIBRARY_PATH = $(CURDIR)/lib:$(shell find $(PREFIX)/lib/ -name '*x86_64-linux-gnu*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
 
 #=======================================================================================================================
 # Build Configuration
@@ -24,13 +25,14 @@ endif
 #=======================================================================================================================
 
 export BINDIR ?= $(CURDIR)/bin
-export INCDIR ?= $(CURDIR)/include
+export INCDIR := $(CURDIR)/include
 export LIBDIR ?= $(CURDIR)/lib
 export SRCDIR = $(CURDIR)/src
 export BUILD_DIR := $(CURDIR)/target/release
 ifeq ($(BUILD),dev)
 export BUILD_DIR := $(CURDIR)/target/debug
 endif
+export INPUT ?= $(CURDIR)/nettest/input
 
 #=======================================================================================================================
 # Toolchain Configuration
@@ -60,18 +62,26 @@ export LIBS := $(BUILD_DIR)/$(DEMIKERNEL_LIB)
 #=======================================================================================================================
 
 export LIBOS ?= catnip
-export CARGO_FEATURES := --features=$(LIBOS)-libos
+export CARGO_FEATURES := --features=$(LIBOS)-libos,catnap-libos --no-default-features
 
 # Switch for DPDK
 ifeq ($(LIBOS),catnip)
-DRIVER ?= $(shell [ ! -z "`lspci | grep -E "ConnectX-[4,5]"`" ] && echo mlx5 || echo mlx4)
+DRIVER ?= $(shell [ ! -z "`lspci | grep -E "ConnectX-[4,5,6]"`" ] && echo mlx5 || echo mlx4)
 CARGO_FEATURES += --features=$(DRIVER)
 endif
 
 # Switch for profiler.
-export PROFILER=no
+export PROFILER ?= no
 ifeq ($(PROFILER),yes)
 CARGO_FEATURES += --features=profiler
+endif
+
+ifeq ($(TCP_MIG),1)
+CARGO_FEATURES += --features=tcp-migration
+endif
+
+ifeq ($(CAPY_LOG),1)
+CARGO_FEATURES += --features=capy-log
 endif
 
 CARGO_FEATURES += $(FEATURES)
@@ -122,6 +132,7 @@ clean-libs-demikernel:
 
 clean-shim:
 	$(MAKE) -C shim clean BINDIR=$(BINDIR)/shim
+
 #=======================================================================================================================
 # Tests
 #=======================================================================================================================
@@ -130,9 +141,9 @@ clean-shim:
 all-tests: all-tests-rust all-tests-c
 
 # Builds all Rust tests.
-all-tests-rust: all-libs
-	@echo "$(CARGO) build  --tests $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build  --tests $(CARGO_FEATURES) $(CARGO_FLAGS)
+all-tests-rust:
+	@echo "$(CARGO) build --tests $(CARGO_FEATURES) $(CARGO_FLAGS)"
+	$(CARGO) build --tests $(CARGO_FEATURES) $(CARGO_FLAGS)
 
 # Builds all C tests.
 all-tests-c: all-libs
@@ -153,7 +164,7 @@ clean-tests-c:
 all-examples: all-examples-c all-examples-rust
 
 # Builds all C examples.
-all-examples-c:
+all-examples-c: all-libs
 	$(MAKE) -C examples/c all
 
 # Builds all Rust examples.
@@ -170,6 +181,18 @@ clean-examples-c:
 # Cleans all Rust examples.
 clean-examples-rust:
 	$(MAKE) -C examples/rust clean
+
+#=======================================================================================================================
+# Benchmarks
+#=======================================================================================================================
+
+# Builds all C benchmarks
+all-benchmarks-c: all-libs
+	$(MAKE) -C benchmarks all
+
+# Cleans up all C build artifacts for benchmarks.
+clean-benchmarks-c:
+	$(MAKE) -C benchmarks clean
 
 #=======================================================================================================================
 # Check
@@ -192,25 +215,22 @@ check-fmt-rust:
 #=======================================================================================================================
 
 # Cleans up all build artifacts.
-clean: clean-examples clean-tests
-	rm -rf target ; \
-	rm -f Cargo.lock ; \
-	$(CARGO) clean
+clean: clean-examples clean-tests clean-libs
 
+#=======================================================================================================================
+# Tests
 #=======================================================================================================================
 
 export CONFIG_PATH ?= $(HOME)/config.yaml
-export MTU ?= 1500
-export MSS ?= 1500
+export CONFIG_DIR = $(CURDIR)/scripts/config
+export ELF_DIR ?= $(CURDIR)/bin/examples/rust
+export MTU ?= 9000
+export MSS ?= 9000
 export PEER ?= server
-export TEST ?= udp_push_pop
-export TIMEOUT ?= 30
-
-#=======================================================================================================================
-# Capybara Environment Variables
-#=======================================================================================================================
-export CONFIG_DIR = $(HOME)/Capybara/capybara/config
-export ELF_DIR ?= $(HOME)/Capybara/capybara/bin/examples/rust
+export TEST ?= udp-push-pop
+export TEST_INTEGRATION ?= tcp-test
+export TEST_UNIT ?=
+export TIMEOUT ?= 120
 
 # Runs system tests.
 test-system: test-system-rust
@@ -223,18 +243,47 @@ test-system-rust:
 test-unit: test-unit-rust
 
 # C unit tests.
-test-unit-c: $(BINDIR)/syscalls.elf
-	$(BINDIR)/syscalls.elf
+test-unit-c: all-tests test-unit-c-sizes test-unit-c-syscalls
+
+test-unit-c-sizes: all-tests $(BINDIR)/sizes.elf
+	timeout $(TIMEOUT) $(BINDIR)/sizes.elf
+
+test-unit-c-syscalls: all-tests $(BINDIR)/syscalls.elf
+	timeout $(TIMEOUT) $(BINDIR)/syscalls.elf
 
 # Rust unit tests.
-test-unit-rust:
-# 	$(CARGO) test --lib $(CARGO_FLAGS) $(CARGO_FEATURES) -- --nocapture $(UNIT_TEST)
-	$(CARGO) test tcp_migration --lib $(CARGO_FLAGS) $(CARGO_FEATURES) -- --nocapture $(UNIT_TEST)
+test-unit-rust: test-unit-rust-lib test-unit-rust-udp test-unit-rust-tcp
+	timeout $(TIMEOUT) $(CARGO) test --test sga $(BUILD) $(CARGO_FEATURES) -- --nocapture --test-threads=1 test_unit_sga_alloc_free_single_small
+	timeout $(TIMEOUT) $(CARGO) test --test sga $(BUILD) $(CARGO_FEATURES) -- --nocapture --test-threads=1 test_unit_sga_alloc_free_loop_tight_small
+	timeout $(TIMEOUT) $(CARGO) test --test sga $(BUILD) $(CARGO_FEATURES) -- --nocapture --test-threads=1 test_unit_sga_alloc_free_loop_decoupled_small
+	timeout $(TIMEOUT) $(CARGO) test --test sga $(BUILD) $(CARGO_FEATURES) -- --nocapture --test-threads=1 test_unit_sga_alloc_free_single_big
+	timeout $(TIMEOUT) $(CARGO) test --test sga $(BUILD) $(CARGO_FEATURES) -- --nocapture --test-threads=1 test_unit_sga_alloc_free_loop_tight_big
+	timeout $(TIMEOUT) $(CARGO) test --test sga $(BUILD) $(CARGO_FEATURES) -- --nocapture --test-threads=1 test_unit_sga_alloc_free_loop_decoupled_big
 
+# Rust unit tests for the library.
+test-unit-rust-lib: all-tests-rust
+	timeout $(TIMEOUT) $(CARGO) test --lib $(CARGO_FLAGS) $(CARGO_FEATURES) -- --nocapture $(TEST_UNIT)
+
+# Rust unit tests for UDP.
+test-unit-rust-udp: all-tests-rust
+	timeout $(TIMEOUT) $(CARGO) test --test udp $(CARGO_FLAGS) $(CARGO_FEATURES) -- --nocapture $(TEST_UNIT)
+
+# Rust unit tests for TCP.
+test-unit-rust-tcp: all-tests-rust
+	timeout $(TIMEOUT) $(CARGO) test --test tcp $(CARGO_FLAGS) $(CARGO_FEATURES) -- --nocapture $(TEST_UNIT)
+
+# Runs Rust integration tests.
+test-integration-rust:
+	timeout $(TIMEOUT) $(CARGO) test --test $(TEST_INTEGRATION) $(CARGO_FLAGS) $(CARGO_FEATURES) -- $(ARGS)
+
+# Cleans dangling test resources.
+test-clean:
+	rm -f /dev/shm/demikernel-*
 
 
 ENV += CAPY_LOG=all
 ENV += LIBOS=catnip
+ENV += USE_JUMBO=1
 
 
 tcp-echo:
@@ -377,6 +426,7 @@ be-dpdk-ctrl:
 fe-dpdk-ctrl:
 	sudo -E RUST_LOG="debug" \
 	NUM_CORES=4 \
+	$(ENV) \
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 4 \
@@ -516,9 +566,10 @@ clean-redis-data:
 # REDIS + TLS #
 
 redis-server-node8:
-	cd ../capybara-redis/src && \
+	cd ~/redis-tls-shim/capybara-redis/src && \
 	sudo -E \
 	$(ENV) \
+	CORE_ID=1 \
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \

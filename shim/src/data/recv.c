@@ -25,10 +25,11 @@ ssize_t __read(int sockfd, void *buf, size_t count)
     // If that is not the case, then fail to let the Linux kernel handle it.
     if (!queue_man_query_fd(sockfd))
     {
+        printf("[0] return EBADF (sockfd: %d)\n", sockfd);
         errno = EBADF;
         return (-1);
     }
-
+    printf("queue_man_query_fd_pollable()\n");
     // Check if socket descriptor is registered on an epoll instance.
     if ((epfd = queue_man_query_fd_pollable(sockfd)) > 0)
     {
