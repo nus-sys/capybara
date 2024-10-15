@@ -181,11 +181,13 @@ static bool inval_wait(void)
 static bool inval_wait_any(void)
 {
     demi_qresult_t *qr = NULL;
-    int *ready_offset = NULL;
+    size_t *ready_offset = NULL;
+    size_t qrs_count = 0;
     demi_qtoken_t *qts = NULL;
-    int num_qts = -1;
+    size_t num_qts = 0;
+    long long timeout_us = -1;  // Use -1 to indicate no timeout.
 
-    return (demi_wait_any(qr, ready_offset, qts, num_qts) != 0);
+    return (demi_wait_any(qr, ready_offset, &qrs_count, qts, num_qts, timeout_us) != 0);
 }
 
 /*===================================================================================================================*
