@@ -45,6 +45,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
     // We intentionally set the timeout to zero, because
     // millisecond timeouts are too coarse-grain for Demikernel.
     timeout = 0;
+    // timeout = 2000;
 
     long long timeout_us = (timeout == -1) ? -1 : (timeout * 1000);
 
