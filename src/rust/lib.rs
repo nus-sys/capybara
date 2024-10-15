@@ -21,6 +21,9 @@ pub mod perftools;
 
 pub mod capylog;
 
+#[cfg(feature = "autokernel")]
+pub mod autokernel;
+
 pub mod scheduler;
 
 pub mod runtime;
