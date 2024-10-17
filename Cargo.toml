@@ -182,6 +182,7 @@ capy-log = [ ]
 capy-time-log = [ ]
 server-reply-analysis = [ ]
 capybara-switch = [ ]
+autokernel = [ ]
 
 #=======================================================================================================================fe
 # Profile

@@ -11,6 +11,9 @@ use crate::runtime::{
 };
 use ::arrayvec::ArrayVec;
 
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::{AK_MAX_RECEIVE_BATCH_SIZE};
+
 //==============================================================================
 // Exports
 //==============================================================================
@@ -41,7 +44,10 @@ pub trait NetworkRuntime {
     fn transmit(&self, pkt: Box<dyn PacketBuf>);
 
     /// Receives a batch of [PacketBuf].
+    #[cfg(not(feature = "autokernel"))]
     fn receive(&self) -> ArrayVec<Buffer, RECEIVE_BATCH_SIZE>;
+    #[cfg(feature = "autokernel")]
+    fn receive(&self) -> ArrayVec<Buffer, AK_MAX_RECEIVE_BATCH_SIZE>;
 
     #[cfg(feature = "catnip-libos")]
     /// Returns self as [DPDKRuntime] if catnip.

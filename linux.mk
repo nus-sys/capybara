@@ -65,6 +65,10 @@ ifeq ($(PROFILER),yes)
 CARGO_FEATURES += --features=profiler
 endif
 
+ifeq ($(AUTOKERNEL),yes)
+CARGO_FEATURES += --features=autokernel
+endif
+
 CARGO_FEATURES += $(FEATURES)
 
 #=======================================================================================================================

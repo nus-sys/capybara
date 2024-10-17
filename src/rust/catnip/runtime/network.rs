@@ -31,7 +31,11 @@ use ::std::mem;
 
 #[cfg(feature = "profiler")]
 use crate::timer;
+
 use crate::capy_log;
+
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::{get_param, AK_MAX_RECEIVE_BATCH_SIZE};
 //==============================================================================
 // Trait Implementations
 //==============================================================================
@@ -129,6 +133,7 @@ impl NetworkRuntime for DPDKRuntime {
         }
     }
 
+    #[cfg(not(feature = "autokernel"))]
     fn receive(&self) -> ArrayVec<Buffer, RECEIVE_BATCH_SIZE> {
         let mut out = ArrayVec::new();
 
@@ -153,7 +158,33 @@ impl NetworkRuntime for DPDKRuntime {
 
         out
     }
+    
+    #[cfg(feature = "autokernel")]
+    fn receive(&self) -> ArrayVec<Buffer, AK_MAX_RECEIVE_BATCH_SIZE> {
+        let mut out = ArrayVec::new();
 
+        let mut packets: [*mut rte_mbuf; AK_MAX_RECEIVE_BATCH_SIZE] = unsafe { mem::zeroed() };
+        let nb_rx = unsafe {
+            #[cfg(feature = "profiler")]
+            timer!("catnip_libos::receive::rte_eth_rx_burst");
+
+            rte_eth_rx_burst(self.port_id, self.queue_id*2, packets.as_mut_ptr(), get_param(|p| p.receive_batch_size) as u16)
+        };
+        assert!(nb_rx as usize <= get_param(|p| p.receive_batch_size));
+
+        {
+            #[cfg(feature = "profiler")]
+            timer!("catnip_libos:receive::for");
+            for &packet in &packets[..nb_rx as usize] {
+                let mbuf: DPDKBuffer = DPDKBuffer::new(packet);
+                let buf: Buffer = Buffer::DPDK(mbuf);
+                out.push(buf);
+            }
+        }
+
+        out
+    }
+    
     #[cfg(feature = "tcp-migration")]
     fn as_dpdk_runtime(&self) -> Option<&crate::catnip::runtime::DPDKRuntime> {
         Some(self)

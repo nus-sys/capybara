@@ -1,105 +1,68 @@
-use once_cell::sync::Lazy;
-use std::sync::{RwLock};
-use std::{env};
+use std::{cell::RefCell, env};
 
-pub const MAX_RECEIVE_BATCH_SIZE: usize = 100;
+pub const AK_MAX_RECEIVE_BATCH_SIZE: usize = 100;
 
 pub struct AutokernelParameters {
     pub receive_batch_size: usize,
     pub timer_resolution: usize,
-    pub timer_finer_resolution: usize,
-
-    pub rto_alpha: f64,
-    pub rto_beta: f64,
-    pub rto_granularity: f64,
-    pub rto_lower_bound_sec: f64,
-    pub rto_upper_bound_sec: f64,
 
     pub default_body_pool_size: usize,
     pub default_cache_size: usize,
 }
 
+// Thread-local storage for AutokernelParameters
+thread_local! {
+    pub static AK_PARMS: RefCell<AutokernelParameters> = RefCell::new({
+        let receive_batch_size = env::var("RECEIVE_BATCH_SIZE")
+            .ok()
+            .and_then(|val| val.parse().ok())
+            .unwrap_or(4);
+        let timer_resolution = env::var("TIMER_RESOLUTION")
+            .ok()
+            .and_then(|val| val.parse().ok())
+            .unwrap_or(64);
 
-// Global, lazily initialized parameters using once_cell::Lazy
-// Lazy initialization is needed here to initialize AK_PARMS with env vars in runtime (not compile time).
-pub static AK_PARMS: Lazy<RwLock<AutokernelParameters>> = Lazy::new(|| {
-    let receive_batch_size = env::var("RECEIVE_BATCH_SIZE")
-        .ok()
-        .and_then(|val| val.parse().ok())
-        .unwrap_or(4);
-    let timer_resolution = env::var("TIMER_RESOLUTION")
-        .ok()
-        .and_then(|val| val.parse().ok())
-        .unwrap_or(64);
-    let timer_finer_resolution = env::var("TIMER_FINER_RESOLUTION")
-        .ok()
-        .and_then(|val| val.parse().ok())
-        .unwrap_or(2);
+        let default_body_pool_size = env::var("DEFAULT_BODY_POOL_SIZE")
+            .ok()
+            .and_then(|val| val.parse().ok())
+            .unwrap_or(8192 - 1);
+        let default_cache_size = env::var("DEFAULT_CACHE_SIZE")
+            .ok()
+            .and_then(|val| val.parse().ok())
+            .unwrap_or(250);
 
-    let rto_alpha = env::var("RTO_ALPHA")
-        .ok()
-        .and_then(|val| val.parse().ok())
-        .unwrap_or(0.125);
-    let rto_beta = env::var("RTO_BETA")
-        .ok()
-        .and_then(|val| val.parse().ok())
-        .unwrap_or(0.25);
-    let rto_granularity = env::var("RTO_GRANULARITY")
-        .ok()
-        .and_then(|val| val.parse().ok())
-        .unwrap_or(0.001f64);
-    let rto_lower_bound_sec = env::var("RTO_LOWER_BOUND_SEC")
-        .ok()
-        .and_then(|val| val.parse().ok())
-        .unwrap_or(0.100f64);
-    let rto_upper_bound_sec = env::var("RTO_UPPER_BOUND_SEC")
-        .ok()
-        .and_then(|val| val.parse().ok())
-        .unwrap_or(60.0f64);
+        eprintln!("RECEIVE_BATCH_SIZE: {}", receive_batch_size);
+        eprintln!("TIMER_RESOLUTION: {}", timer_resolution);
+        eprintln!("DEFAULT_BODY_POOL_SIZE: {}", default_body_pool_size);
+        eprintln!("DEFAULT_CACHE_SIZE: {}", default_cache_size);
 
-    let default_body_pool_size = env::var("DEFAULT_BODY_POOL_SIZE")
-        .ok()
-        .and_then(|val| val.parse().ok())
-        .unwrap_or(8192 - 1);
-    let default_cache_size = env::var("DEFAULT_CACHE_SIZE")
-        .ok()
-        .and_then(|val| val.parse().ok())
-        .unwrap_or(250);
-
-
-    eprintln!("RECEIVE_BATCH_SIZE: {}", receive_batch_size);
-    eprintln!("TIMER_RESOLUTION: {}", timer_resolution);
-    eprintln!("TIMER_FINER_RESOLUTION: {}", timer_finer_resolution);
-    eprintln!("RTO_ALPHA: {}", rto_alpha);
-    eprintln!("RTO_BETA: {}", rto_beta);
-    eprintln!("RTO_GRANULARITY: {}", rto_granularity);
-    eprintln!("RTO_LOWER_BOUND_SEC: {}", rto_lower_bound_sec);
-    eprintln!("RTO_UPPER_BOUND_SEC: {}", rto_upper_bound_sec);
-    eprintln!("DEFAULT_BODY_POOL_SIZE: {}", default_body_pool_size);
-    eprintln!("DEFAULT_CACHE_SIZE: {}", default_cache_size);
-
-    RwLock::new(AutokernelParameters {
-        receive_batch_size,
-        timer_resolution,
-        timer_finer_resolution,
-        rto_alpha,
-        rto_beta,
-        rto_granularity,
-        rto_lower_bound_sec,
-        rto_upper_bound_sec,
-        default_body_pool_size,
-        default_cache_size,
-    })
-});
-
-// Function to read parameters.
-pub fn print_receive_batch_size() {
-    let params = AK_PARMS.read().unwrap(); // Acquire read lock
-    println!("Receive batch size: {}", params.receive_batch_size);
+        AutokernelParameters {
+            receive_batch_size,
+            timer_resolution,
+            default_body_pool_size,
+            default_cache_size,
+        }
+    });
 }
 
-// Function to modify parameters.
-pub fn update_receive_batch_size(new_size: usize) {
-    let mut params = AK_PARMS.write().unwrap(); // Acquire write lock
-    params.receive_batch_size = new_size;
+// Generic function to get any member variable of AutokernelParameters
+pub fn get_param<T, F>(f: F) -> T
+where
+    F: Fn(&AutokernelParameters) -> T,
+{
+    AK_PARMS.with(|params| {
+        let params = params.borrow();
+        f(&params)
+    })
+}
+
+// Example: Generic setter function for modifying a parameter
+pub fn set_param<F>(f: F)
+where
+    F: Fn(&mut AutokernelParameters),
+{
+    AK_PARMS.with(|params| {
+        let mut params = params.borrow_mut();
+        f(&mut params);
+    });
 }
