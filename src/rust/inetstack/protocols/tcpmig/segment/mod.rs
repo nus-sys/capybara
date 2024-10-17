@@ -31,6 +31,7 @@ pub use defragmenter::TcpMigDefragmenter;
 //==============================================================================
 
 // TEMP
+// Inho: can it be larger if we use jombo frame?
 pub const MAX_FRAGMENT_SIZE: usize = 1500 - IPV4_HEADER_DEFAULT_SIZE - TCPMIG_HEADER_SIZE;
 
 //==============================================================================
