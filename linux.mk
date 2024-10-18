@@ -268,6 +268,17 @@ http-server-be0:
 	numactl -m0 taskset --cpu-list 1 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
 
+
+tcp-echo-server9:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	taskset --cpu-list 1 numactl -m0 \
+	$(ELF_DIR)/tcp-echo.elf --local 10.0.1.9:10000 --peer server
+
 http-server-be1:
 	sudo -E \
 	NUM_CORES=4 \

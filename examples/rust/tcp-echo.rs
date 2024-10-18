@@ -89,7 +89,7 @@ impl ProgramArguments {
                 Arg::new("bufsize")
                     .long("bufsize")
                     .takes_value(true)
-                    .required(true)
+                    .required(false)
                     .value_name("SIZE")
                     .help("Sets buffer size"),
             )
@@ -295,6 +295,12 @@ impl Application {
         };
         qtokens.push(qt);
 
+        // Create qrs filled with garbage.
+        let mut qrs: Vec<(QDesc, OperationResult)> = Vec::with_capacity(2000);
+        qrs.resize_with(2000, || (0.into(), OperationResult::Connect));
+        let mut indices: Vec<usize> = Vec::with_capacity(2000);
+        indices.resize(2000, 0);
+
         loop {
             // Dump statistics.
             if last_log.elapsed() > Duration::from_secs(Self::LOG_INTERVAL) {
@@ -303,43 +309,52 @@ impl Application {
                 last_log = Instant::now();
             }
 
-            let (i, qd, result) = match self.libos.wait_any2(&qtokens) {
-                Ok((i, qd, result)) => (i, qd, result),
-                Err(e) => panic!("operation failed: {:?}", e),
-            };
-            qtokens.swap_remove(i);
+            let result_count = self.libos.wait_any2(&qtokens, &mut qrs, &mut indices, None).expect("result");
+            let results = &qrs[..result_count];
+            let indices = &indices[..result_count];
 
-            // Parse result.
-            match result {
-                OperationResult::Accept(qd) => {
-                    println!("connection accepted!");
-                    // Pop first packet.
-                    let qt: QToken = match self.libos.pop(qd) {
-                        Ok(qt) => qt,
-                        Err(e) => panic!("failed to pop data from socket: {:?}", e.cause),
-                    };
-                    qtokens.push(qt);
-                },
-                // Pop completed.
-                OperationResult::Pop(_, buf) => {
-                    nbytes += buf.len();
-                    let qt: QToken = match self.libos.push2(qd, &buf) {
-                        Ok(qt) => qt,
-                        Err(e) => panic!("failed to push data to socket: {:?}", e.cause),
-                    };
-                    qtokens.push(qt);
-                },
-                // Push completed.
-                OperationResult::Push => {
-                    // Pop another packet.
-                    let qt: QToken = match self.libos.pop(qd) {
-                        Ok(qt) => qt,
-                        Err(e) => panic!("failed to pop data from socket: {:?}", e.cause),
-                    };
-                    qtokens.push(qt);
-                },
-                OperationResult::Failed(e) => panic!("operation failed: {:?}", e),
-                _ => panic!("unexpected result"),
+            for (index, (qd, result)) in indices.iter().zip(results.iter()).rev() {
+                let (index, qd) = (*index, *qd);
+                qtokens.swap_remove(index);
+    
+    
+                match result {
+                    OperationResult::Accept(new_qd) => {
+                        let new_qd = *new_qd;
+                        // server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
+
+
+                        // Pop first packet.
+                        let qt: QToken = match self.libos.pop(new_qd) {
+                            Ok(qt) => qt,
+                            Err(e) => panic!("failed to pop data from socket: {:?}", e.cause),
+                        };
+                        qtokens.push(qt);
+
+                        qtokens.push(self.libos.accept(qd).expect("accept qtoken"));
+
+                    },
+                    // Pop completed.
+                    OperationResult::Pop(_, buf) => {
+                        nbytes += buf.len();
+                        let qt: QToken = match self.libos.push2(qd, &buf) {
+                            Ok(qt) => qt,
+                            Err(e) => panic!("failed to push data to socket: {:?}", e.cause),
+                        };
+                        qtokens.push(qt);
+                    },
+                    // Push completed.
+                    OperationResult::Push => {
+                        // Pop another packet.
+                        let qt: QToken = match self.libos.pop(qd) {
+                            Ok(qt) => qt,
+                            Err(e) => panic!("failed to pop data from socket: {:?}", e.cause),
+                        };
+                        qtokens.push(qt);
+                    },
+                    OperationResult::Failed(e) => panic!("operation failed: {:?}", e),
+                    _ => panic!("unexpected result"),
+                }
             }
         }
     }

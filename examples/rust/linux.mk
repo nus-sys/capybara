@@ -13,7 +13,7 @@ all: all-examples
 # 	cp -f $(BUILD_DIR)/examples/udp-push-pop  $(BINDIR)/examples/rust/udp-push-pop.$(EXEC_SUFFIX)
 # 	cp -f $(BUILD_DIR)/examples/udp-ping-pong $(BINDIR)/examples/rust/udp-ping-pong.$(EXEC_SUFFIX)
 # 	cp -f $(BUILD_DIR)/examples/tcp-dump  $(BINDIR)/examples/rust/tcp-dump.$(EXEC_SUFFIX)
-#	cp -f $(BUILD_DIR)/examples/tcp-echo  $(BINDIR)/examples/rust/tcp-echo.$(EXEC_SUFFIX)
+	cp -f $(BUILD_DIR)/examples/tcp-echo  $(BINDIR)/examples/rust/tcp-echo.$(EXEC_SUFFIX)
 # 	cp -f $(BUILD_DIR)/examples/tcp-pktgen  $(BINDIR)/examples/rust/tcp-pktgen.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/tcp-push-pop  $(BINDIR)/examples/rust/tcp-push-pop.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/tcp-ping-pong $(BINDIR)/examples/rust/tcp-ping-pong.$(EXEC_SUFFIX)
@@ -34,7 +34,7 @@ all-examples:
 #	@echo "$(CARGO) build --examples $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --examples $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example tcp-echo $(CARGO_FEATURES) $(CARGO_FLAGS)"
-#	$(CARGO) build --example tcp-echo $(CARGO_FEATURES) $(CARGO_FLAGS)
+	$(CARGO) build --example tcp-echo $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
 #	@echo "$(CARGO) build --example tcp-migration-ping-pong $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example tcp-migration-ping-pong $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example tcpmig-server-multi $(CARGO_FEATURES) $(CARGO_FLAGS)"
@@ -62,7 +62,7 @@ clean:
 # 	@rm -rf $(BINDIR)/examples/rust/udp-push-pop.$(EXEC_SUFFIX)
 # 	@rm -rf $(BINDIR)/examples/rust/udp-ping-pong.$(EXEC_SUFFIX)
 # 	@rm -rf $(BINDIR)/examples/rust/tcp-dump.$(EXEC_SUFFIX)
-#	@rm -rf $(BINDIR)/examples/rust/tcp-echo.$(EXEC_SUFFIX)
+	@rm -rf $(BINDIR)/examples/rust/tcp-echo.$(EXEC_SUFFIX)
 # 	@rm -rf $(BINDIR)/examples/rust/tcp-pktgen.$(EXEC_SUFFIX)
 #	@rm -rf $(BINDIR)/examples/rust/tcp-push-pop.$(EXEC_SUFFIX)
 #	@rm -rf $(BINDIR)/examples/rust/tcp-ping-pong.$(EXEC_SUFFIX)

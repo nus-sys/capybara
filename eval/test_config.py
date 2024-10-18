@@ -1,92 +1,57 @@
 import os
 import pandas as pd
 import numpy as np
+import itertools
 
 ################## PATHS #####################
 HOME = os.path.expanduser("~")
 LOCAL = HOME.replace("/homes", "/local")
-CAPYBARA_PATH = f'{HOME}/Capybara/capybara'
+AUTOKERNEL_PATH = f'{HOME}/Capybara/capybara'
 CALADAN_PATH = f'{HOME}/Capybara/caladan'
-DATA_PATH = f'{HOME}/capybara-data'
-PCAP_PATH = f'{LOCAL}/capybara-pcap'
+DATA_PATH = f'{HOME}/autokernel-data'
+TCP_GENERATOR_PATH = f'{HOME}/Autokernel/tcp_generator'
 
 ################## CLUSTER CONFIG #####################
-ALL_NODES = ['node1', 'node7', 'node8', 'node9']
+ALL_NODES = ['node7', 'node9']
 CLIENT_NODE = 'node7'
-FRONTEND_NODE = 'node8'
-BACKEND_NODE = 'node9'
-TCPDUMP_NODE = 'node1'
-NODE8_IP = '10.0.1.8'
-NODE8_MAC = '08:c0:eb:b6:e8:05'
+SERVER_NODE = 'node9'
 NODE9_IP = '10.0.1.9'
 NODE9_MAC = '08:c0:eb:b6:c5:ad'
 
 ################## BUILD CONFIG #####################
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
-    'tcp-migration',
+    # 'autokernel',
+    # 'tcp-migration',
     # 'manual-tcp-migration',
-    'capy-log',
+    # 'capy-log',
     # 'capy-profile',
     # 'capy-time-log',
     # 'server-reply-analysis',
 ]
 
 ################## TEST CONFIG #####################
-NUM_BACKENDS = 1
-SERVER_APP = 'prism' # 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
-CLIENT_APP = 'wrk' # 'wrk', 'caladan'
-NUM_THREADS = [1] # for wrk load generator
+SERVER_APP = 'tcp-echo' # 'tcp-echo', 'http-server' 
+CLIENT_APP = 'tcp_generator' # 'caladan', 'tcp_generator'
 REPEAT_NUM = 1
 
-TCPDUMP = False
-EVAL_MIG_DELAY = False
-EVAL_POLL_INTERVAL = False
-EVAL_LATENCY_TRACE = False
-EVAL_SERVER_REPLY = False
-EVAL_RPS_SIGNAL = False
-EVAL_MIG_CPU_OVHD = False
 
-################## WORKLOAD GENERATOR CONFIG #####################
-# All time intervals are in ms, RPS are in KRPS.
-PHASE_INTERVAL = 100
-TOTAL_TIME = 5000 # Always in multiples of PHASE_INTERVAL
-WARMUP_RPS = 100
-SERVER_CAPACITY_RPS = 450 # HTTP: 450 REDIS: 200
-TOTAL_RPS_MAX = int(SERVER_CAPACITY_RPS * 0.7) * NUM_BACKENDS
-STRESS_FACTOR = 1 #1.25, 0.75 
-MAX_RPS_LIMITS = (400, 600)# HTTP: (400, 600) REDIS: (150, 300)
-RPS_LOWER_LIMIT = 10
-DURATION_LIMITS = (5, 20)
-TRANSITION_LIMITS = (5, 10)
-RAND_SEED = 2402271237
+################## VARS #####################
+### CLIENT ###
+CLIENT_PPS = [i for i in range(50000, 650000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
+NUM_CONNECTIONS = [16, 64, 128]
+RUNTIME = 5
 
-################## ENV VARS #####################
 ### SERVER ###
-RECV_QUEUE_LEN_THRESHOLD = 20
-MIG_DELAYS = [0]
-MAX_PROACTIVE_MIGS = [0] # set element to '' if you don't want to set this env var
-MAX_REACTIVE_MIGS = [0] # set element to '' if you don't want to set this env var
-MIG_PER_N = [0]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
-SESSION_DATA_SIZE = 1024 * 0 # bytes
-MIN_THRESHOLD = 50 # K rps
-RPS_THRESHOLD = 0.35
-THRESHOLD_EPSILON = 0.1 
-
-CAPY_LOG = 'all' # 'all', 'mig'
-REDIS_LOG = 1 # 1, 0
+# CAPY_LOG = 'all' # 'all', 'mig'
+RECEIVE_BATCH_SIZE = [4, 4 * 8, 4 * 32, 4 * 64] # Default: 4
+TIMER_RESOLUTION = [64, 64 * 64, 64 * 1024] # 64
+DEFAULT_BODY_POOL_SIZE = [8192 - 1, 65536 - 1] # 8192 - 1
+DEFAULT_CACHE_SIZE = [250, 250*2, 250*4] # 250
 
 
-### CALADAN ###
-CLIENT_PPS = [i for i in range(10000, 250000 + 1, 30000)]#[i for i in range(100000, 1_300_001, 100000)]
-import workload_spec_generator
-LOADSHIFTS = workload_spec_generator.main()
-# LOADSHIFTS = '90000:10000,270000:10000,450000:10000,630000:10000,810000:10000/90000:50000/90000:50000/90000:50000'
-LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
-ZIPF_ALPHA = '' # 0.9, 1.2
-ONOFF = '0' # '0', '1'
-NUM_CONNECTIONS = [100]
-RUNTIME = 10
+
+
 
 #####################
 # build command: run_eval.py [build [clean]]
