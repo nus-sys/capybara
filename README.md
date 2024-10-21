@@ -21,6 +21,7 @@
 - Run `mkdir Capybara && cd Capybara`
 - Run `git clone https://github.com/nus-sys/capybara.git && cd capybara`
 - Run `./scripts/setup/dpdk.sh`
+  + meson==0.53.2, ninja==1.10.0, pyelftools==0.29.0
 - Run `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 - Run `make LibOS=catnip all-examples-rust`
 
