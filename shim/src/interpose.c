@@ -187,7 +187,8 @@ static inline void init(void)
 
 int close(int sockfd)
 {
-    fprintf(stderr, "interpose.c::close (sockfd: %d)\n", sockfd);
+    if(sockfd >= 500)
+        fprintf(stderr, "interpose.c::close (sockfd: %d)\n", sockfd);
     INTERPOSE_CALL(int, libc_close, __close, sockfd);
 }
 
@@ -354,8 +355,8 @@ int getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 
 ssize_t read(int sockfd, void *buf, size_t count)
 {
-    // if(sockfd >= 500)
-    fprintf(stderr, "interpose.c::read (sockfd: %d, size: %lu)\n", sockfd, count);
+    if(sockfd >= 500)
+        fprintf(stderr, "interpose.c::read (sockfd: %d, size: %lu)\n", sockfd, count);
     INTERPOSE_CALL(ssize_t, libc_read, __read, sockfd, buf, count);
 }
 
@@ -385,8 +386,8 @@ ssize_t readv(int sockfd, const struct iovec *iov, int iovcnt)
 
 ssize_t write(int sockfd, const void *buf, size_t count)
 { 
-    if(sockfd != 2)
-        fprintf(stderr, "interpose.c::write (sockfd: %d)\n", sockfd);
+    if(sockfd >= 500)
+        fprintf(stderr, "interpose.c::write (sockfd: %d, size: %zu)\n", sockfd, count);
 
     INTERPOSE_CALL(ssize_t, libc_write, __write, sockfd, buf, count);
 }
@@ -504,10 +505,10 @@ int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout)
     }
 
     errno = last_errno;
-    if(ret > 0){
-        fprintf(stderr, "[DEMI] epoll_wait is returning %d\n", ret);
-        // ret = 1;
-    }
+    // if(ret > 0){
+    //     fprintf(stderr, "[DEMI] epoll_wait is returning %d\n", ret);
+    //     ret = 1;
+    // }
     return ret;
 }
 

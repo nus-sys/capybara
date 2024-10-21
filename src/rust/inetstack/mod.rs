@@ -687,7 +687,7 @@ impl InetStack {
 
             if let Some(timeout) = timeout {
                 if timeout <= begin.elapsed() {
-                    capy_log!("return with timeout ({:?})", timeout);
+                    // capy_log!("return with timeout ({:?})", timeout);
                     return Ok(0);
                 }
             }

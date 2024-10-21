@@ -135,7 +135,9 @@ impl MemoryManager {
 
     /// Allocates a scatter-gather array.
     pub fn alloc_sgarray(&self, size: usize) -> Result<demi_sgarray_t, Fail> {
-        capy_log!("alloc_sgarray");
+        capy_log!("alloc_sgarray, size: {}", size);
+        capy_log!("Inline Body Size: {}", self.inner.config.get_inline_body_size());
+        capy_log!("Max Body Size: {}", self.inner.config.get_max_body_size());
         // Allocate underlying buffer.
         let (mbuf_ptr, sgaseg): (*mut rte_mbuf, demi_sgaseg_t) =
             if size > self.inner.config.get_inline_body_size() && size <= self.inner.config.get_max_body_size() {

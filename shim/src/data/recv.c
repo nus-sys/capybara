@@ -25,7 +25,8 @@ ssize_t __read(int sockfd, void *buf, size_t count)
     // If that is not the case, then fail to let the Linux kernel handle it.
     if (!queue_man_query_fd(sockfd))
     {
-        printf("[0] return EBADF (sockfd: %d)\n", sockfd);
+        if(sockfd >= 500)
+            printf("[0] return EBADF (sockfd: %d)\n", sockfd);
         errno = EBADF;
         return (-1);
     }

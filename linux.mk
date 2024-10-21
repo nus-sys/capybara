@@ -566,7 +566,7 @@ clean-redis-data:
 # REDIS + TLS #
 
 redis-server-node8:
-	cd ~/redis-tls-shim/capybara-redis/src && \
+	cd ../capybara-redis/src && \
 	sudo -E \
 	$(ENV) \
 	CORE_ID=1 \
