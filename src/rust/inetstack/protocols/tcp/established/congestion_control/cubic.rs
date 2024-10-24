@@ -37,6 +37,9 @@ use ::std::{
     },
 };
 
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::get_param;
+
 #[derive(Debug)]
 pub struct Cubic {
     pub mss: u32, // Just for convenience, otherwise we have `as u32` or `.try_into().unwrap()` scattered everywhere...
@@ -112,7 +115,12 @@ impl Cubic {
         let cwnd: u32 = self.cwnd.get();
 
         if (cwnd / self.mss) < self.w_max.get() / self.mss {
-            self.w_max.set((cwnd as f32 * (1. + Self::BETA_CUBIC) / 2.) as u32);
+            #[cfg(not(feature = "autokernel"))]{
+                self.w_max.set((cwnd as f32 * (1. + Self::BETA_CUBIC) / 2.) as u32);
+            }
+            #[cfg(feature = "autokernel")]{
+                self.w_max.set((cwnd as f32 * (1. + get_param(|p| p.beta_cubic)) / 2.) as u32);
+            }
         } else {
             self.w_max.set(cwnd);
         }
@@ -121,7 +129,12 @@ impl Cubic {
     fn increment_dup_ack_count(&self) -> u32 {
         let duplicate_ack_count: u32 = self.duplicate_ack_count.get() + 1;
         self.duplicate_ack_count.set(duplicate_ack_count);
+        #[cfg(not(feature = "autokernel"))]
         if duplicate_ack_count < Self::DUP_ACK_THRESHOLD {
+            self.limited_transmit_cwnd_increase.modify(|ltci| ltci + self.mss);
+        }
+        #[cfg(feature = "autokernel")]
+        if duplicate_ack_count < get_param(|p| p.dup_ack_threshold) {
             self.limited_transmit_cwnd_increase.modify(|ltci| ltci + self.mss);
         }
         duplicate_ack_count
@@ -137,13 +150,29 @@ impl Cubic {
         let ack_covers_recover: bool = ack_seq_no - SeqNumber::from(1) > self.recover.get();
         let retransmitted_packet_dropped_heuristic: bool = cwnd > self.mss && ack_seq_no_diff <= 4 * self.mss;
 
-        if duplicate_ack_count == Self::DUP_ACK_THRESHOLD
+        let dup_ack_threshold: u32 = {
+            #[cfg(not(feature = "autokernel"))]{
+                Self::DUP_ACK_THRESHOLD
+            }
+            #[cfg(feature = "autokernel")]{
+                get_param(|p| p.dup_ack_threshold)
+            }
+        };
+
+        if duplicate_ack_count == dup_ack_threshold
             && (ack_covers_recover || retransmitted_packet_dropped_heuristic)
         {
             // Check against recover specified in RFC6582.
             self.in_fast_recovery.set(true);
             self.recover.set(send_next);
-            let reduced_cwnd: u32 = (cwnd as f32 * Self::BETA_CUBIC) as u32;
+            let reduced_cwnd: u32 = {
+                #[cfg(not(feature = "autokernel"))]{
+                    (cwnd as f32 * Self::BETA_CUBIC) as u32
+                }
+                #[cfg(feature = "autokernel")]{
+                    (cwnd as f32 * get_param(|p| p.beta_cubic)) as u32
+                }
+            };
 
             if self.fast_convergence {
                 self.fast_convergence();
@@ -155,7 +184,7 @@ impl Cubic {
             self.fast_retransmit_now.set(true);
             // We don't reset ca_start here even though cwnd has been shrunk because we aren't going
             // straight back into congestion avoidance.
-        } else if duplicate_ack_count > Self::DUP_ACK_THRESHOLD || self.in_fast_recovery.get() {
+        } else if duplicate_ack_count > dup_ack_threshold || self.in_fast_recovery.get() {
             self.cwnd.modify(|c| c + self.mss);
         }
     }
@@ -193,20 +222,40 @@ impl Cubic {
         if self.last_congestion_was_rto.get() {
             0.0
         } else {
-            (w_max * (1. - Self::BETA_CUBIC) / Self::C).cbrt()
+            #[cfg(not(feature = "autokernel"))]{
+                (w_max * (1. - Self::BETA_CUBIC) / Self::C).cbrt()
+            }
+            #[cfg(feature = "autokernel")]{
+                let c = get_param(|p| p.cubic_c);
+                (w_max * (1. - get_param(|p| p.beta_cubic)) / c).cbrt()
+            }
         }
     }
 
     fn w_cubic(&self, w_max: f32, t: f32, k: f32) -> f32 {
         // While we store w_max in terms of bytes, we have pre-normalised it to units of MSS
         // for compatibility with RFC8312.
-        (Self::C) * (t - k).powi(3) + w_max
+        #[cfg(not(feature = "autokernel"))]{
+            (Self::C) * (t - k).powi(3) + w_max
+        }
+        #[cfg(feature = "autokernel")]{
+            let c = get_param(|p| p.cubic_c);
+            (c) * (t - k).powi(3) + w_max
+        }
     }
 
     fn w_est(&self, w_max: f32, t: f32, rtt: f32) -> f32 {
         // While we store w_max in terms of bytes, we have pre-normalised it to units of MSS
         // for compatibility with RFC8312.
-        let bc: f32 = Self::BETA_CUBIC;
+        let bc: f32 = {
+            #[cfg(not(feature = "autokernel"))]{
+                Self::BETA_CUBIC
+            }
+            #[cfg(feature = "autokernel")]{
+                get_param(|p| p.beta_cubic)
+            }
+        };
+
         w_max * bc + ((3. * (1. - bc) / (1. + bc)) * t / rtt)
     }
 
@@ -255,8 +304,14 @@ impl Cubic {
         if rpif == 0 {
             // If we lost a retransmitted packet, we don't shrink ssthresh.
             // So we have to check if a retransmitted packet was in flight before we shrink it.
-            self.ssthresh
-                .set(max((cwnd as f32 * Self::BETA_CUBIC) as u32, 2 * self.mss));
+            #[cfg(not(feature = "autokernel"))]{
+                self.ssthresh
+                    .set(max((cwnd as f32 * Self::BETA_CUBIC) as u32, 2 * self.mss));
+            }
+            #[cfg(feature = "autokernel")]{
+                self.ssthresh
+                    .set(max((cwnd as f32 * get_param(|p| p.beta_cubic)) as u32, 2 * self.mss));
+            }
         }
 
         // Used to decide whether to shrink ssthresh on rto.

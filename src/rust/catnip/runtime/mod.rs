@@ -164,14 +164,14 @@ impl DPDKRuntime {
 
         if let Some(value) = l_flag_value {
             // use the value here
-            println!("The value for -l flag is: {}", value);
+            eprintln!("The value for -l flag is: {}", value);
         }
 
         let core_id: u16 = match l_flag_value {
             Some(val) => val,
             None => panic!("-l flag is not set in config"),
         };
-        println!("core_id: {}", core_id); 
+        eprintln!("core_id: {}", core_id); 
         let (mm, port_id, link_addr) = Self::initialize_dpdk(
             eal_init_args,
             use_jumbo_frames,
@@ -265,7 +265,7 @@ impl DPDKRuntime {
                     Ok(val) => val.parse::<u16>().unwrap(),
                     Err(_) => 1,
                 };
-                println!("num_cores: {}", num_cores);
+                eprintln!("num_cores: {}", num_cores);
                 Self::init_flow_rules();
                 Self::generate_tcp_flow_rules(num_cores);
                 Self::generate_udp_flow_rules(num_cores);
@@ -325,7 +325,7 @@ impl DPDKRuntime {
             d.assume_init()
         };
 
-        println!("dev_info: {:?}", dev_info);
+        eprintln!("dev_info: {:?}", dev_info);
         unsafe {
             expect_zero!(rte_eth_dev_set_mtu(port_id, mtu))?;
             let mut dpdk_mtu = 0u16;
@@ -474,7 +474,7 @@ impl DPDKRuntime {
             if flow.is_null() {
                 panic!("rte_flow_create failed");
             }
-            println!("Default flow (dropping) created: {:?}", flow);
+            eprintln!("Default flow (dropping) created: {:?}", flow);
         }
     }
 
@@ -538,7 +538,7 @@ impl DPDKRuntime {
             if tcp_flow.is_null() {
                 warn!("rte_flow_create failed");
             }
-            println!("TCP Flow (port: {:?} => queue: {:?}) created: {:?}", port, queue_action.index, tcp_flow);
+            eprintln!("TCP Flow (port: {:?} => queue: {:?}) created: {:?}", port, queue_action.index, tcp_flow);
         }
         }
     }
@@ -601,7 +601,7 @@ impl DPDKRuntime {
             if udp_flow.is_null() {
                 warn!("rte_flow_create failed");
             }
-            println!("UDP Flow (port: {:?} => queue: {:?}) created: {:?}", port, queue_action.index, udp_flow);
+            eprintln!("UDP Flow (port: {:?} => queue: {:?}) created: {:?}", port, queue_action.index, udp_flow);
         }
         }
     }
@@ -630,19 +630,19 @@ impl DPDKRuntime {
             eprintln!("dpdk: error getting eth stats");
         }
 
-        println!(
+        eprintln!(
             "eth stats for port {}",
             port
         );
-        println!(
+        eprintln!(
             "RX-packets: {} RX-dropped: {} RX-bytes: {}",
             stats.ipackets, stats.imissed, stats.ibytes
         );
-        println!(
+        eprintln!(
             "TX-packets: {} TX-bytes: {}",
             stats.opackets, stats.obytes
         );
-        println!(
+        eprintln!(
             "RX-error: {} TX-error: {} RX-mbuf-fail: {}",
             stats.ierrors, stats.oerrors, stats.rx_nombuf
         );

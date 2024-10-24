@@ -36,6 +36,9 @@ use ::std::{
 
 use crate::capy_log;
 
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::get_param;
+
 // Structure of entries on our unacknowledged queue.
 // ToDo: We currently allocate these on the fly when we add a buffer to the queue.  Would be more efficient to have a
 // buffer structure that held everything we need directly, thus avoiding this extra wrapper.
@@ -266,7 +269,12 @@ impl Sender {
         // Too fast.
         // ToDo: We need to fix this the correct way: limit our send buffer size to the amount we're willing to buffer.
         capy_log!("WARNINIG: TOO FAST, unsent_queue_len: {}", self.unsent_queue.borrow().len());
+        #[cfg(not(feature = "autokernel"))]
         if self.unsent_queue.borrow().len() > UNSENT_QUEUE_CUTOFF {
+            return Err(Fail::new(EBUSY, "too many packets to send"));
+        }
+        #[cfg(feature = "autokernel")]
+        if self.unsent_queue.borrow().len() > get_param(|p| p.unsent_queue_cutoff) {
             return Err(Fail::new(EBUSY, "too many packets to send"));
         }
 

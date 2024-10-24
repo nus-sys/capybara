@@ -12,7 +12,7 @@ use crate::runtime::{
 use ::arrayvec::ArrayVec;
 
 #[cfg(feature = "autokernel")]
-use crate::autokernel::parameters::{AK_MAX_RECEIVE_BATCH_SIZE};
+use crate::autokernel::parameters::AK_MAX_RECEIVE_BATCH_SIZE;
 
 //==============================================================================
 // Exports

@@ -22,4 +22,4 @@ pub const DEFAULT_MSS: usize = 1450;
 /// Length of a [crate::memory::Buffer] batch.
 ///
 /// TODO: This Should be Generic
-pub const RECEIVE_BATCH_SIZE: usize = 100;
+pub const RECEIVE_BATCH_SIZE: usize = 4;

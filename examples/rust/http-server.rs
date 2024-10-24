@@ -170,14 +170,23 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
 
     server_log!("PUSH: {}", response.lines().next().unwrap_or(""));
     libos.push2(qd, response.as_bytes()).expect("push success") */    
-
+    const N: usize = 100;
     #[cfg(not(feature = "server-reply-analysis"))]
     {
         lazy_static! {
+            static ref N: usize = {
+                env::var("DATA_SIZE")
+                    .unwrap_or_else(|_| "100".to_string()) // Fallback to 100 if not set
+                    .parse()
+                    .expect("DATA_SIZE must be a valid number")
+            };
             static ref RESPONSE: String = {
                 match std::fs::read_to_string("/var/www/demo/index.html") {
                     Ok(contents) => {
-                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
+                        let extra_bytes = "A".repeat(*N);
+                        let full_contents = format!("{}{}", contents, extra_bytes);
+
+                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", full_contents.len(), full_contents)
                     },
                     Err(_) => {
                         format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")

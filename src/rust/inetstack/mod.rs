@@ -70,6 +70,9 @@ use crate::capy_log;
 
 use chrono::NaiveTime;
 
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::get_param;
+
 //==============================================================================
 // Exports
 //==============================================================================
@@ -859,14 +862,32 @@ impl InetStack {
         if self.ts_iters == 0 {
             self.clock.advance_clock(Instant::now());
         }
-        self.ts_iters = (self.ts_iters + 1) % TIMER_RESOLUTION;
+
+        #[cfg(feature = "autokernel")]{
+            self.ts_iters = (self.ts_iters + 1) % get_param(|p| p.timer_resolution);
+        }
+        #[cfg(not(feature = "autokernel"))]{
+            self.ts_iters = (self.ts_iters + 1) % TIMER_RESOLUTION;
+        }     
+        
     }
 
     fn poll_runtime(&mut self) {
         #[cfg(feature = "profiler")]
         timer!("inetstack::poll_bg_work::for");
         
-        for _ in 0..MAX_RECV_ITERS {
+        let recv_iters = {
+            #[cfg(not(feature = "autokernel"))]
+            {
+                MAX_RECV_ITERS
+            }
+            #[cfg(feature = "autokernel")]
+            {
+                get_param(|p| p.max_recv_iters)
+            }
+        };
+
+        for _ in 0..recv_iters {
             let batch = {
                 #[cfg(feature = "profiler")]
                 timer!("inetstack::poll_bg_work::for::receive");
@@ -886,7 +907,19 @@ impl InetStack {
     }
     /// Exactly the same as `poll_runtime()` but does not poll the scheduler after every packet.
     fn poll_runtime_no_scheduler_poll(&mut self) {
-        for _ in 0..MAX_RECV_ITERS {
+        let recv_iters = {
+            #[cfg(not(feature = "autokernel"))]
+            {
+                MAX_RECV_ITERS
+            }
+            #[cfg(feature = "autokernel")]
+            {
+                get_param(|p| p.max_recv_iters)
+            }
+        };
+
+
+        for _ in 0..recv_iters {
             let batch = {
                 #[cfg(feature = "profiler")]
                 timer!("inetstack::poll_bg_work::for::receive");

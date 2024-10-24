@@ -44,6 +44,9 @@ use ::std::{
 
 use crate::capy_log;
 
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::get_param;
+
 //==============================================================================
 // Structures
 //==============================================================================
@@ -71,7 +74,16 @@ impl<F: Future<Output = ()> + Unpin> Inner<F> {
     /// Computes the [WakerPageRef] and offset of a given task based on its `key`.
     fn get_page(&self, key: u64) -> (&WakerPageRef, usize) {
         let key: usize = key as usize;
-        let (page_ix, subpage_ix): (usize, usize) = (key >> WAKER_BIT_LENGTH_SHIFT, key & (WAKER_BIT_LENGTH - 1));
+        let (page_ix, subpage_ix): (usize, usize) = {
+            #[cfg(not(feature = "autokernel"))]{
+                (key >> WAKER_BIT_LENGTH_SHIFT, key & (WAKER_BIT_LENGTH - 1))
+            }
+            #[cfg(feature = "autokernel")]{
+                let waker_bit_length_shift: usize = get_param(|p| p.waker_bit_length_shift);
+                let waker_bit_length: usize = 1 << waker_bit_length_shift;
+                (key >> waker_bit_length_shift, key & (waker_bit_length - 1))
+            }
+        };
         (&self.pages[page_ix], subpage_ix)
     }
 
@@ -80,7 +92,12 @@ impl<F: Future<Output = ()> + Unpin> Inner<F> {
         let key: usize = self.slab.insert(future)?;
 
         // Add a new page to hold this future's status if the current page is filled.
+        #[cfg(not(feature = "autokernel"))]
         while key >= self.pages.len() << WAKER_BIT_LENGTH_SHIFT {
+            self.pages.push(WakerPageRef::default());
+        }
+        #[cfg(feature = "autokernel")]
+        while key >= self.pages.len() << get_param(|p| p.waker_bit_length_shift) {
             self.pages.push(WakerPageRef::default());
         }
         let (page, subpage_ix): (&WakerPageRef, usize) = self.get_page(key as u64);
@@ -128,7 +145,14 @@ impl Scheduler {
     /// they can invoke to notify the scheduler that future should be polled again.
     pub fn poll(&self) {
         let mut inner: RefMut<Inner<Box<dyn SchedulerFuture>>> = self.inner.borrow_mut();
-
+        let waker_bit_length_shift: usize = {
+            #[cfg(not(feature = "autokernel"))]{
+                WAKER_BIT_LENGTH_SHIFT
+            }
+            #[cfg(feature = "autokernel")]{
+                get_param(|p| p.waker_bit_length_shift)
+            }
+        };
         // Iterate through pages.
         for page_ix in 0..inner.pages.len() {
             let (notified, dropped): (u64, u64) = {
@@ -142,7 +166,7 @@ impl Scheduler {
                     
                     // Handle notified tasks only.
                     // Get future using our page indices and poll it!
-                    let ix: usize = (page_ix << WAKER_BIT_LENGTH_SHIFT) + subpage_ix;
+                    let ix: usize = (page_ix << waker_bit_length_shift) + subpage_ix;
                     let waker: Waker = unsafe {
                         let raw_waker: NonNull<u8> = inner.pages[page_ix].into_raw_waker_ref(subpage_ix);
                         Waker::from_raw(WakerRef::new(raw_waker).into())
@@ -194,7 +218,7 @@ impl Scheduler {
                 // Handle dropped tasks only.
                 for subpage_ix in BitIter::from(dropped) {
                     if subpage_ix != 0 {
-                        let ix: usize = (page_ix << WAKER_BIT_LENGTH_SHIFT) + subpage_ix;
+                        let ix: usize = (page_ix << waker_bit_length_shift) + subpage_ix;
                         inner.slab.remove(ix);
                         inner.pages[page_ix].clear(subpage_ix);
                     }

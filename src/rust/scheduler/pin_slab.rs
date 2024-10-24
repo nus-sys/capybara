@@ -44,6 +44,9 @@ use ::std::{
 
 use crate::capy_log;
 
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::get_param;
+
 //======================================================================================================================
 // Constants
 //======================================================================================================================
@@ -321,14 +324,25 @@ fn calculate_key(key: usize) -> Option<(usize, usize, usize)> {
     if key >= (1usize << (mem::size_of::<usize>() * 8 - 1)) {
         return None;
     }
+    
+    let (first_slot_size, first_slot_mask): (usize, usize) = {
+        #[cfg(not(feature = "autokernel"))]{
+            (FIRST_SLOT_SIZE, FIRST_SLOT_MASK)
+        }
+        #[cfg(feature = "autokernel")]{
+            (get_param(|p| p.first_slot_size),
+                std::mem::size_of::<usize>() * 8 - get_param(|p| p.first_slot_size).leading_zeros() as usize - 1)
+        }
+    };
+    
 
     let slot: usize =
-        ((mem::size_of::<usize>() * 8) as usize - key.leading_zeros() as usize).saturating_sub(FIRST_SLOT_MASK);
+        ((mem::size_of::<usize>() * 8) as usize - key.leading_zeros() as usize).saturating_sub(first_slot_mask);
 
-    let (start, end): (usize, usize) = if key < FIRST_SLOT_SIZE {
-        (0, FIRST_SLOT_SIZE)
+    let (start, end): (usize, usize) = if key < first_slot_size {
+        (0, first_slot_size)
     } else {
-        (FIRST_SLOT_SIZE << (slot - 1), FIRST_SLOT_SIZE << slot)
+        (first_slot_size << (slot - 1), first_slot_size << slot)
     };
 
     Some((slot, key - start, end - start))
@@ -336,8 +350,22 @@ fn calculate_key(key: usize) -> Option<(usize, usize, usize)> {
 
 fn slot_sizes() -> impl Iterator<Item = usize> {
     (0usize..).map(|n| match n {
-        0 | 1 => FIRST_SLOT_SIZE,
-        n => FIRST_SLOT_SIZE << (n - 1),
+        0 | 1 => {
+            #[cfg(not(feature = "autokernel"))]{
+                FIRST_SLOT_SIZE
+            }
+            #[cfg(feature = "autokernel")]{
+                get_param(|p| p.first_slot_size)
+            }
+        },
+        n => {
+            #[cfg(not(feature = "autokernel"))]{
+                FIRST_SLOT_SIZE << (n - 1)
+            }
+            #[cfg(feature = "autokernel")]{
+                get_param(|p| p.first_slot_size) << (n - 1)
+            }
+        },
     })
 }
 

@@ -209,6 +209,8 @@ test-unit-rust:
 
 ENV += CAPY_LOG=all
 ENV += LIBOS=catnip
+ENV += DATA_SIZE=1024
+
 
 
 tcp-echo:

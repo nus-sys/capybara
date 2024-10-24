@@ -5,13 +5,13 @@
 // Imports
 //==============================================================================
 
-use crate::scheduler::{
+use crate::{scheduler::{
     page::{
         WakerPage,
         WAKER_PAGE_SIZE,
     },
     waker64::WAKER_BIT_LENGTH,
-};
+}};
 use ::std::{
     alloc::{
         Allocator,
@@ -25,6 +25,9 @@ use ::std::{
         NonNull,
     },
 };
+
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::get_param;
 
 //==============================================================================
 // Structures
@@ -122,7 +125,15 @@ impl Deref for WakerPageRef {
 impl Default for WakerPageRef {
     fn default() -> Self {
         let layout: Layout = Layout::new::<WakerPage>();
-        assert_eq!(layout.align(), WAKER_PAGE_SIZE);
+        let waker_page_size: usize = {
+            #[cfg(not(feature = "autokernel"))]{
+                WAKER_PAGE_SIZE
+            }
+            #[cfg(feature = "autokernel")]{
+                get_param(|p| p.waker_page_size)
+            }
+        };
+        assert_eq!(layout.align(), waker_page_size);
         let mut ptr: NonNull<WakerPage> = Global.allocate(layout).expect("Failed to allocate WakerPage").cast();
         unsafe {
             let page: &mut WakerPage = ptr.as_mut();

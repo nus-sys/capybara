@@ -19,6 +19,9 @@ use ::std::{
     },
 };
 
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::get_param;
+
 //==============================================================================
 // Structures
 //==============================================================================
@@ -46,11 +49,19 @@ impl WakerRef {
     /// For more information on this hack see comments on [crate::page::WakerPageRef].
     fn base_ptr(&self) -> (NonNull<WakerPage>, usize) {
         let ptr: *mut u8 = self.0.as_ptr();
-        let forward_offset: usize = ptr.align_offset(WAKER_PAGE_SIZE);
+        let waker_page_size: usize = {
+            #[cfg(not(feature = "autokernel"))]{
+                WAKER_PAGE_SIZE
+            }
+            #[cfg(feature = "autokernel")]{
+                get_param(|p| p.waker_page_size)
+            }
+        };
+        let forward_offset: usize = ptr.align_offset(waker_page_size);
         let mut base_ptr: *mut u8 = ptr;
         let mut offset: usize = 0;
         if forward_offset != 0 {
-            offset = WAKER_PAGE_SIZE - forward_offset;
+            offset = waker_page_size - forward_offset;
             base_ptr = ptr.wrapping_sub(offset);
         }
         unsafe { (NonNull::new_unchecked(base_ptr).cast(), offset) }

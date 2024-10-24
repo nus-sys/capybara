@@ -12,6 +12,9 @@ use crate::runtime::network::consts::{
 };
 use ::std::time::Duration;
 
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::get_param;
+
 //==============================================================================
 // Structures
 //==============================================================================
@@ -126,7 +129,11 @@ impl TcpConfig {
 
     /// Sets the advertised maximum segment size in the target [TcpConfig].
     fn set_advertised_mss(mut self, value: usize) -> Self {
+        #[cfg(not(feature = "autokernel"))] 
         assert!(value >= MIN_MSS);
+        #[cfg(feature = "autokernel")]
+        assert!(value >= get_param(|p| p.fallback_mss));
+        
         assert!(value <= MAX_MSS);
         self.advertised_mss = value;
         self

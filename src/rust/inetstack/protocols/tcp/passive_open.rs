@@ -72,6 +72,9 @@ use ::std::{
 
 use crate::capy_log;
 
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::get_param;
+
 struct InflightAccept {
     local_isn: SeqNumber,
     remote_isn: SeqNumber,
@@ -283,7 +286,14 @@ impl PassiveSocket {
         };
 
         let mut remote_window_scale = None;
-        let mut mss = FALLBACK_MSS;
+        let mut mss: usize = {
+            #[cfg(not(feature = "autokernel"))] {
+                FALLBACK_MSS
+            }
+            #[cfg(feature = "autokernel")] {
+                get_param(|p| p.fallback_mss)
+            }
+        };
         for option in header.iter_options() {
             match option {
                 TcpOptions2::WindowScale(w) => {

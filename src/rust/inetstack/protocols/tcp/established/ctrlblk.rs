@@ -71,6 +71,9 @@ use crate::capy_log;
 #[cfg(feature = "tcp-migration")]
 use crate::inetstack::protocols::tcp::stats::StatsHandle;
 
+#[cfg(feature = "autokernel")]
+use crate::autokernel::parameters::get_param;
+
 // ToDo: Review this value (and its purpose).  It (2048 segments) of 8 KB jumbo packets would limit the unread data to
 // just 16 MB.  If we don't want to lie, that is also about the max window size we should ever advertise.  Whereas TCP
 // with the window scale option allows for window sizes of up to 1 GB.  This value appears to exist more because of the
@@ -1132,8 +1135,13 @@ impl ControlBlock {
         // If the out-of-order store now contains too many entries, delete the later entries.
         // ToDo: The out-of-order store is already limited (in size) by our receive window, while the below check
         // imposes a limit on the number of entries.  Do we need this?  Presumably for attack mitigation?
+        #[cfg(not(feature = "autokernel"))]
         while out_of_order.len() > MAX_OUT_OF_ORDER {
             out_of_order.pop_back();
+        }
+        #[cfg(feature = "autokernel")]
+        while out_of_order.len() > get_param(|p| p.max_out_of_order) {
+            out_of_order.pop_front();
         }
     }
 
