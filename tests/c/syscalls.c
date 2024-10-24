@@ -242,7 +242,10 @@ int main(int argc, char *const argv[])
 {
     ((void)argc);
     ((void)argv);
-
+    printf("argc: %d\n", argc);
+    for (int i = 0; i < argc; i++) {
+        printf("argv[%d]: %s\n", i, argv[i]);
+    }
     /* This shall never fail. */
     assert(demi_init(argc, argv) == 0);
 

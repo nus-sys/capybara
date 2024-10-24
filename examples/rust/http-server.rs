@@ -176,7 +176,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         lazy_static! {
             static ref N: usize = {
                 env::var("DATA_SIZE")
-                    .unwrap_or_else(|_| "100".to_string()) // Fallback to 100 if not set
+                    .unwrap_or_else(|_| "0".to_string()) // Fallback to 0 if not set
                     .parse()
                     .expect("DATA_SIZE must be a valid number")
             };
@@ -590,6 +590,10 @@ fn usage(program_name: &String) {
 pub fn main() -> Result<()> {
     server_log!("*** HTTP SERVER LOGGING IS ON ***");
     // logging::initialize();
+    eprintln!("HTTP data size: {}", env::var("DATA_SIZE")
+                                    .unwrap_or_else(|_| "0".to_string()) // Fallback to 0 if not set
+                                    .parse::<usize>()
+                                    .expect("DATA_SIZE must be a valid number"));
 
     let args: Vec<String> = env::args().collect();
 

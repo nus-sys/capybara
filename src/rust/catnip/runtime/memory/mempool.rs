@@ -5,7 +5,7 @@
 // Imports
 //==============================================================================
 
-use crate::runtime::{
+use crate::{capy_log, runtime::{
     fail::Fail,
     libdpdk::{
         rte_mbuf,
@@ -18,7 +18,7 @@ use crate::runtime::{
         rte_eal_process_type,
         rte_mempool_lookup,
     },
-};
+}};
 use ::std::ffi::CString;
 
 //==============================================================================
@@ -99,12 +99,14 @@ impl MemoryPool {
         // Fill out some fields of the underlying mbuf.
         unsafe {
             let mut num_bytes: u16 = (*mbuf_ptr).buf_len - (*mbuf_ptr).data_off;
-
+            capy_log!("num_bytes: {}", num_bytes);
+            capy_log!("size: {:?}", size);
             if let Some(size) = size {
                 // Check if allocated buffer is big enough.
                 if (size as u16) > num_bytes {
                     // Allocated buffer is not big enough, rollback allocation.
                     rte_pktmbuf_free(mbuf_ptr);
+                    capy_log!("ISSUE");
                     return Err(Fail::new(libc::EFAULT, "cannot allocate a mbuf this big"));
                 }
                 num_bytes = size as u16;

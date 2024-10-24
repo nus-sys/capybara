@@ -16,8 +16,7 @@ use self::{
     },
 };
 use crate::{
-    demikernel::config::Config,
-    runtime::{
+    capy_log, demikernel::config::Config, runtime::{
         fail::Fail,
         logging,
         types::{
@@ -185,6 +184,7 @@ impl LibOS {
 
     /// Pushes a scatter-gather array to a TCP socket.
     pub fn push(&mut self, fd: QDesc, sga: &demi_sgarray_t) -> Result<QToken, Fail> {
+        capy_log!("[DEMI] push");
         match self {
             LibOS::NetworkLibOS(libos) => libos.push(fd, sga),
         }

@@ -7,17 +7,14 @@
 
 use super::mempool::MemoryPool;
 use crate::{
-    inetstack::protocols::{
+    capy_log, inetstack::protocols::{
         ethernet2::ETHERNET2_HEADER_SIZE,
         ipv4::IPV4_HEADER_DEFAULT_SIZE,
         tcp::MAX_TCP_HEADER_SIZE,
-    },
-    runtime::{
+    }, runtime::{
         fail::Fail,
         libdpdk::{
-            rte_mbuf,
-            rte_mempool,
-            rte_eal_process_type,
+            rte_eal_process_type, rte_mbuf, rte_mempool
         },
         memory::{
             Buffer,
@@ -28,7 +25,7 @@ use crate::{
             demi_sgarray_t,
             demi_sgaseg_t,
         },
-    },
+    }
 };
 use ::anyhow::Error;
 use ::libc::c_void;
@@ -138,16 +135,22 @@ impl MemoryManager {
 
     /// Allocates a scatter-gather array.
     pub fn alloc_sgarray(&self, size: usize) -> Result<demi_sgarray_t, Fail> {
+        capy_log!("alloc_sgarray, size: {}", size);
+        capy_log!("Inline Body Size: {}", self.inner.config.get_inline_body_size());
+        capy_log!("Max Body Size: {}", self.inner.config.get_max_body_size());
         // Allocate underlying buffer.
         let (mbuf_ptr, sgaseg): (*mut rte_mbuf, demi_sgaseg_t) =
             if size > self.inner.config.get_inline_body_size() && size <= self.inner.config.get_max_body_size() {
+                capy_log!("[1]");
                 // Allocate a DPDK-managed buffer.
                 let mbuf_ptr: *mut rte_mbuf = self.inner.body_pool.alloc_mbuf(Some(size))?;
-
+                capy_log!("[1-1]");
                 // Adjust various fields in the mbuf and create a scatter-gather segment out of it.
                 unsafe {
+                    capy_log!("[1-2]");
                     let buf_ptr: *mut u8 = (*mbuf_ptr).buf_addr as *mut u8;
                     let data_ptr: *mut u8 = buf_ptr.offset((*mbuf_ptr).data_off as isize);
+                    capy_log!("[1-3]");
                     (
                         mbuf_ptr,
                         demi_sgaseg_t {
@@ -157,6 +160,7 @@ impl MemoryManager {
                     )
                 }
             } else {
+                capy_log!("[2]");
                 // Allocate a heap-managed buffer.
                 let dbuf: DataBuffer = DataBuffer::new(size)?;
                 let dbuf_ptr: *const [u8] = DataBuffer::into_raw(dbuf)?;
@@ -168,7 +172,7 @@ impl MemoryManager {
                     },
                 )
             };
-
+            capy_log!("RETURN");
         // TODO: Drop the sga_addr field in the scatter-gather array.
         Ok(demi_sgarray_t {
             sga_buf: mbuf_ptr as *mut c_void,
@@ -227,7 +231,10 @@ impl MemoryManager {
             // TODO: Replace the following method for computing the length of a mbuf once we have a proper DPDKBuffer abstraction.
             let orig_len: usize = unsafe { ((*mbuf_ptr).buf_len - (*mbuf_ptr).data_off).into() };
             let trim: usize = orig_len - len;
-            mbuf.trim(trim);
+            capy_log!("Original length: {}", orig_len);
+            capy_log!("Trim length: {}", trim);
+            capy_log!("mbuf length: {}", mbuf.len());
+            // mbuf.trim(trim);
             Buffer::DPDK(mbuf)
         } else {
             // Clone heap-managed buffer.

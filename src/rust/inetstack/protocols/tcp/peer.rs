@@ -529,6 +529,7 @@ impl TcpPeer {
     }
 
     pub fn push(&self, fd: QDesc, buf: Buffer) -> PushFuture {
+        capy_log!("[1] TCP pushing");
         let err = match self.send(fd, buf) {
             Ok(()) => None,
             Err(e) => Some(e),
@@ -545,6 +546,7 @@ impl TcpPeer {
 
     fn send(&self, fd: QDesc, buf: Buffer) -> Result<(), Fail> {
         let inner = self.inner.borrow_mut();
+        capy_log!("send to fd: {:?}", fd);
         let key = match inner.sockets.get(&fd) {
             Some(Socket::Established { local, remote }) => (*local, *remote),
             #[cfg(feature = "tcp-migration")]

@@ -205,7 +205,7 @@ def run_eval():
                             cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
                             task = host.run(cmd, quiet=True)
                             pyrem.task.Parallel([task], aggregate=True).start(wait=False)
-                            time.sleep(2)
+                            time.sleep(3)
                             print('iokerneld is running')
                             cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                     10.0.1.9:10000 \

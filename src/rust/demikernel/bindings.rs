@@ -342,7 +342,7 @@ pub extern "C" fn demi_pushto(
 #[no_mangle]
 pub extern "C" fn demi_push(qtok_out: *mut demi_qtoken_t, qd: c_int, sga: *const demi_sgarray_t) -> c_int {
     trace!("demi_push()");
-
+    eprintln!("demi_push");
     // Check if scatter-gather array is invalid.
     if sga.is_null() {
         return libc::EINVAL;
@@ -495,10 +495,24 @@ pub extern "C" fn demi_wait_any(
         us if us < -1 => panic!("timeout must be non-negative or -1"),
         us => Some(Duration::from_micros(us as u64)),
     };
+    // eprintln!("HERE1 (timeout: {:?})", timeout);
+    if qts.is_null() {
+        panic!("qts is null");
+    }
+    
+    let max_len = isize::MAX as usize / std::mem::size_of::<QToken>();
+    if num_qts as usize > max_len {
+        panic!("num_qts exceeds the maximum allowable length");
+    }
+    
+    let qts = unsafe {
+        assert_eq!(qts.align_offset(std::mem::align_of::<QToken>()), 0, "qts pointer is not aligned");
+        slice::from_raw_parts(qts as *const QToken, num_qts as usize)
+    };
 
     // Get queue tokens.
-    let qts = unsafe { slice::from_raw_parts(qts as *const QToken, num_qts as usize) };
-
+    // let qts = unsafe { slice::from_raw_parts(qts as *const QToken, num_qts as usize) };
+    // eprintln!("HERE2");
     // TODO: Remove allocations.
     let qrs_len = unsafe { *qrs_count };
     let qrs = unsafe { slice::from_raw_parts_mut(qrs_out, qrs_len) };
@@ -608,8 +622,14 @@ pub extern "C" fn demi_sgaalloc(size: libc::size_t) -> demi_sgarray_t {
     });
 
     match ret {
-        Ok(ret) => ret,
-        Err(_) => null_sga,
+        Ok(ret) => {
+            eprintln!("demi_sgalloc::return ret");
+            ret
+        },
+        Err(_) => {
+            eprintln!("demi_sgalloc::return null_sga");
+            null_sga
+        },
     }
 }
 

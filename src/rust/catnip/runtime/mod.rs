@@ -12,7 +12,7 @@ use self::memory::{
     consts::DEFAULT_MAX_BODY_SIZE,
     MemoryManager,
 };
-use crate::runtime::{
+use crate::{capy_log, runtime::{
     libdpdk::{
         rte_delay_us_block,
         rte_eal_init,
@@ -83,7 +83,7 @@ use crate::runtime::{
         types::MacAddress,
     },
     Runtime,
-};
+}};
 use ::anyhow::{
     bail,
     format_err,
@@ -245,7 +245,7 @@ impl DPDKRuntime {
         } else {
             DEFAULT_MAX_BODY_SIZE
         };
-
+        capy_log!("max_body_size: {}", max_body_size);
         let memory_manager = MemoryManager::new(max_body_size)?;
 
         let owner: u64 = RTE_ETH_DEV_NO_OWNER as u64;
@@ -341,6 +341,7 @@ impl DPDKRuntime {
         } else {
             RTE_ETHER_MAX_LEN
         };
+        capy_log!("port_conf.rxmode.max_rx_pkt_len: {}", port_conf.rxmode.max_rx_pkt_len);
         if tcp_checksum_offload {
             port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TCP_CKSUM as u64;
         }

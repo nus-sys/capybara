@@ -216,6 +216,7 @@ impl InetStack {
                     self.file_table.free(qd);
                     Err(e)
                 } else {
+                    capy_log!("TCP socket: {:?}", qd);
                     Ok(qd)
                 }
             },
@@ -225,6 +226,7 @@ impl InetStack {
                     self.file_table.free(qd);
                     Err(e)
                 } else {
+                    capy_log!("UDP socket: {:?}", qd);
                     Ok(qd)
                 }
             },
@@ -682,11 +684,13 @@ impl InetStack {
             }
 
             if completed > 0 {
+                capy_log!("return {} completed", completed);
                 return Ok(completed);
             }
 
             if let Some(timeout) = timeout {
                 if timeout <= begin.elapsed() {
+                    // capy_log!("return with timeout ({:?})", timeout);
                     return Ok(0);
                 }
             }

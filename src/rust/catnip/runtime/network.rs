@@ -81,6 +81,7 @@ impl NetworkRuntime for DPDKRuntime {
                             Ok(mbuf) => mbuf,
                             Err(e) => panic!("failed to allocate body mbuf: {:?}", e.cause),
                         };
+                        capy_log!("mbuf.len(): {}, len(): {}", mbuf.len(), bytes.len());
                         assert!(mbuf.len() >= bytes.len());
                         unsafe { mbuf.slice_mut()[..bytes.len()].copy_from_slice(&bytes[..]) };
                         mbuf.trim(mbuf.len() - bytes.len());
