@@ -80,6 +80,10 @@ ifeq ($(TCP_MIG),1)
 CARGO_FEATURES += --features=tcp-migration
 endif
 
+ifeq ($(MANUAL_TCP_MIG),1)
+CARGO_FEATURES += --features=manual-tcp-migration
+endif
+
 ifeq ($(CAPY_LOG),1)
 CARGO_FEATURES += --features=capy-log
 endif
@@ -285,6 +289,7 @@ ENV += LIBOS=catnip
 ENV += USE_JUMBO=1
 
 
+
 tcp-echo:
 	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
 	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
@@ -320,6 +325,7 @@ http-server-fe:
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
+	MIG_PER_N=3 \
 	taskset --cpu-list 0 \
 	$(ELF_DIR)/http-server.elf 10.0.1.8:10000
 
@@ -339,6 +345,7 @@ http-server-be0:
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
+	MIG_PER_N=1000000 \
 	numactl -m0 taskset --cpu-list 1 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
 
@@ -513,12 +520,6 @@ tcp-ping-pong-server:
 	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-ping-pong.elf \
 	--server 10.0.1.8:22222
 
-tcp-ping-pong-client:
-	sudo -E RUST_BACKTRACE=1 LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/c1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	timeout 10 /homes/inho/Capybara/capybara/bin/examples/rust/tcp-ping-pong.elf \
-	--client 10.0.1.8:22222
 
 tcp-pushpop:
 	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \

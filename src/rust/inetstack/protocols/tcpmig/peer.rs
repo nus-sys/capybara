@@ -280,10 +280,11 @@ impl TcpMigPeer {
             self.rt.clone(),
             self.local_ipv4_addr,
             self.local_link_addr,
-            FRONTEND_IP,
-            FRONTEND_MAC, 
+            BACKEND_IP, // FRONTEND_IP,
+            BACKEND_MAC, // FRONTEND_MAC, 
             self.self_udp_port,
-            if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
+            10000,
+            // if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
             local,
             remote,
             Some(qd),

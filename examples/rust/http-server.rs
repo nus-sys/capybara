@@ -482,7 +482,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         if *remaining > 0 {
                             // queue next pop
                             qts.push(libos.pop(qd).expect("pop qt"));
-                            server_log!("Issued POP");
+                            server_log!("Migrating after {} more requests, Issued POP", remaining);
                         } else {
                             server_log!("Should be migrated (no POP issued)");
                             server_log!("BUFFER DATA SIZE = {}", state.buffer.data_size());
