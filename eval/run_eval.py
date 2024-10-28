@@ -123,7 +123,7 @@ def run_eval():
     
     # Create a dictionary that stores each parameter and its values
     parameters = {
-        # "TIMER_RESOLUTION": TIMER_RESOLUTION,
+        "TIMER_RESOLUTION": TIMER_RESOLUTION,
         "MAX_RECV_ITERS": MAX_RECV_ITERS,
         # "MAX_OUT_OF_ORDER": MAX_OUT_OF_ORDER, 
         # "RTO_ALPHA": RTO_ALPHA,
@@ -152,116 +152,137 @@ def run_eval():
         result_header = "EXPT_ID, " + '#conn, Data size, Rate, Throughput, Dropped, Never Sent, Median, p90, p99, p99.9, p99.99,'
     
     result_header += ",".join(parameters.keys())
-                
+    
+    
+    
+    
     for pps in CLIENT_PPS:
         for conn in NUM_CONNECTIONS:
             for data_size in DATA_SIZE:
-            
+                # print(pps, conn, data_size)
+                combinations = itertools.product(
+                    parameters["TIMER_RESOLUTION"],
+                    parameters["MAX_RECV_ITERS"],
+                    parameters["RECEIVE_BATCH_SIZE"],
+                )
                 is_done = 0
+                for combination in combinations:
+                    
+                    test_values = dict(zip(parameters.keys(), combination))
+                    # print(pps, conn, data_size, test_values)
+                    # continue
+                    if 'autokernel' not in FEATURES and is_done == 1:
+                        continue
+                    is_done = 1
+                # is_done = 0
                 
-                for param_name, values in parameters.items():
-                    for value in values:
+                # for param_name, values in parameters.items():
+                #     for value in values:
                         
-                        if 'autokernel' not in FEATURES and is_done == 1:
-                            continue
-                        is_done = 1
+                #         if 'autokernel' not in FEATURES and is_done == 1:
+                #             continue
+                #         is_done = 1
                         
-                        # Create a copy of the default values
-                        test_values = default_values.copy()
-                        # Update the current parameter being tested
-                        test_values[param_name] = value
-                        # Run the test with the updated values
+                #         # Create a copy of the default values
+                #         test_values = default_values.copy()
+                #         # Update the current parameter being tested
+                #         test_values[param_name] = value
+                #         # Run the test with the updated values
                         
-                        kill_procs()
-                        experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
-                        with open(f'{AUTOKERNEL_PATH}/eval/test_config.py', 'r') as file:
-                            print(f'================ RUNNING TEST =================')
-                            print(f'\n\nEXPTID: {experiment_id}')
-                            with open(f'{DATA_PATH}/{experiment_id}.test_config', 'w') as output_file:
-                                output_file.write(file.read())
-                        run_server(test_values, data_size)
+                    kill_procs()
+                    experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
+                    with open(f'{AUTOKERNEL_PATH}/eval/test_config.py', 'r') as file:
+                        print(f'================ RUNNING TEST =================')
+                        print(f'\n\nEXPTID: {experiment_id}')
+                        with open(f'{DATA_PATH}/{experiment_id}.test_config', 'w') as output_file:
+                            output_file.write(file.read())
+                    
+                    
+                    host = pyrem.host.RemoteHost(CLIENT_NODE)
+                    if CLIENT_APP == 'caladan':
+                        cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
+                        task = host.run(cmd, quiet=True)
+                        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+                        print('iokerneld is running')
                         
-                        host = pyrem.host.RemoteHost(CLIENT_NODE)
+                    run_server(test_values, data_size)
+                    
+                    
+                    if CLIENT_APP == 'tcp_generator':
+                        cmd = [f'cd {TCP_GENERATOR_PATH} && \
+                                sudo ./build/tcp-generator \
+                                -a 31:00.1 \
+                                -n 4 \
+                                -c 0xffff -- \
+                                -d exponential \
+                                -r {pps} \
+                                -f {conn} \
+                                -s {data_size} \
+                                -t {RUNTIME} \
+                                -q 1 \
+                                -c addr.cfg \
+                                -o {DATA_PATH}/{experiment_id}.lat \
+                                > {DATA_PATH}/{experiment_id}.client 2>&1']
+                        task = host.run(cmd, quiet=False)
+                        print('Running client\n')
+                        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+                        time.sleep(RUNTIME * 2 + 7)
+                    elif CLIENT_APP == 'caladan':
+                        cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
+                                10.0.1.9:10000 \
+                                --config {CALADAN_PATH}/client.config \
+                                --mode runtime-client \
+                                --protocol=http \
+                                --transport=tcp \
+                                --samples=1 \
+                                --pps={pps} \
+                                --threads={conn} \
+                                --runtime={RUNTIME} \
+                                --discard_pct=10 \
+                                --output=trace \
+                                --rampup=0 \
+                                --exptid={DATA_PATH}/{experiment_id} \
+                                > {DATA_PATH}/{experiment_id}.client']
+                        task = host.run(cmd, quiet=False)
+                        print('Running client\n')
+                        pyrem.task.Parallel([task], aggregate=True).start(wait=True)
+                    
+                    
+                    print('================ TEST COMPLETE =================\n')
+                    
+                    try:
+                        cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]" | tail -1'
+                        client_result = subprocess.run(
+                            cmd,
+                            shell=True,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            check=True,
+                        ).stdout.decode()
+                        if client_result == '':
+                            client_result = '[RESULT] N/A\n'
+                        
                         if CLIENT_APP == 'tcp_generator':
-                            cmd = [f'cd {TCP_GENERATOR_PATH} && \
-                                    sudo ./build/tcp-generator \
-                                    -a 31:00.1 \
-                                    -n 4 \
-                                    -c 0xffff -- \
-                                    -d exponential \
-                                    -r {pps} \
-                                    -f {conn} \
-                                    -s {data_size} \
-                                    -t {RUNTIME} \
-                                    -q 1 \
-                                    -c addr.cfg \
-                                    -o {DATA_PATH}/{experiment_id}.lat \
-                                    > {DATA_PATH}/{experiment_id}.client 2>&1']
-                            task = host.run(cmd, quiet=False)
-                            print('Running client\n')
-                            pyrem.task.Parallel([task], aggregate=True).start(wait=False)
-                            time.sleep(RUNTIME * 2 + 7)
-                        elif CLIENT_APP == 'caladan':
-                            cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
-                            task = host.run(cmd, quiet=True)
-                            pyrem.task.Parallel([task], aggregate=True).start(wait=False)
-                            time.sleep(3)
-                            print('iokerneld is running')
-                            cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
-                                    10.0.1.9:10000 \
-                                    --config {CALADAN_PATH}/client.config \
-                                    --mode runtime-client \
-                                    --protocol=http \
-                                    --transport=tcp \
-                                    --samples=1 \
-                                    --pps={pps} \
-                                    --threads={conn} \
-                                    --runtime={RUNTIME} \
-                                    --discard_pct=10 \
-                                    --output=trace \
-                                    --rampup=0 \
-                                    --exptid={DATA_PATH}/{experiment_id} \
-                                    > {DATA_PATH}/{experiment_id}.client']
-                            task = host.run(cmd, quiet=False)
-                            print('Running client\n')
-                            pyrem.task.Parallel([task], aggregate=True).start(wait=True)
+                            # Generate the result string with the values
+                            result = f'{experiment_id},' + f'{client_result[len("[RESULT]"):].rstrip()},'
+                        else:
+                            result = f'{experiment_id}, {conn}, {data_size},' + f'{client_result[len("[RESULT]"):].rstrip()}, '
                         
+                        if 'autokernel' in FEATURES:
+                            result += ",".join(map(str, test_values.values())) + "\n"
+                        else:
+                            result += "BASELINE\n"
+                        print('\n\n' + "***TEST RESULT***\n" + result_header + '\n' + result)
                         
-                        print('================ TEST COMPLETE =================\n')
+                        final_result += result
                         
-                        try:
-                            cmd = f'cat {DATA_PATH}/{experiment_id}.client | grep "\[RESULT\]" | tail -1'
-                            client_result = subprocess.run(
-                                cmd,
-                                shell=True,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT,
-                                check=True,
-                            ).stdout.decode()
-                            if client_result == '':
-                                client_result = '[RESULT] N/A\n'
-                            
-                            if CLIENT_APP == 'tcp_generator':
-                                # Generate the result string with the values
-                                result = f'{experiment_id},' + f'{client_result[len("[RESULT]"):].rstrip()},'
-                            else:
-                                result = f'{experiment_id}, {conn}, {data_size},' + f'{client_result[len("[RESULT]"):].rstrip()}, '
-                            
-                            if 'autokernel' in FEATURES:
-                                result += ",".join(map(str, test_values.values())) + "\n"
-                            else:
-                                result += "BASELINE\n"
-                            print('\n\n' + "***TEST RESULT***\n" + result_header + '\n' + result)
-                            
-                            final_result += result
-                            
-                        except subprocess.CalledProcessError as e:
-                            # Handle the exception for a failed command execution
-                            print("EXPERIMENT FAILED\n\n")
+                    except subprocess.CalledProcessError as e:
+                        # Handle the exception for a failed command execution
+                        print("EXPERIMENT FAILED\n\n")
 
-                        except Exception as e:
-                            # Handle any other unexpected exceptions
-                            print("EXPERIMENT FAILED\n\n")
+                    except Exception as e:
+                        # Handle any other unexpected exceptions
+                        print("EXPERIMENT FAILED\n\n")
                                     
 def exiting():
     
@@ -272,7 +293,10 @@ def exiting():
    
     print(f'\n\n\n\n\n{result_header}\n')
     print(final_result)
-    with open(f'{DATA_PATH}/result.txt', "w") as file:
+    
+    experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
+    print(f'Writing results to result_{experiment_id}.txt')
+    with open(f'{DATA_PATH}/result_{experiment_id}.txt', "w") as file:
         file.write(f'{result_header}\n')
         file.write(final_result)
     kill_procs()

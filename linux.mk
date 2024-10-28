@@ -287,6 +287,7 @@ test-clean:
 
 ENV += CAPY_LOG=all
 ENV += LIBOS=catnip
+# ENV += DATA_SIZE=8192
 ENV += USE_JUMBO=1
 
 

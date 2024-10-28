@@ -181,12 +181,18 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
                     .expect("DATA_SIZE must be a valid number")
             };
             static ref RESPONSE: String = {
-                match std::fs::read_to_string("/var/www/demo/index.html") {
+                let file_path = match *N {
+                    256 => "/var/www/demo/index_256b.html",
+                    1024 => "/var/www/demo/index_1024b.html",
+                    8192 => "/var/www/demo/index_8192b.html",
+                    _ => "/var/www/demo/index.html", // Default file
+                };
+                match std::fs::read_to_string(file_path) {
                     Ok(contents) => {
-                        let extra_bytes = "A".repeat(*N);
-                        let full_contents = format!("{}{}", contents, extra_bytes);
+                        // let extra_bytes = "A".repeat(*N);
+                        // let full_contents = format!("{}{}", contents, extra_bytes);
 
-                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", full_contents.len(), full_contents)
+                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
                     },
                     Err(_) => {
                         format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
