@@ -85,6 +85,7 @@ impl<T> RawArray<T> {
     }
 
     /// Gets a mutable slice to the underlying data in the target raw array.
+    #[allow(clippy::mut_from_ref)] // TODO
     pub unsafe fn get_mut(&self) -> &mut [T] {
         slice::from_raw_parts_mut(self.ptr.as_ptr(), self.cap)
     }

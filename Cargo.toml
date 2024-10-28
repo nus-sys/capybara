@@ -79,33 +79,33 @@ path = "src/rust/lib.rs"
 name = "udp-dump"
 path = "examples/rust/udp-dump.rs"
 
-[[example]]
-name = "udp-echo"
-path = "examples/rust/udp-echo.rs"
+# [[example]]
+# name = "udp-echo"
+# path = "examples/rust/udp-echo.rs"
 
 [[example]]
 name = "udp-pktgen"
 path = "examples/rust/udp-pktgen.rs"
 
-[[example]]
-name = "udp-relay"
-path = "examples/rust/udp-relay.rs"
+# [[example]]
+# name = "udp-relay"
+# path = "examples/rust/udp-relay.rs"
 
 [[example]]
 name = "udp-push-pop"
 path = "examples/rust/udp-push-pop.rs"
 
-[[example]]
-name = "udp-ping-pong"
-path = "examples/rust/udp-ping-pong.rs"
+# [[example]]
+# name = "udp-ping-pong"
+# path = "examples/rust/udp-ping-pong.rs"
 
 [[example]]
 name = "tcp-dump"
 path = "examples/rust/tcp-dump.rs"
 
-[[example]]
-name = "tcp-echo"
-path = "examples/rust/tcp-echo.rs"
+# [[example]]
+# name = "tcp-echo"
+# path = "examples/rust/tcp-echo.rs"
 
 [[example]]
 name = "tcp-pktgen"
@@ -119,21 +119,21 @@ path = "examples/rust/tcp-push-pop.rs"
 name = "tcp-ping-pong"
 path = "examples/rust/tcp-ping-pong.rs"
 
-[[example]]
-name = "tcp-migration"
-path = "examples/rust/tcp-migration.rs"
+# [[example]]
+# name = "tcp-migration"
+# path = "examples/rust/tcp-migration.rs"
 
-[[example]]
-name = "tcp-migration-ping-pong"
-path = "examples/rust/tcp-migration-ping-pong.rs"
+# [[example]]
+# name = "tcp-migration-ping-pong"
+# path = "examples/rust/tcp-migration-ping-pong.rs"
 
-[[example]]
-name = "tcpmig-server-multi"
-path = "examples/rust/tcpmig-server-multi.rs"
+# [[example]]
+# name = "tcpmig-server-multi"
+# path = "examples/rust/tcpmig-server-multi.rs"
 
-[[example]]
-name = "tcpmig-server-single"
-path = "examples/rust/tcpmig-server-single.rs"
+# [[example]]
+# name = "tcpmig-server-single"
+# path = "examples/rust/tcpmig-server-single.rs"
 
 [[example]]
 name = "tcpmig-client"

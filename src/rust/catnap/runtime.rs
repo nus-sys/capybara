@@ -110,7 +110,8 @@ impl MemoryRuntime for PosixRuntime {
         let (data_ptr, length): (*mut u8, usize) = (sgaseg.sgaseg_buf as *mut u8, sgaseg.sgaseg_len as usize);
 
         // Convert back raw slice to a heap buffer and drop allocation.
-        DataBuffer::from_raw_parts(data_ptr, length)?;
+        // TODO safety
+        unsafe { DataBuffer::from_raw_parts(data_ptr, length) }?;
 
         Ok(())
     }

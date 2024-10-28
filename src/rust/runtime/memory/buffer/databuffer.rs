@@ -72,7 +72,7 @@ impl DataBuffer {
     }
 
     /// Creates a data buffer from a raw pointer and a length.
-    pub fn from_raw_parts(data: *mut u8, len: usize) -> Result<Self, Fail> {
+    pub unsafe fn from_raw_parts(data: *mut u8, len: usize) -> Result<Self, Fail> {
         // Check if arguments are valid.
         if len == 0 {
             return Err(Fail::new(libc::EINVAL, "zero-length buffer"));
