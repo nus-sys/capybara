@@ -115,8 +115,7 @@ all-libs: all-shim all-libs-demikernel
 all-libs-demikernel:
 	@echo "LD_LIBRARY_PATH: $(LD_LIBRARY_PATH)"
 	@echo "PKG_CONFIG_PATH: $(PKG_CONFIG_PATH)"
-	@echo "$(CARGO) build --libs $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS)
+	RUSTFLAGS=-Awarnings $(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS)
 	cp -f $(BUILD_DIR)/$(DEMIKERNEL_LIB) $(LIBDIR)/$(DEMIKERNEL_LIB)
 
 all-shim: all-libs-demikernel

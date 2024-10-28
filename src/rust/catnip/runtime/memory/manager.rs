@@ -7,14 +7,18 @@
 
 use super::mempool::MemoryPool;
 use crate::{
-    capy_log, inetstack::protocols::{
+    capy_log,
+    inetstack::protocols::{
         ethernet2::ETHERNET2_HEADER_SIZE,
         ipv4::IPV4_HEADER_DEFAULT_SIZE,
         tcp::MAX_TCP_HEADER_SIZE,
-    }, runtime::{
+    },
+    runtime::{
         fail::Fail,
         libdpdk::{
-            rte_eal_process_type, rte_mbuf, rte_mempool
+            rte_eal_process_type,
+            rte_mbuf,
+            rte_mempool,
         },
         memory::{
             Buffer,
@@ -25,7 +29,7 @@ use crate::{
             demi_sgarray_t,
             demi_sgaseg_t,
         },
-    }
+    },
 };
 use ::anyhow::Error;
 use ::libc::c_void;
@@ -172,7 +176,7 @@ impl MemoryManager {
                     },
                 )
             };
-            capy_log!("RETURN");
+        capy_log!("RETURN");
         // TODO: Drop the sga_addr field in the scatter-gather array.
         Ok(demi_sgarray_t {
             sga_buf: mbuf_ptr as *mut c_void,
@@ -201,7 +205,7 @@ impl MemoryManager {
             let (data_ptr, length): (*mut u8, usize) = (sgaseg.sgaseg_buf as *mut u8, sgaseg.sgaseg_len as usize);
 
             // Convert back to a heap buffer and drop allocation.
-            DataBuffer::from_raw_parts(data_ptr, length)?;
+            unsafe { DataBuffer::from_raw_parts(data_ptr, length) }?;
         }
 
         Ok(())

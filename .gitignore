@@ -16,9 +16,6 @@ bin/
 *.swo
 *.swp
 
-# vscode
-.vscode/
-
 # gdb
 .gdb.*
 
