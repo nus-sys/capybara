@@ -159,6 +159,11 @@ path = "examples/rust/proxy-server-fe.rs"
 name = "proxy-server-be"
 path = "examples/rust/proxy-server-be.rs"
 
+[[example]]
+name = "tcp-server"
+path = "examples/rust/tcp-server.rs"
+required-features = ["tcp-migration", "manual-tcp-migration"]
+
 #=======================================================================================================================
 # Features
 #=======================================================================================================================

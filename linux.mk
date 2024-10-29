@@ -329,6 +329,17 @@ http-server-fe:
 	taskset --cpu-list 0 \
 	$(ELF_DIR)/http-server.elf 10.0.1.8:10000
 
+fe-tcp-server:
+	sudo -E \
+	IS_FRONTEND=1 \
+	NUM_CORES=4 \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=3 \
+	taskset --cpu-list 0 \
+	$(ELF_DIR)/tcp-server.elf 10.0.1.8:10000
+
 capybara-switch:
 	sudo -E \
 	NUM_CORES=1 \
@@ -348,6 +359,17 @@ http-server-be0:
 	MIG_PER_N=1000000 \
 	numactl -m0 taskset --cpu-list 1 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
+
+be-tcp-server0:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m0 taskset --cpu-list 1 \
+	$(ELF_DIR)/tcp-server.elf 10.0.1.9:10000
 
 http-server-be1:
 	sudo -E \
