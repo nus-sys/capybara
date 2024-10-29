@@ -3,9 +3,11 @@
         "catnip-libos",
         "mlx5",
         "tcp-migration",
+        "manual-tcp-migration",
         "capy-log",
     ],
     "rust-analyzer.check.extraEnv": {
         "PKG_CONFIG_PATH": "${userHome}/lib/x86_64-linux-gnu/pkgconfig",
-    }
+    },
+    "C_Cpp.intelliSenseCacheSize": 0
 }
