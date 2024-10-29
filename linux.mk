@@ -424,6 +424,7 @@ be-dpdk-ctrl:
 	sudo -E RUST_LOG="debug" \
 	NUM_CORES=4 \
 	CORE_ID=5 \
+	$(ENV) \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 4 \
@@ -432,6 +433,7 @@ be-dpdk-ctrl:
 fe-dpdk-ctrl:
 	sudo -E RUST_LOG="debug" \
 	NUM_CORES=4 \
+	CORE_ID=5 \
 	$(ENV) \
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
@@ -574,3 +576,14 @@ redis-server-node8:
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
 	./redis-server ../config/node8.conf
+
+
+redis-server-node9:
+	cd ../cr/src && \
+	sudo -E \
+	$(ENV) \
+	CORE_ID=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	LD_PRELOAD=$(LIBDIR)/libshim.so \
+	./redis-server ../config/node9.conf
