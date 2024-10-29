@@ -150,6 +150,23 @@ impl TcpMigPeer {
         }
     }
 
+    pub fn should_migrate(&self) -> bool {
+        // if self.mig_off != 0 {
+        //     return false;
+        // }
+        
+        static mut FLAG: i32 = 0;
+        
+        unsafe {
+            // if FLAG == 5 {
+            //     FLAG = 0;
+            // }
+            FLAG += 1;
+            eprintln!("FLAG: {}", FLAG);
+            FLAG == 30
+        }
+    }
+
     pub fn set_port(&mut self, port: u16) {
         self.self_udp_port = port;
     }
