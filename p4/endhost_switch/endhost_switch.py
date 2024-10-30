@@ -170,9 +170,9 @@ for _, dev_port, speed in routes:
 
 
 p4.Ingress.l2_forwarding_decision.clear()
-p4.Ingress.l2_forwarding_decision.add_with_broadcast(dst_addr=0xffffffffffff)
+p4.Ingress.l2_forwarding_decision.add_with_broadcast(dst_mac=0xffffffffffff)
 for addr, port, _ in routes:
-    p4.Ingress.l2_forwarding_decision.add_with_l2_forward(dst_addr=addr, port=port)
+    p4.Ingress.l2_forwarding_decision.add_with_l2_forward(dst_mac=addr, port=port)
     bfrt.pre.node.add(port, port, [], [port])
     bfrt.pre.prune.mod(port, [port])
 bfrt.pre.mgid.add(
