@@ -336,7 +336,7 @@ fe-tcp-server:
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
-	MIG_PER_N=3 \
+	MIG_AFTER=3 \
 	taskset --cpu-list 0 \
 	$(ELF_DIR)/tcp-server.elf 10.0.1.8:10000
 
