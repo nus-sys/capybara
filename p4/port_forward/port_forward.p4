@@ -53,7 +53,7 @@ parser IngressParser(packet_in        pkt,
      state start {
         pkt.extract(ig_intr_md);
         pkt.advance(PORT_METADATA_SIZE);
-	pkt.extract(hdr.ethernet);
+	    pkt.extract(hdr.ethernet);
         transition accept;
     }
 

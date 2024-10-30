@@ -299,16 +299,10 @@ control Ingress(
     MigrationRequest32b0() owner_ip_0;
     MigrationRequest16b0() owner_port_0;
 
-    MinimumWorkload() min_workload;
-    MinimumWorkload32b() min_workload_mac_hi32;
-    MinimumWorkload16b() min_workload_mac_lo16;
-    MinimumWorkload32b() min_workload_ip;
-    MinimumWorkload16b() min_workload_port;
 
     Blocker0() blocker0;
 
     action exec_reply_rewrite() {
-        hdr.ethernet.src_mac = FE_MAC;
         hdr.ipv4.src_ip = FE_IP;
         hdr.tcp.src_port = FE_PORT;
     }
@@ -323,36 +317,35 @@ control Ingress(
             exec_reply_rewrite;
             NoAction;
         }
-        size = 16;
         const entries = {
             (0, 0, 1, 1) : exec_reply_rewrite();
         }
         const default_action = NoAction();
+        size = 1;
+    }
+    
+    action exec_mac_rewrite(bit<48> mac_addr) {
+        hdr.ethernet.dst_mac = mac_addr;
+    }
+    table tbl_mac_lookup {
+        key = {
+            hdr.ipv4.dst_ip : exact;
+        }
+        actions = {
+            exec_mac_rewrite;
+            NoAction;
+        }
+        const entries = {
+            0x0a000107 : exec_mac_rewrite(0x08c0ebb6cd5d);
+            0x0a000108 : exec_mac_rewrite(0x08c0ebb6e805);
+            0x0a000109 : exec_mac_rewrite(0x08c0ebb6c5ad);
+        }
+        const default_action = NoAction();
+        size = 4;
     }
 
+
     apply {
-        // port_mirroring_ingress.apply(hdr.bridged_meta, meta.port_mirror_meta, ig_intr_md.ingress_port,
-        //                             ig_intr_md.ingress_mac_tstamp, ig_dprsr_md.mirror_type); // <== To Add
-        // if(hdr.heartbeat.isValid() || hdr.tcpmig.flag == 0b00100000){
-
-        //     hdr.udp.checksum = 0;
-        //     bit<1> holder_1b_00;
-            
-        //     if(hdr.heartbeat.isValid()){
-        //         ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
-        //         drop();
-        //     }else{
-        //         meta.initial_distribution = 1;
-        //     }
-
-        //     min_workload.apply(0, hdr, meta, holder_1b_00);
-        //     meta.result00 = holder_1b_00; // if it's 1, min_workload has been updated (addresses should be updated too)
-        //     min_workload_mac_hi32.apply(0, hdr.ethernet.src_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
-        //     min_workload_mac_lo16.apply(0, hdr.ethernet.src_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
-        //     min_workload_ip.apply(0, hdr.ipv4.src_ip, meta, hdr.ipv4.dst_ip);
-        //     min_workload_port.apply(0, hdr.udp.src_port, meta, hdr.udp.dst_port);
-
-        // }else
          
         if(hdr.pktgen_timer_header.isValid()){
             remove_pktgen_hdr();
@@ -419,12 +412,11 @@ control Ingress(
             meta.result02 = holder_1b_02;
             meta.result03 = holder_1b_03;
 
-            owner_mac_hi32_0.apply(hash1, meta.owner_mac[47:16], meta, hdr.ethernet.dst_mac[47:16]);
-            owner_mac_lo16_0.apply(hash1, meta.owner_mac[15:0], meta, hdr.ethernet.dst_mac[15:0]);
             owner_ip_0.apply(hash1, meta.owner_ip, meta, hdr.ipv4.dst_ip);
             owner_port_0.apply(hash1, meta.owner_port, meta, hdr.tcp.dst_port);
             
             tbl_reply_rewrite.apply();
+            tbl_mac_lookup.apply();
 
             // blocker0.apply(hash1, meta, ig_dprsr_md.drop_ctl[0:0]);
             l2_forwarding.apply();
