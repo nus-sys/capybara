@@ -396,7 +396,7 @@ control Ingress(
             }
 
             if(meta.flag[0:0] == 1){ // chown
-                meta.owner_mac = hdr.ethernet.src_mac;
+                // meta.owner_mac = hdr.ethernet.src_mac;
                 meta.owner_ip = hdr.ipv4.src_ip;
                 meta.owner_port = hdr.udp.src_port;
             }
