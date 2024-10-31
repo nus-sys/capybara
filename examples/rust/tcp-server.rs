@@ -23,6 +23,7 @@ use ::std::{
 };
 use ctrlc;
 use std::{
+    cell::RefCell,
     collections::{
         hash_map::Entry,
         HashMap,
@@ -181,10 +182,13 @@ fn server(local: SocketAddrV4) -> Result<()> {
             let (index, qd) = (*index, *qd);
             qts.swap_remove(index);
 
-            struct Context;
+            struct Context(RefCell<Vec<u8>>);
             impl UserConnectionContext for Context {
-                fn migrate_in(&self, _: demikernel::runtime::memory::Buffer) {
-                    server_log!("migrate in")
+                fn migrate_in(&self, buffer: demikernel::runtime::memory::Buffer) {
+                    server_log!("migrate in");
+                    let mut buf = self.0.borrow_mut();
+                    assert!(buf.is_empty());
+                    buf.extend_from_slice(&buffer);
                 }
 
                 fn migrate_out(&self) {
@@ -192,10 +196,12 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 }
 
                 fn buf_size(&self) -> usize {
-                    0
+                    self.0.borrow().len()
                 }
 
-                fn write(&self, _: &mut [u8]) {}
+                fn write(&self, buf: &mut [u8]) {
+                    buf.copy_from_slice(&self.0.borrow());
+                }
             }
 
             match result {
@@ -203,9 +209,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
-                    set_user_connection_context(&libos, new_qd, Rc::new(Context));
+                    let context = Rc::new(Context(RefCell::new(Vec::new())));
+                    set_user_connection_context(&libos, new_qd, context.clone());
 
-                    connstate.insert(new_qd, Vec::new());
+                    connstate.insert(new_qd, context);
                     #[cfg(feature = "manual-tcp-migration")]
                     {
                         let replaced = requests_remaining.insert(new_qd, mig_after);
@@ -222,8 +229,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                 OperationResult::Pop(_, recvbuf) => {
                     server_log!("POP complete");
-                    let mut state = connstate.get_mut(&qd).unwrap();
-                    let sent = push_data_and_run(&mut state, &recvbuf, |bytes| {
+                    let state = connstate.get(&qd).unwrap();
+                    let sent = push_data_and_run(&mut state.0.borrow_mut(), &recvbuf, |bytes| {
                         let qt = libos.push2(qd, bytes).expect("can push");
                         qts.push(qt);
                     });
@@ -238,7 +245,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             server_log!("Migrating after {} more requests, Issued POP", remaining);
                         } else {
                             server_log!("Should be migrated (no POP issued)");
-                            server_log!("BUFFER DATA SIZE = {}", state.len());
+                            server_log!("BUFFER DATA SIZE = {}", state.0.borrow().len());
                             libos.initiate_migration(qd).unwrap();
                             entry.remove();
                         }
