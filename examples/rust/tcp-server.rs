@@ -130,10 +130,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
         if cfg!(feature = "tcp-migration") { "EN" } else { "DIS" }
     );
 
-    let mig_after: i32 = env::var("MIG_AFTER").as_deref()
-            .unwrap_or("10") // Default value is 10 if MIG_PER_N is not set
-            .parse()
-            .unwrap();
+    let mig_after: i32 = env::var("MIG_AFTER").as_deref().unwrap_or("10").parse().unwrap();
     ctrlc::set_handler(move || {
         eprintln!("Received Ctrl-C signal.");
         // LibOS::dpdk_print_eth_stats();
@@ -142,7 +139,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     })
     .expect("Error setting Ctrl-C handler");
 
-    let libos_name: LibOSName = LibOSName::from_env().unwrap().into();
+    let libos_name: LibOSName = LibOSName::from_env().unwrap();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
     let sockqd: QDesc = libos
         .socket(libc::AF_INET, libc::SOCK_STREAM, 0)
@@ -180,32 +177,12 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Accept(new_qd) => {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
-
-                    // #[cfg(feature = "tcp-migration")]
-                    // let state = if let Some(data) = libos.get_migrated_application_state::<ConnectionState>(new_qd) {
-                    //     server_log!(
-                    //         "Connection State LOG: Received migrated app data ({} bytes)",
-                    //         data.borrow().serialized_size() - 8
-                    //     );
-                    //     data
-                    // } else {
-                    //     server_log!("Connection State LOG: No migrated app data, creating new ConnectionState");
-                    //     let state = Rc::new(RefCell::new(ConnectionState {
-                    //         buffer: Buffer::new(),
-                    //         session_data: SessionData::new(session_data_size),
-                    //     }));
-                    //     libos.register_application_state(new_qd, state.clone());
-                    //     state
-                    // };
                     connstate.insert(new_qd, Vec::new());
-
                     #[cfg(feature = "manual-tcp-migration")]
                     {
                         let replaced = requests_remaining.insert(new_qd, mig_after);
                         assert!(replaced.is_none());
                     }
-                    /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
-
                     qts.push(libos.pop(new_qd).unwrap());
                     // Re-arm accept
                     qts.push(libos.accept(qd).expect("accept qtoken"));
@@ -217,17 +194,12 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                 OperationResult::Pop(_, recvbuf) => {
                     server_log!("POP complete");
-
                     let mut state = connstate.get_mut(&qd).unwrap();
-
                     let sent = push_data_and_run(&mut state, &recvbuf, |bytes| {
                         let qt = libos.push2(qd, bytes).expect("can push");
                         qts.push(qt);
                     });
-
-                    //server_log!("Issued PUSH => {} pushes pending", state.pushing);
                     server_log!("Issued {sent} PUSHes");
-
                     #[cfg(feature = "manual-tcp-migration")]
                     if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {
                         let remaining = entry.get_mut();
@@ -253,9 +225,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     _ => panic!("operation failed: {}", e),
                 },
 
-                _ => {
-                    panic!("Unexpected op: RESULT: {:?}", result);
-                },
+                _ => panic!("Unexpected op: RESULT: {:?}", result),
             }
         }
         // #[cfg(feature = "profiler")]
@@ -270,7 +240,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 //======================================================================================================================
 
 /// Prints program usage and exits.
-fn usage(program_name: &String) {
+fn usage(program_name: &str) {
     println!("Usage: {} address\n", program_name);
 }
 

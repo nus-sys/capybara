@@ -27,7 +27,10 @@ use crate::{
 };
 
 #[cfg(feature = "tcp-migration")]
-use crate::inetstack::protocols::tcpmig::{segment::TcpMigHeader, TcpmigPollState};
+use crate::inetstack::protocols::tcpmig::{
+    segment::TcpMigHeader,
+    TcpmigPollState,
+};
 
 use ::libc::ENOTCONN;
 use ::std::{
@@ -62,8 +65,7 @@ impl Peer {
         arp: ArpPeer,
         rng_seed: [u8; 32],
 
-        #[cfg(feature = "tcp-migration")]
-        tcpmig_poll_state: Rc<TcpmigPollState>,
+        #[cfg(feature = "tcp-migration")] tcpmig_poll_state: Rc<TcpmigPollState>,
     ) -> Result<Peer, Fail> {
         let udp_offload_checksum: bool = udp_config.get_tx_checksum_offload();
         let udp: UdpPeer = UdpPeer::new(
@@ -94,7 +96,6 @@ impl Peer {
             tcp_config,
             arp,
             rng_seed,
-
             #[cfg(feature = "tcp-migration")]
             tcpmig_poll_state,
         )?;
@@ -108,10 +109,9 @@ impl Peer {
     }
 
     pub fn receive(
-        &mut self, 
+        &mut self,
         buf: Buffer,
-        #[cfg(feature = "capybara-switch")]
-        eth_hdr: Ethernet2Header,
+        #[cfg(feature = "capybara-switch")] eth_hdr: Ethernet2Header,
     ) -> Result<(), Fail> {
         let (mut header, payload) = Ipv4Header::parse(buf)?;
         debug!("Ipv4 received {:?}", header);
@@ -122,7 +122,7 @@ impl Peer {
         match header.get_protocol() {
             IpProtocol::ICMPv4 => self.icmpv4.receive(&header, payload),
             IpProtocol::TCP => self.tcp.receive(
-                &mut header, 
+                &mut header,
                 payload,
                 #[cfg(feature = "capybara-switch")]
                 eth_hdr,

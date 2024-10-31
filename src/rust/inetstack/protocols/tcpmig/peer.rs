@@ -5,45 +5,67 @@
 // Imports
 //==============================================================================
 
-use super::{constants::*, ApplicationState};
-use super::segment::TcpMigSegment;
-use super::{segment::TcpMigHeader, active::ActiveMigration};
-use crate::inetstack::protocols::tcp::peer::TcpMigContext;
+use super::{
+    active::ActiveMigration,
+    constants::*,
+    segment::{
+        TcpMigHeader,
+        TcpMigSegment,
+    },
+    ApplicationState,
+};
 use crate::{
+    capy_profile,
+    capy_profile_merge_previous,
+    capy_time_log,
     inetstack::protocols::{
-            ipv4::Ipv4Header, 
-            tcp::{
-                segment::TcpHeader, peer::state::TcpState,
-            },
-            tcpmig::segment::MigrationStage,
-            ethernet2::{EtherType2, Ethernet2Header},
-            ip::IpProtocol,
-            udp::{UdpDatagram, UdpHeader},
+        ethernet2::{
+            EtherType2,
+            Ethernet2Header,
         },
+        ip::IpProtocol,
+        ipv4::Ipv4Header,
+        tcp::{
+            peer::{
+                state::TcpState,
+                TcpMigContext,
+            },
+            segment::TcpHeader,
+        },
+        tcpmig::segment::MigrationStage,
+        udp::{
+            UdpDatagram,
+            UdpHeader,
+        },
+    },
     runtime::{
         fail::Fail,
-        memory::{Buffer, DataBuffer},
+        memory::{
+            Buffer,
+            DataBuffer,
+        },
         network::{
             types::MacAddress,
             NetworkRuntime,
         },
     },
     QDesc,
-    capy_profile, capy_profile_merge_previous, capy_time_log,
 };
 
-use std::cell::RefCell;
-use std::collections::hash_map::Entry;
-use std::time::Instant;
 use ::std::{
     collections::HashMap,
+    env,
     net::{
         Ipv4Addr,
         SocketAddrV4,
     },
-    thread,
     rc::Rc,
-    env,
+    thread,
+};
+use std::{
+    cell::RefCell,
+    collections::hash_map::Entry,
+    time::Instant,
 };
 
 #[cfg(feature = "profiler")]
@@ -72,14 +94,14 @@ pub enum TcpmigReceiveStatus {
 pub struct TcpMigPeer {
     /// Underlying runtime.
     rt: Rc<dyn NetworkRuntime>,
-    
+
     /// Local link address.
     local_link_addr: MacAddress,
     /// Local IPv4 address.
     local_ipv4_addr: Ipv4Addr,
 
     /// Connections being actively migrated in/out.
-    /// 
+    ///
     /// key = remote.
     active_migrations: HashMap<SocketAddrV4, ActiveMigration>,
 
@@ -88,7 +110,7 @@ pub struct TcpMigPeer {
     self_udp_port: u16,
 
     heartbeat_message: Box<TcpMigSegment>,
-    
+
     /// key: remote addr
     application_state: HashMap<SocketAddrV4, MigratedApplicationState>,
 
@@ -111,11 +133,7 @@ pub enum MigratedApplicationState {
 /// Associate functions for [TcpMigPeer].
 impl TcpMigPeer {
     /// Creates a TCPMig peer.
-    pub fn new(
-        rt: Rc<dyn NetworkRuntime>,
-        local_link_addr: MacAddress,
-        local_ipv4_addr: Ipv4Addr,
-    ) -> Self {
+    pub fn new(rt: Rc<dyn NetworkRuntime>, local_link_addr: MacAddress, local_ipv4_addr: Ipv4Addr) -> Self {
         log_init();
 
         Self {
@@ -132,10 +150,10 @@ impl TcpMigPeer {
                 TcpMigHeader::new(
                     SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0),
                     SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0),
-                    4, 
+                    4,
                     MigrationStage::HeartbeatUpdate,
-                    SELF_UDP_PORT, 
-                    FRONTEND_PORT
+                    SELF_UDP_PORT,
+                    FRONTEND_PORT,
                 ),
                 Buffer::Heap(DataBuffer::new(4).unwrap()),
             )),
@@ -154,9 +172,9 @@ impl TcpMigPeer {
         // if self.mig_off != 0 {
         //     return false;
         // }
-        
+
         static mut FLAG: i32 = 0;
-        
+
         unsafe {
             // if FLAG == 5 {
             //     FLAG = 0;
@@ -172,7 +190,12 @@ impl TcpMigPeer {
     }
 
     /// Consumes the payload from a buffer.
-    pub fn receive(&mut self, ipv4_hdr: &Ipv4Header, buf: Buffer, ctx: TcpMigContext) -> Result<TcpmigReceiveStatus, Fail> {
+    pub fn receive(
+        &mut self,
+        ipv4_hdr: &Ipv4Header,
+        buf: Buffer,
+        ctx: TcpMigContext,
+    ) -> Result<TcpmigReceiveStatus, Fail> {
         // Parse header.
         let (hdr, buf) = TcpMigHeader::parse(ipv4_hdr, buf)?;
         capy_log_mig!("\n\n[RX] TCPMig");
@@ -182,7 +205,9 @@ impl TcpMigPeer {
         // Heartbeat response from switch.
         if hdr.stage == MigrationStage::HeartbeatResponse {
             let global_queue_len_sum = u32::from_be_bytes(buf[0..4].try_into().unwrap());
-            return Ok(TcpmigReceiveStatus::HeartbeatResponse(global_queue_len_sum.try_into().expect("heartbeat u32 to usize failed")));
+            return Ok(TcpmigReceiveStatus::HeartbeatResponse(
+                global_queue_len_sum.try_into().expect("heartbeat u32 to usize failed"),
+            ));
         }
 
         // First packet that target receives.
@@ -201,9 +226,9 @@ impl TcpMigPeer {
                 self.local_ipv4_addr,
                 self.local_link_addr,
                 FRONTEND_IP,
-                FRONTEND_MAC, // Need to go through the switch 
+                FRONTEND_MAC, // Need to go through the switch
                 self.self_udp_port,
-                hdr.origin.port(), 
+                hdr.origin.port(),
                 hdr.origin,
                 hdr.client,
                 None,
@@ -214,7 +239,7 @@ impl TcpMigPeer {
                 // but it receives back the message again (i.e., this is the current minimum workload backend)
                 // In this case, remove the active migration.
                 capy_log_mig!("It returned back to itself, maybe it's the current-min-workload server");
-                self.active_migrations.remove(&remote); 
+                self.active_migrations.remove(&remote);
                 return Ok(TcpmigReceiveStatus::ReturnedBySwitch(hdr.origin, hdr.client));
             }
         }
@@ -224,7 +249,6 @@ impl TcpMigPeer {
             Entry::Occupied(entry) => entry,
         };
         let active = entry.get_mut();
-
 
         capy_log_mig!("Active migration {:?}", remote);
         let mut status = active.process_packet(ipv4_hdr, hdr, buf, ctx)?;
@@ -244,7 +268,8 @@ impl TcpMigPeer {
                 match state.app_state {
                     MigratedApplicationState::MigratedIn(..) => {
                         capy_log_mig!("Received app state from migration");
-                        self.application_state.insert(conn.1, std::mem::take(&mut state.app_state));
+                        self.application_state
+                            .insert(conn.1, std::mem::take(&mut state.app_state));
                     },
                     _ => (),
                 }
@@ -257,10 +282,12 @@ impl TcpMigPeer {
                 entry.remove();
 
                 capy_log_mig!("1");
-                capy_log_mig!("2, active_migrations: {:?}, removing {}", 
-                    self.active_migrations.keys().collect::<Vec<_>>(), remote);
+                capy_log_mig!(
+                    "2, active_migrations: {:?}, removing {}",
+                    self.active_migrations.keys().collect::<Vec<_>>(),
+                    remote
+                );
 
-                
                 //self.is_currently_migrating = false;
                 capy_log_mig!("CONN_STATE_ACK ({})\n=======  MIGRATION COMPLETE! =======\n\n", remote);
             },
@@ -286,19 +313,18 @@ impl TcpMigPeer {
         }
 
         let (local, remote) = conn;
-        
+
         // eprintln!("initiate migration for connection {} <-> {}", origin, client);
 
         //let origin = SocketAddrV4::new(self.local_ipv4_addr, origin_port);
         // let target = SocketAddrV4::new(FRONTEND_IP, FRONTEND_PORT); // TEMP
-        
 
         let active = ActiveMigration::new(
             self.rt.clone(),
             self.local_ipv4_addr,
             self.local_link_addr,
-            BACKEND_IP, // FRONTEND_IP,
-            BACKEND_MAC, // FRONTEND_MAC, 
+            BACKEND_IP,  // FRONTEND_IP,
+            BACKEND_MAC, // FRONTEND_MAC,
             self.self_udp_port,
             10000,
             // if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
@@ -306,7 +332,7 @@ impl TcpMigPeer {
             remote,
             Some(qd),
         ); // Inho: Q. Why link_addr (MAC addr) is needed when the libOS has arp_table already? Is it possible to use the arp_table instead?
-        
+
         let active = match self.active_migrations.entry(remote) {
             Entry::Occupied(..) => panic!("duplicate initiate migration"),
             Entry::Vacant(entry) => entry.insert(active),
@@ -334,7 +360,12 @@ impl TcpMigPeer {
     }
 
     /// Returns the moved buffers for further use by the caller if packet was not buffered.
-    pub fn try_buffer_packet(&mut self, remote: SocketAddrV4, tcp_hdr: TcpHeader, data: Buffer) -> Result<(), (TcpHeader, Buffer)> {
+    pub fn try_buffer_packet(
+        &mut self,
+        remote: SocketAddrV4,
+        tcp_hdr: TcpHeader,
+        data: Buffer,
+    ) -> Result<(), (TcpHeader, Buffer)> {
         match self.active_migrations.get_mut(&remote) {
             Some(active) => {
                 capy_log_mig!("mig_prepared ==> buffer");
@@ -350,7 +381,9 @@ impl TcpMigPeer {
 
     /// Returns the buffered packets for the migrated connection.
     pub fn close_active_migration(&mut self, remote: SocketAddrV4) -> Option<Vec<(TcpHeader, Buffer)>> {
-        self.active_migrations.remove(&remote).map(|mut active| active.take_buffered_packets())
+        self.active_migrations
+            .remove(&remote)
+            .map(|mut active| active.take_buffered_packets())
     }
 
     pub fn send_heartbeat(&mut self, queue_len: usize) {
@@ -360,17 +393,22 @@ impl TcpMigPeer {
     }
 
     pub fn register_application_state(&mut self, remote: SocketAddrV4, state: Rc<RefCell<dyn ApplicationState>>) {
-        self.application_state.insert(remote, MigratedApplicationState::Registered(state));
+        self.application_state
+            .insert(remote, MigratedApplicationState::Registered(state));
     }
 
-    pub fn get_migrated_application_state<T: ApplicationState + 'static>(&mut self, remote: SocketAddrV4) -> Option<Rc<RefCell<T>>> {
+    pub fn get_migrated_application_state<T: ApplicationState + 'static>(
+        &mut self,
+        remote: SocketAddrV4,
+    ) -> Option<Rc<RefCell<T>>> {
         let state = match self.application_state.remove(&remote) {
             Some(MigratedApplicationState::MigratedIn(state)) => T::deserialize(&state),
             _ => return None,
         };
 
         let state = Rc::new(RefCell::new(state));
-        self.application_state.insert(remote, MigratedApplicationState::Registered(state.clone()));
+        self.application_state
+            .insert(remote, MigratedApplicationState::Registered(state.clone()));
         Some(state)
     }
 }
@@ -383,7 +421,9 @@ static mut LOG: Option<Vec<usize>> = None;
 const GRANULARITY: i32 = 1; // Logs length after every GRANULARITY packets.
 
 fn log_init() {
-    unsafe { LOG = Some(Vec::with_capacity(1024*1024)); }
+    unsafe {
+        LOG = Some(Vec::with_capacity(1024 * 1024));
+    }
 }
 
 fn log_len(len: usize) {
@@ -396,10 +436,12 @@ fn log_len(len: usize) {
         }
         GRANULARITY_FLAG = GRANULARITY;
     }
-    
+
     unsafe { LOG.as_mut().unwrap_unchecked() }.push(len);
 }
 
 pub fn log_print() {
-    unsafe { LOG.as_ref().unwrap_unchecked() }.iter().for_each(|len| println!("{}", len));
+    unsafe { LOG.as_ref().unwrap_unchecked() }
+        .iter()
+        .for_each(|len| println!("{}", len));
 }

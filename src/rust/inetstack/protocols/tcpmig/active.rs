@@ -7,29 +7,45 @@
 
 use super::{
     segment::{
+        MigrationStage,
+        TcpMigDefragmenter,
         TcpMigHeader,
         TcpMigSegment,
-        TcpMigDefragmenter,
-        MigrationStage,
     },
-    TcpmigReceiveStatus
+    TcpmigReceiveStatus,
 };
 use crate::{
-    capy_profile, capy_profile_merge_previous, capy_time_log, inetstack::protocols::{
-            ethernet2::{
-                EtherType2,
-                Ethernet2Header,
+    capy_profile,
+    capy_profile_merge_previous,
+    capy_time_log,
+    inetstack::protocols::{
+        ethernet2::{
+            EtherType2,
+            Ethernet2Header,
+        },
+        ip::IpProtocol,
+        ipv4::Ipv4Header,
+        tcp::{
+            peer::{
+                state::TcpState,
+                TcpMigContext,
             },
-            ip::IpProtocol,
-            ipv4::Ipv4Header, tcp::{peer::{state::TcpState, TcpMigContext}, segment::TcpHeader}, tcpmig::segment::MAX_FRAGMENT_SIZE,
-        }, runtime::{
+            segment::TcpHeader,
+        },
+        tcpmig::segment::MAX_FRAGMENT_SIZE,
+    },
+    runtime::{
         fail::Fail,
-        memory::{Buffer, DataBuffer},
+        memory::{
+            Buffer,
+            DataBuffer,
+        },
         network::{
             types::MacAddress,
             NetworkRuntime,
         },
-    }, QDesc
+    },
+    QDesc,
 };
 
 use crate::capy_log_mig;
@@ -93,7 +109,7 @@ impl ActiveMigration {
             remote_ipv4_addr,
             remote_link_addr,
             self_udp_port,
-            dest_udp_port, 
+            dest_udp_port,
             origin,
             client,
             last_sent_stage: MigrationStage::None,
@@ -103,7 +119,13 @@ impl ActiveMigration {
         }
     }
 
-    pub fn process_packet(&mut self, ipv4_hdr: &Ipv4Header, hdr: TcpMigHeader, buf: Buffer, ctx: TcpMigContext) -> Result<TcpmigReceiveStatus, Fail> {
+    pub fn process_packet(
+        &mut self,
+        ipv4_hdr: &Ipv4Header,
+        hdr: TcpMigHeader,
+        buf: Buffer,
+        ctx: TcpMigContext,
+    ) -> Result<TcpmigReceiveStatus, Fail> {
         #[inline]
         fn next_header(mut hdr: TcpMigHeader, next_stage: MigrationStage) -> TcpMigHeader {
             hdr.stage = next_stage;
@@ -141,7 +163,7 @@ impl ActiveMigration {
                         return Ok(TcpmigReceiveStatus::Ok);
                         // }
                     },
-                    _ => return Err(Fail::new(libc::EBADMSG, "expected PREPARE_MIGRATION"))
+                    _ => return Err(Fail::new(libc::EBADMSG, "expected PREPARE_MIGRATION")),
                 }
             },
 
@@ -152,20 +174,22 @@ impl ActiveMigration {
                         capy_time_log!("RECV_PREPARE_MIG_ACK,({})", hdr.client);
                         // Change target address to actual target address.
                         /*  self.remote_ipv4_addr = ipv4_hdr.get_src_addr(); */
-                        // Currently, we are running all backends on a single machine, 
-                        // so we send the migration messages to the switch first, 
+                        // Currently, we are running all backends on a single machine,
+                        // so we send the migration messages to the switch first,
                         // and let the switch do the addressing to the backend.
                         // Later if backends are on different machines, we need to uncomment this line again.
                         self.dest_udp_port = hdr.get_source_udp_port();
 
                         capy_log_mig!("PREPARE_MIG_ACK => ({}, {}) is PREPARED", hdr.origin, hdr.client);
-                        return Ok(TcpmigReceiveStatus::PrepareMigrationAcked(self.qd.expect("no qd on origin side")));
+                        return Ok(TcpmigReceiveStatus::PrepareMigrationAcked(
+                            self.qd.expect("no qd on origin side"),
+                        ));
                     },
                     MigrationStage::Rejected => {
                         capy_time_log!("RECV_REJECTED,({})", hdr.client);
                         return Ok(TcpmigReceiveStatus::Rejected(hdr.origin, hdr.client));
                     },
-                    _ => return Err(Fail::new(libc::EBADMSG, "expected PREPARE_MIGRATION_ACK or REJECTED"))
+                    _ => return Err(Fail::new(libc::EBADMSG, "expected PREPARE_MIGRATION_ACK or REJECTED")),
                 }
             },
 
@@ -180,11 +204,11 @@ impl ActiveMigration {
                             Some((hdr, buf)) => (hdr, buf),
                             None => {
                                 capy_log_mig!("Receiving CONN_STATE fragments...");
-                                return Ok(TcpmigReceiveStatus::Ok)
+                                return Ok(TcpmigReceiveStatus::Ok);
                             },
                         };
                         capy_time_log!("RECV_STATE,({})", self.client);
-                        
+
                         let mut state = TcpState::deserialize(buf);
 
                         // Overwrite local address.
@@ -195,16 +219,22 @@ impl ActiveMigration {
                         // ACK CONNECTION_STATE.
                         let hdr = next_header(hdr, MigrationStage::ConnectionStateAck);
                         self.last_sent_stage = MigrationStage::ConnectionStateAck;
-                        capy_log_mig!("[TX] CONN_STATE_ACK ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port);
+                        capy_log_mig!(
+                            "[TX] CONN_STATE_ACK ({}, {}) to {}:{}",
+                            self.origin,
+                            self.client,
+                            self.remote_ipv4_addr,
+                            self.dest_udp_port
+                        );
                         // capy_time_log!("SEND_STATE_ACK,({})", self.client);
                         self.send(hdr, empty_buffer());
 
                         // Take the buffered packets.
                         // let pkts = std::mem::take(&mut self.recv_queue);
-                        
+
                         return Ok(TcpmigReceiveStatus::StateReceived(state));
                     },
-                    _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE"))
+                    _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE")),
                 }
             },
 
@@ -217,7 +247,7 @@ impl ActiveMigration {
                         // TODO: Start closing the active migration.
                         return Ok(TcpmigReceiveStatus::MigrationCompleted);
                     },
-                    _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE_ACK"))
+                    _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE_ACK")),
                 }
             },
 
@@ -228,7 +258,9 @@ impl ActiveMigration {
             },
 
             MigrationStage::Rejected => panic!("Target should not receive a packet after rejecting origin."),
-            MigrationStage::HeartbeatUpdate | MigrationStage::HeartbeatResponse => panic!("Heartbeat is not an active migration"),
+            MigrationStage::HeartbeatUpdate | MigrationStage::HeartbeatResponse => {
+                panic!("Heartbeat is not an active migration")
+            },
         };
         Ok(TcpmigReceiveStatus::Ok)
     }
@@ -238,15 +270,18 @@ impl ActiveMigration {
 
         let tcpmig_hdr = TcpMigHeader::new(
             self.origin,
-            self.client, 
-            0, 
-            MigrationStage::PrepareMigration, 
-            self.self_udp_port, 
-            10000
-            // if self.self_udp_port == 10001 { 10000 } else { 10001 }
+            self.client,
+            0,
+            MigrationStage::PrepareMigration,
+            self.self_udp_port,
+            10000, // if self.self_udp_port == 10001 { 10000 } else { 10001 }
         );
         self.last_sent_stage = MigrationStage::PrepareMigration;
-        capy_log_mig!("\n\n******* START MIGRATION *******\n[TX] PREPARE_MIG ({}, {})", self.origin, self.client);
+        capy_log_mig!(
+            "\n\n******* START MIGRATION *******\n[TX] PREPARE_MIG ({}, {})",
+            self.origin,
+            self.client
+        );
         capy_time_log!("SEND_PREPARE_MIG,({})", self.client);
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::empty()));
     }
@@ -255,20 +290,26 @@ impl ActiveMigration {
         // capy_time_log!("SERIALIZE_STATE,({})", self.client);
         assert_eq!(self.last_sent_stage, MigrationStage::PrepareMigration);
 
-        capy_log_mig!("[TX] CONNECTION_STATE: ({}, {}) to {}:{}", self.origin, self.client, self.remote_ipv4_addr, self.dest_udp_port);
+        capy_log_mig!(
+            "[TX] CONNECTION_STATE: ({}, {}) to {}:{}",
+            self.origin,
+            self.client,
+            self.remote_ipv4_addr,
+            self.dest_udp_port
+        );
         // print the length of recv_queue here
         capy_log_mig!("Length of recv_queue: {}", state.recv_queue_len());
-        
+
         let buf = state.serialize();
         let tcpmig_hdr = TcpMigHeader::new(
             self.origin,
-            self.client, 
-            0, 
-            MigrationStage::ConnectionState, 
-            self.self_udp_port, 
-            self.dest_udp_port
+            self.client,
+            0,
+            MigrationStage::ConnectionState,
+            self.self_udp_port,
+            self.dest_udp_port,
         ); // PORT should be the sender of PREPARE_MIGRATION_ACK
-        
+
         self.last_sent_stage = MigrationStage::ConnectionState;
         capy_time_log!("SEND_STATE,({})", self.client);
         self.send(tcpmig_hdr, buf);
@@ -283,14 +324,10 @@ impl ActiveMigration {
     }
 
     /// Sends a TCPMig segment from local to remote.
-    fn send(
-        &self,
-        tcpmig_hdr: TcpMigHeader,
-        buf: Buffer,
-    ) {
+    fn send(&self, tcpmig_hdr: TcpMigHeader, buf: Buffer) {
         debug!("TCPMig send {:?}", tcpmig_hdr);
         // eprintln!("TCPMig sent: {:#?}\nto {:?}:{:?}", tcpmig_hdr, self.remote_link_addr, self.remote_ipv4_addr);
-        
+
         // Layer 4 protocol field marked as UDP because DPDK only supports standard Layer 4 protocols.
         let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::UDP);
 

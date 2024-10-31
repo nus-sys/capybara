@@ -12,6 +12,7 @@ use super::{
     passive_open::PassiveSocket,
 };
 use crate::{
+    capy_time_log,
     inetstack::protocols::{
         arp::ArpPeer,
         ethernet2::{
@@ -50,7 +51,6 @@ use crate::{
         QDesc,
     },
     scheduler::scheduler::Scheduler,
-    capy_time_log,
 };
 
 use ::futures::channel::mpsc;
@@ -64,12 +64,12 @@ use ::libc::{
     ENOTSUP,
     EOPNOTSUPP,
 };
-use num_traits::ToBytes;
 use ::rand::{
     prelude::SmallRng,
     Rng,
     SeedableRng,
 };
+use num_traits::ToBytes;
 
 use ::std::{
     cell::{
@@ -77,8 +77,8 @@ use ::std::{
         RefMut,
     },
     collections::{
-        HashMap,
         hash_map::Entry,
+        HashMap,
     },
     net::{
         Ipv4Addr,
@@ -98,17 +98,26 @@ use ::byteorder::{
 };
 
 #[cfg(feature = "tcp-migration")]
-use state::TcpState;
-#[cfg(feature = "tcp-migration")]
 use crate::inetstack::protocols::{
     tcp::stats::Stats,
-    tcpmig::{TcpMigPeer, TcpmigPollState, ApplicationState}
+    tcpmig::{
+        ApplicationState,
+        TcpMigPeer,
+        TcpmigPollState,
+    },
 };
+#[cfg(feature = "tcp-migration")]
+use state::TcpState;
 
 #[cfg(feature = "profiler")]
 use crate::timer;
 
-use crate::{capy_profile, capy_profile_total, capy_log, capy_log_mig};
+use crate::{
+    capy_log,
+    capy_log_mig,
+    capy_profile,
+    capy_profile_total,
+};
 
 //==============================================================================
 // Enumerations
@@ -116,13 +125,26 @@ use crate::{capy_profile, capy_profile_total, capy_log, capy_log_mig};
 
 #[derive(Debug)]
 pub enum Socket {
-    Inactive { local: Option<SocketAddrV4> },
-    Listening { local: SocketAddrV4 },
-    Connecting { local: SocketAddrV4, remote: SocketAddrV4 },
-    Established { local: SocketAddrV4, remote: SocketAddrV4 },
+    Inactive {
+        local: Option<SocketAddrV4>,
+    },
+    Listening {
+        local: SocketAddrV4,
+    },
+    Connecting {
+        local: SocketAddrV4,
+        remote: SocketAddrV4,
+    },
+    Established {
+        local: SocketAddrV4,
+        remote: SocketAddrV4,
+    },
 
     #[cfg(feature = "tcp-migration")]
-    MigratedOut { local: SocketAddrV4, remote: SocketAddrV4 },
+    MigratedOut {
+        local: SocketAddrV4,
+        remote: SocketAddrV4,
+    },
 }
 
 //==============================================================================
@@ -204,11 +226,10 @@ impl TcpPeer {
         arp: ArpPeer,
         rng_seed: [u8; 32],
 
-        #[cfg(feature = "tcp-migration")]
-        tcpmig_poll_state: Rc<TcpmigPollState>,
+        #[cfg(feature = "tcp-migration")] tcpmig_poll_state: Rc<TcpmigPollState>,
     ) -> Result<Self, Fail> {
         let (tx, rx) = mpsc::unbounded();
-        
+
         #[cfg(feature = "tcp-migration")]
         let tcpmig = TcpMigPeer::new(rt.clone(), local_link_addr, local_ipv4_addr);
 
@@ -221,12 +242,10 @@ impl TcpPeer {
             tcp_config,
             arp,
             rng_seed,
-
             #[cfg(feature = "tcp-migration")]
             tcpmig,
             #[cfg(feature = "tcp-migration")]
             tcpmig_poll_state,
-
             tx,
             rx,
         )));
@@ -284,12 +303,12 @@ impl TcpPeer {
             let new_port: u16 = inner.ephemeral_ports.alloc_any()?;
             addr.set_port(new_port);
         }
-        
+
         #[cfg(feature = "tcp-migration")]
         {
             inner.tcpmig.set_port(addr.port());
         }
-        
+
         // Issue operation.
         let ret: Result<(), Fail> = match inner.sockets.get_mut(&qd) {
             Some(Socket::Inactive { ref mut local }) => match *local {
@@ -315,15 +334,15 @@ impl TcpPeer {
         }
     }
 
-    pub fn receive(&self, 
-        ip_header: &mut Ipv4Header, 
+    pub fn receive(
+        &self,
+        ip_header: &mut Ipv4Header,
         buf: Buffer,
-        #[cfg(feature = "capybara-switch")]
-        eth_hdr: Ethernet2Header,
+        #[cfg(feature = "capybara-switch")] eth_hdr: Ethernet2Header,
     ) -> Result<(), Fail> {
         self.inner.borrow_mut().receive(
-            ip_header, 
-            buf, 
+            ip_header,
+            buf,
             #[cfg(feature = "capybara-switch")]
             eth_hdr,
         )
@@ -367,7 +386,7 @@ impl TcpPeer {
             inner.tcp_config.clone(),
             inner.local_link_addr,
             inner.arp.clone(),
-            nonce
+            nonce,
         );
         assert!(inner.passive.insert(local, socket).is_none());
         inner.sockets.insert(qd, Socket::Listening { local });
@@ -409,7 +428,7 @@ impl TcpPeer {
                     cb.receive(&mut hdr, data);
                 }
             }
-            
+
             cb.enable_stats(&mut inner.recv_queue_stats, &mut inner.rps_stats);
         }
 
@@ -424,11 +443,16 @@ impl TcpPeer {
         match inner.sockets.insert(new_qd, socket) {
             None => (),
             #[cfg(feature = "tcp-migration")]
-            Some(Socket::MigratedOut { .. }) => { capy_log_mig!("migrated socket QD overwritten"); },
+            Some(Socket::MigratedOut { .. }) => {
+                capy_log_mig!("migrated socket QD overwritten");
+            },
             _ => panic!("duplicate queue descriptor in sockets table"),
         }
 
-        assert!(inner.qds.insert((local, remote), new_qd).is_none(), "duplicate entry in qds table");
+        assert!(
+            inner.qds.insert((local, remote), new_qd).is_none(),
+            "duplicate entry in qds table"
+        );
 
         /* activate this for recv_queue_len vs mig_lat eval */
         /* static mut NUM_MIG: u32 = 0;
@@ -448,7 +472,7 @@ impl TcpPeer {
         if inner.established.insert(key, established).is_some() {
             panic!("duplicate queue descriptor in established sockets table");
         }
-        
+
         Poll::Ready(Ok(new_qd))
     }
 
@@ -517,7 +541,9 @@ impl TcpPeer {
             Some(Socket::Inactive { .. }) => return Poll::Ready(Err(Fail::new(EBADF, "socket inactive"))),
             Some(Socket::Listening { .. }) => return Poll::Ready(Err(Fail::new(ENOTCONN, "socket listening"))),
             #[cfg(feature = "tcp-migration")]
-            Some(Socket::MigratedOut { .. }) => return Poll::Ready(Err(Fail::new(crate::ETCPMIG, "socket migrated out"))),
+            Some(Socket::MigratedOut { .. }) => {
+                return Poll::Ready(Err(Fail::new(crate::ETCPMIG, "socket migrated out")))
+            },
             None => return Poll::Ready(Err(Fail::new(EBADF, "bad queue descriptor"))),
         };
 
@@ -553,11 +579,11 @@ impl TcpPeer {
             Some(Socket::MigratedOut { .. }) => return Err(Fail::new(crate::ETCPMIG, "socket migrated out")),
             Some(..) => {
                 eprintln!("connection not established");
-                return Err(Fail::new(ENOTCONN, "connection not established"))
+                return Err(Fail::new(ENOTCONN, "connection not established"));
             },
             None => {
                 eprintln!("bad queue descriptor");
-                return Err(Fail::new(EBADF, "bad queue descriptor"))
+                return Err(Fail::new(EBADF, "bad queue descriptor"));
             },
         };
         let send_result = match inner.established.get(&key) {
@@ -639,23 +665,17 @@ impl Inner {
         arp: ArpPeer,
         rng_seed: [u8; 32],
 
-        #[cfg(feature = "tcp-migration")]
-        tcpmig: TcpMigPeer,
-        #[cfg(feature = "tcp-migration")]
-        tcpmig_poll_state: Rc<TcpmigPollState>,
+        #[cfg(feature = "tcp-migration")] tcpmig: TcpMigPeer,
+        #[cfg(feature = "tcp-migration")] tcpmig_poll_state: Rc<TcpmigPollState>,
 
         dead_socket_tx: mpsc::UnboundedSender<QDesc>,
         _dead_socket_rx: mpsc::UnboundedReceiver<QDesc>,
     ) -> Self {
-        
         #[cfg(feature = "capybara-switch")]
         let backend_servers = arrayvec::ArrayVec::from([
             SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10000),
-             
             SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10001),
-            
             SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10002),
-
             SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10003),
         ]);
 
@@ -727,13 +747,17 @@ impl Inner {
     #[cfg(not(feature = "capybara-switch"))]
     fn receive(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         capy_log!("\n\n[RX]");
-        
+
         let (mut tcp_hdr, mut data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
         debug!("TCP received {:?}", tcp_hdr);
         let local = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
         let remote = SocketAddrV4::new(ip_hdr.get_src_addr(), tcp_hdr.src_port);
         capy_log!("{:?} => {:?}", remote, local);
-        capy_log!("SERVER RECEIVE TCP seq_num: {}, data length: {}", tcp_hdr.seq_num, data.len());
+        capy_log!(
+            "SERVER RECEIVE TCP seq_num: {}, data length: {}",
+            tcp_hdr.seq_num,
+            data.len()
+        );
 
         if remote.ip().is_broadcast() || remote.ip().is_multicast() || remote.ip().is_unspecified() {
             return Err(Fail::new(EINVAL, "invalid address type"));
@@ -755,18 +779,25 @@ impl Inner {
                     data[2..4].copy_from_slice(&connection_count.to_be_bytes());
 
                     #[cfg(feature = "tcp-migration")]
-                    let queue_len: u32 = self.recv_queue_stats.global_stat().try_into().expect("queue length is over 4 billion");
+                    let queue_len: u32 = self
+                        .recv_queue_stats
+                        .global_stat()
+                        .try_into()
+                        .expect("queue length is over 4 billion");
                     #[cfg(not(feature = "tcp-migration"))]
                     let queue_len: u32 = 0;
                     data[4..8].copy_from_slice(&queue_len.to_be_bytes());
 
-                    let timestamp: u64 = chrono::Local::now().timestamp_nanos().try_into().expect("timestamp is negative");
+                    let timestamp: u64 = chrono::Local::now()
+                        .timestamp_nanos()
+                        .try_into()
+                        .expect("timestamp is negative");
                     data[8..16].copy_from_slice(&timestamp.to_be_bytes());
                 }
             }
 
             debug!("Routing to established connection: {:?}", key);
-            s.receive(&mut tcp_hdr,data);
+            s.receive(&mut tcp_hdr, data);
 
             /* activate this for recv_queue_len vs mig_lat eval */
             /* if !is_data_empty {
@@ -799,11 +830,11 @@ impl Inner {
         if let Some(s) = self.connecting.get_mut(&key) {
             debug!("Routing to connecting connection: {:?}", key);
             capy_log!("Routing to connecting connection: {:?}", key);
-        
+
             s.receive(&tcp_hdr);
             return Ok(());
         }
-        
+
         #[cfg(feature = "tcp-migration")]
         // Check if migrating queue exists. If yes, push buffer to queue and return, else continue normally.
         let (tcp_hdr, data) = match self.tcpmig.try_buffer_packet(remote, tcp_hdr, data) {
@@ -831,45 +862,49 @@ impl Inner {
         Ok(())
     }
 
-
     #[cfg(feature = "capybara-switch")]
-    fn receive(&mut self, 
-        ip_hdr: &mut Ipv4Header, 
+    fn receive(
+        &mut self,
+        ip_hdr: &mut Ipv4Header,
         buf: Buffer,
-        #[cfg(feature = "capybara-switch")]
-        mut eth_hdr: Ethernet2Header,
+        #[cfg(feature = "capybara-switch")] mut eth_hdr: Ethernet2Header,
     ) -> Result<(), Fail> {
-        #[cfg(feature = "capy-log")]{
+        #[cfg(feature = "capy-log")]
+        {
             static mut COUNTER: usize = 0;
-            unsafe{ 
-                COUNTER += 1; 
-                if COUNTER % 100000 == 0{
+            unsafe {
+                COUNTER += 1;
+                if COUNTER % 100000 == 0 {
                     capy_time_log!("{}", COUNTER);
                 }
             }
         }
 
         capy_log!("\n\nCAPYBARA_SWITCH [RX]");
-        
+
         let (mut tcp_hdr, mut data) = TcpHeader::parse(ip_hdr, buf, self.tcp_config.get_rx_checksum_offload())?;
         let dst_addr = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
         let src_addr = SocketAddrV4::new(ip_hdr.get_src_addr(), tcp_hdr.src_port);
         capy_log!("{:?} => {:?}", src_addr, dst_addr);
-        capy_log!("SERVER RECEIVE TCP seq_num: {}, data length: {}", tcp_hdr.seq_num, data.len());
+        capy_log!(
+            "SERVER RECEIVE TCP seq_num: {}, data length: {}",
+            tcp_hdr.seq_num,
+            data.len()
+        );
         if tcp_hdr.syn && !tcp_hdr.ack {
             static mut BE_IDX: usize = 0;
             capy_log!("SYN");
-            
-            let be_sockaddr = self.backend_servers[unsafe{BE_IDX}];
-            let be_mac = match self.arp.try_query(*be_sockaddr.ip()){
+
+            let be_sockaddr = self.backend_servers[unsafe { BE_IDX }];
+            let be_mac = match self.arp.try_query(*be_sockaddr.ip()) {
                 Some(mac) => mac,
                 None => panic!("MAC of this BE is not cached"),
             };
-            
+
             // capy_log!("Element at index {}: {:?}", unsafe{BE_IDX}, self.backend_servers[unsafe{BE_IDX}]);
-            
+
             // capy_log!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
-            
+
             eth_hdr.set_dst_addr(be_mac);
             ip_hdr.set_dst_addr(*be_sockaddr.ip());
             tcp_hdr.set_dst_port(be_sockaddr.port());
@@ -878,7 +913,7 @@ impl Inner {
             if self.migration_directory.insert(src_addr, be_sockaddr).is_some() {
                 panic!("duplicate queue descriptor in established sockets table");
             }
-            
+
             let segment = TcpSegment {
                 ethernet2_hdr: eth_hdr,
                 ipv4_hdr: *ip_hdr,
@@ -888,16 +923,17 @@ impl Inner {
             };
             self.rt.transmit(Box::new(segment));
 
-
-            unsafe{ BE_IDX = (BE_IDX + 1) % self.num_backends; }
-        }else {
+            unsafe {
+                BE_IDX = (BE_IDX + 1) % self.num_backends;
+            }
+        } else {
             capy_profile_total!("capybara-switch");
             let src_matching_addr = self.migration_directory.get(&src_addr);
             let dst_matching_addr = self.migration_directory.get(&dst_addr);
             // capy_log!("{:?}, {:?}", src_matching_addr, dst_matching_addr);
             match (src_matching_addr, dst_matching_addr) {
                 (Some(target_sockaddr), None) => {
-                    let target_mac = match self.arp.try_query(*target_sockaddr.ip()){
+                    let target_mac = match self.arp.try_query(*target_sockaddr.ip()) {
                         Some(mac) => mac,
                         None => panic!("MAC of this BE is not cached"),
                     };
@@ -924,7 +960,7 @@ impl Inner {
             };
             self.rt.transmit(Box::new(segment));
         }
-        
+
         Ok(())
     }
 
@@ -1016,7 +1052,7 @@ impl TcpPeer {
 
             let threshold = (sum as f64 * inner.rps_threshold) as usize;
             let threshold_epsilon = (sum as f64 * (inner.rps_threshold + inner.threshold_epsilon)) as usize;
-            
+
             #[cfg(not(feature = "manual-tcp-migration"))]
             if sum > inner.min_threshold && individual > threshold_epsilon {
                 inner.rps_stats.set_threshold(threshold);
@@ -1043,7 +1079,7 @@ impl TcpPeer {
     pub fn initiate_migration_by_addr(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
         self.inner.borrow_mut().initiate_migration_by_addr(conn)
     }
-    
+
     pub fn initiate_migration_by_qd(&mut self, qd: QDesc) -> Result<(), Fail> {
         self.inner.borrow_mut().initiate_migration_by_qd(qd)
     }
@@ -1059,12 +1095,16 @@ impl TcpPeer {
     }
 
     #[cfg(not(feature = "manual-tcp-migration"))]
-    pub fn connections_to_proactively_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
+    pub fn connections_to_proactively_migrate(
+        &mut self,
+    ) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
         self.inner.borrow_mut().rps_stats.connections_to_proactively_migrate()
     }
 
     #[cfg(not(feature = "manual-tcp-migration"))]
-    pub fn connections_to_reactively_migrate(&mut self) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
+    pub fn connections_to_reactively_migrate(
+        &mut self,
+    ) -> Option<arrayvec::ArrayVec<(SocketAddrV4, SocketAddrV4), { super::stats::MAX_EXTRACTED_CONNECTIONS }>> {
         let mut inner = self.inner.borrow_mut();
         if inner.reactive_migration_enabled {
             inner.recv_queue_stats.connections_to_reactively_migrate()
@@ -1087,7 +1127,10 @@ impl TcpPeer {
         inner.tcpmig.register_application_state(remote, state);
     }
 
-    pub fn get_migrated_application_state<T: ApplicationState + 'static>(&mut self, qd: QDesc) -> Option<Rc<RefCell<T>>> {
+    pub fn get_migrated_application_state<T: ApplicationState + 'static>(
+        &mut self,
+        qd: QDesc,
+    ) -> Option<Rc<RefCell<T>>> {
         let mut inner = self.inner.borrow_mut();
         let remote = match inner.sockets.get(&qd) {
             Some(Socket::Established { remote, .. }) => *remote,
@@ -1116,11 +1159,9 @@ impl Inner {
         match self.tcpmig.receive(ip_hdr, buf, ctx)? {
             TcpmigReceiveStatus::Ok | TcpmigReceiveStatus::MigrationCompleted | TcpmigReceiveStatus::SentReject => {},
 
-            TcpmigReceiveStatus::Rejected(local, remote) => {
-                match self.established.get(&(local, remote)) {
-                    Some(s) => s.cb.enable_stats(&mut self.recv_queue_stats, &mut self.rps_stats),
-                    None => panic!("migration rejected for non-existent connection: {:?}", (local, remote)),
-                }
+            TcpmigReceiveStatus::Rejected(local, remote) => match self.established.get(&(local, remote)) {
+                Some(s) => s.cb.enable_stats(&mut self.recv_queue_stats, &mut self.rps_stats),
+                None => panic!("migration rejected for non-existent connection: {:?}", (local, remote)),
             },
 
             TcpmigReceiveStatus::ReturnedBySwitch(local, remote) => {
@@ -1133,9 +1174,8 @@ impl Inner {
                 // // Re-initiate another migration if manual migration returned by switch.
                 // #[cfg(feature = "manual-tcp-migration")]
                 self.initiate_migration_by_addr((local, remote));
-                
             },
-            
+
             TcpmigReceiveStatus::PrepareMigrationAcked(qd) => {
                 // Set the qd to be freed.
                 self.tcpmig_poll_state.set_qd(qd);
@@ -1172,9 +1212,9 @@ impl Inner {
                 };
                 *s = Socket::MigratedOut { local, remote };
                 (local, remote)
-            }
+            },
         };
-        
+
         // Remove from `qds`.
         self.qds.remove(&conn).unwrap();
 
@@ -1188,17 +1228,17 @@ impl Inner {
         let cb = entry.remove().cb;
 
         // Wake the scheduler task for this connection, if any.
-        // The scheduler doesn't poll every qt every call, 
-        // only once at the start and then doesn't poll it 
-        // until it gets a notification from the CB that a packet has arrived. 
-        // But consider this case: polls qt -> no packet yet -> scheduler 
-        // won't poll that qt until new packet arrives -> connection is migrated. 
-        // Since we depend on the connection being polled to tell the application 
-        // that it was migrated, it's a deadlock that leads to that connection 
-        // never returning ETCPMIG error and never getting removed from Redis. 
+        // The scheduler doesn't poll every qt every call,
+        // only once at the start and then doesn't poll it
+        // until it gets a notification from the CB that a packet has arrived.
+        // But consider this case: polls qt -> no packet yet -> scheduler
+        // won't poll that qt until new packet arrives -> connection is migrated.
+        // Since we depend on the connection being polled to tell the application
+        // that it was migrated, it's a deadlock that leads to that connection
+        // never returning ETCPMIG error and never getting removed from Redis.
         // Fixed it by waking the scheduler task right before migrating the connection.
         cb.wake_scheduler_task();
-        
+
         Ok(TcpState::new(cb.as_ref().into()))
     }
 
@@ -1215,7 +1255,7 @@ impl Inner {
             self.tcp_config.clone(),
             self.arp.clone(),
             self.tcp_config.get_ack_delay_timeout(),
-            state.cb
+            state.cb,
         );
 
         // Receive all target-buffered packets into the CB.
@@ -1239,12 +1279,15 @@ impl Inner {
         let qd = *self.qds.get(&conn).expect("no QD found for connection");
 
         // Disable stats for this connection.
-        self.established.get(&conn).expect("connection not in established table")
-            .cb.disable_stats();
+        self.established
+            .get(&conn)
+            .expect("connection not in established table")
+            .cb
+            .disable_stats();
 
         self.tcpmig.initiate_migration(conn, qd);
     }
-    
+
     pub fn initiate_migration_by_qd(&mut self, qd: QDesc) -> Result<(), Fail> {
         // capy_profile!("prepare");
         // capy_log_mig!("INIT MIG");
@@ -1253,9 +1296,7 @@ impl Inner {
                 debug!("No entry in `sockets` for fd: {:?}", qd);
                 return Err(Fail::new(EBADF, "socket does not exist"));
             },
-            Some(Socket::Established { local, remote }) => {
-                (*local, *remote)
-            },
+            Some(Socket::Established { local, remote }) => (*local, *remote),
             Some(..) => {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
@@ -1263,8 +1304,11 @@ impl Inner {
         capy_time_log!("INIT_MIG,({})", conn.1);
 
         // Disable stats for this connection.
-        self.established.get(&conn).expect("connection not in established table")
-            .cb.disable_stats();
+        self.established
+            .get(&conn)
+            .expect("connection not in established table")
+            .cb
+            .disable_stats();
 
         self.tcpmig.initiate_migration(conn, qd);
         Ok(())
@@ -1287,15 +1331,33 @@ impl Inner {
 
 #[cfg(feature = "tcp-migration")]
 pub mod state {
-    use std::{cell::RefCell, net::SocketAddrV4, rc::Rc};
+    use std::{
+        cell::RefCell,
+        net::SocketAddrV4,
+        rc::Rc,
+    };
 
-    use crate::{capy_log_mig, capy_profile, inetstack::protocols::{tcp::established::ControlBlockState, tcpmig::{ApplicationState, MigratedApplicationState}}, runtime::memory::{Buffer, DataBuffer}};
+    use crate::{
+        capy_log_mig,
+        capy_profile,
+        inetstack::protocols::{
+            tcp::established::ControlBlockState,
+            tcpmig::{
+                ApplicationState,
+                MigratedApplicationState,
+            },
+        },
+        runtime::memory::{
+            Buffer,
+            DataBuffer,
+        },
+    };
 
     pub trait Serialize {
         /// Serializes into the buffer and returns its unused part.
         fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8];
     }
-    
+
     #[cfg(feature = "tcp-migration")]
     pub trait Deserialize: Sized {
         /// Deserializes and removes the deserialised part from the buffer.
@@ -1315,7 +1377,10 @@ pub mod state {
 
     impl TcpState {
         pub fn new(cb: ControlBlockState) -> Self {
-            Self { cb, app_state: MigratedApplicationState::None }
+            Self {
+                cb,
+                app_state: MigratedApplicationState::None,
+            }
         }
 
         pub fn remote(&self) -> SocketAddrV4 {
@@ -1358,8 +1423,9 @@ pub mod state {
         pub fn deserialize(mut buf: Buffer) -> Self {
             // capy_profile!("PROF_DESERIALIZE");
             let cb = ControlBlockState::deserialize_from(&mut buf);
-            let app_state = if buf[0] == 0 { MigratedApplicationState::None }
-            else {
+            let app_state = if buf[0] == 0 {
+                MigratedApplicationState::None
+            } else {
                 buf.adjust(1);
                 MigratedApplicationState::MigratedIn(buf)
             };
@@ -1371,10 +1437,12 @@ pub mod state {
         }
 
         fn serialized_size(&self) -> usize {
-            self.cb.serialized_size() + 1 + match &self.app_state {
-                MigratedApplicationState::Registered(state) => state.borrow().serialized_size(),
-                MigratedApplicationState::None | MigratedApplicationState::MigratedIn(..) => 0,
-            }
+            self.cb.serialized_size()
+                + 1
+                + match &self.app_state {
+                    MigratedApplicationState::Registered(state) => state.borrow().serialized_size(),
+                    MigratedApplicationState::None | MigratedApplicationState::MigratedIn(..) => 0,
+                }
         }
     }
 
@@ -1387,15 +1455,31 @@ pub mod state {
 
     #[cfg(test)]
     mod test {
-        use std::net::{SocketAddrV4, Ipv4Addr};
+        use std::net::{
+            Ipv4Addr,
+            SocketAddrV4,
+        };
 
         use crate::{
-            runtime::memory::{Buffer, DataBuffer},
+            capy_profile,
+            capy_profile_dump,
             inetstack::protocols::{
-                tcpmig::{segment::{TcpMigSegment, TcpMigHeader, TcpMigDefragmenter}, MigratedApplicationState},
-                ethernet2::Ethernet2Header, ipv4::Ipv4Header
+                ethernet2::Ethernet2Header,
+                ipv4::Ipv4Header,
+                tcpmig::{
+                    segment::{
+                        TcpMigDefragmenter,
+                        TcpMigHeader,
+                        TcpMigSegment,
+                    },
+                    MigratedApplicationState,
+                },
             },
-            capy_profile, capy_profile_dump, MacAddress
+            runtime::memory::{
+                Buffer,
+                DataBuffer,
+            },
+            MacAddress,
         };
 
         use super::TcpState;
@@ -1409,7 +1493,10 @@ pub mod state {
         }
 
         fn get_state() -> TcpState {
-            TcpState { cb: super::super::super::established::test_get_control_block_state(), app_state: MigratedApplicationState::None }
+            TcpState {
+                cb: super::super::super::established::test_get_control_block_state(),
+                app_state: MigratedApplicationState::None,
+            }
         }
 
         fn get_header() -> TcpMigHeader {
@@ -1427,8 +1514,16 @@ pub mod state {
         fn create_segment(payload: Buffer) -> TcpMigSegment {
             let len = payload.len();
             TcpMigSegment::new(
-                Ethernet2Header::new(MacAddress::broadcast(), MacAddress::broadcast(), crate::inetstack::protocols::ethernet2::EtherType2::Ipv4),
-                Ipv4Header::new(Ipv4Addr::LOCALHOST, Ipv4Addr::LOCALHOST, crate::inetstack::protocols::ip::IpProtocol::UDP),
+                Ethernet2Header::new(
+                    MacAddress::broadcast(),
+                    MacAddress::broadcast(),
+                    crate::inetstack::protocols::ethernet2::EtherType2::Ipv4,
+                ),
+                Ipv4Header::new(
+                    Ipv4Addr::LOCALHOST,
+                    Ipv4Addr::LOCALHOST,
+                    crate::inetstack::protocols::ip::IpProtocol::UDP,
+                ),
                 get_header(),
                 payload,
             )
@@ -1461,7 +1556,7 @@ pub mod state {
                     fragments.push((e.tcpmig_hdr, e.data));
                 }
             }
-            
+
             let mut defragmenter = TcpMigDefragmenter::new();
 
             let mut i = 0;
@@ -1479,7 +1574,7 @@ pub mod state {
                 }
             };
             assert_eq!(count, i);
-            
+
             let (hdr, buf) = segment.unwrap();
             let state = {
                 // capy_profile!("deserialise");
