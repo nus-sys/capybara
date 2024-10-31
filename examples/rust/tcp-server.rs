@@ -9,6 +9,11 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
+use demikernel::inetstack::protocols::tcp::peer::{
+    enable_user_connection,
+    set_user_connection_context,
+    UserConnectionContext,
+};
 
 use ::std::{
     env,
@@ -29,6 +34,7 @@ use std::{
         DefaultHasher,
     },
     mem::take,
+    rc::Rc,
 };
 
 #[cfg(feature = "profiler")]
@@ -141,6 +147,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     let libos_name: LibOSName = LibOSName::from_env().unwrap();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
+    enable_user_connection(&libos);
+
     let sockqd: QDesc = libos
         .socket(libc::AF_INET, libc::SOCK_STREAM, 0)
         .expect("created socket");
@@ -173,10 +181,30 @@ fn server(local: SocketAddrV4) -> Result<()> {
             let (index, qd) = (*index, *qd);
             qts.swap_remove(index);
 
+            struct Context;
+            impl UserConnectionContext for Context {
+                fn migrate_in(&self, _: demikernel::runtime::memory::Buffer) {
+                    server_log!("migrate in")
+                }
+
+                fn migrate_out(&self) {
+                    server_log!("migrate out")
+                }
+
+                fn buf_size(&self) -> usize {
+                    0
+                }
+
+                fn write(&self, _: &mut [u8]) {}
+            }
+
             match result {
                 OperationResult::Accept(new_qd) => {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
+
+                    set_user_connection_context(&libos, new_qd, Rc::new(Context));
+
                     connstate.insert(new_qd, Vec::new());
                     #[cfg(feature = "manual-tcp-migration")]
                     {

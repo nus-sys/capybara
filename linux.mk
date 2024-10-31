@@ -367,7 +367,7 @@ be-tcp-server0:
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
-	MIG_PER_N=1000000 \
+	MIG_AFTER=1000000 \
 	numactl -m0 taskset --cpu-list 1 \
 	$(ELF_DIR)/tcp-server.elf 10.0.1.9:10000
 

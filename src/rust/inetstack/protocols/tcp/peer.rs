@@ -249,6 +249,31 @@ struct UserConnection {
     pending_migrate_in: HashMap<SocketAddrV4, Buffer>,
 }
 
+pub fn enable_user_connection(libos: &crate::LibOS) {
+    match libos {
+        crate::LibOS::NetworkLibOS(libos) => match libos {
+            crate::demikernel::libos::network::NetworkLibOS::Catnip(libos) => {
+                libos.ipv4.tcp.inner.borrow_mut().enable_user_connection()
+            },
+            _ => unimplemented!(),
+        },
+    }
+}
+
+pub fn set_user_connection_context(libos: &crate::LibOS, qd: QDesc, context: Rc<dyn UserConnectionContext>) {
+    match libos {
+        crate::LibOS::NetworkLibOS(libos) => match libos {
+            crate::demikernel::libos::network::NetworkLibOS::Catnip(libos) => libos
+                .ipv4
+                .tcp
+                .inner
+                .borrow_mut()
+                .set_user_connection_context(qd, context),
+            _ => unimplemented!(),
+        },
+    }
+}
+
 //==============================================================================
 // Associated FUnctions
 //==============================================================================
