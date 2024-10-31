@@ -294,8 +294,8 @@ control Ingress(
     MigrationReplyIdentifier32b() reply_client_ip_0;
     MigrationReplyIdentifier16b() reply_client_port_0;
 
-    MigrationRequest32b0() owner_mac_hi32_0;
-    MigrationRequest16b0() owner_mac_lo16_0;
+    // MigrationRequest32b0() owner_mac_hi32_0;
+    // MigrationRequest16b0() owner_mac_lo16_0;
     MigrationRequest32b0() owner_ip_0;
     MigrationRequest16b0() owner_port_0;
 
