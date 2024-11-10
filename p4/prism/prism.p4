@@ -7,6 +7,9 @@
 /******  G L O B A L   I N G R E S S   M E T A D A T A  *********/
 
 struct my_ingress_headers_t {
+    pktgen_timer_header_t       pktgen_timer_header;
+    remaining_ethernet_h        remaining_ethernet;
+
     ethernet_h                  ethernet;
     ipv4_h                      ipv4;
     tcp_h                       tcp;
