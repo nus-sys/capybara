@@ -50,7 +50,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
     long long timeout_us = (timeout == -1) ? -1 : (timeout * 1000);
 
     demi_qresult_t qrs[MAX_EVENTS];
-    int ready_offsets[MAX_EVENTS];
+    size_t ready_offsets[MAX_EVENTS];
     size_t qrs_count = MAX_EVENTS;
     demi_qtoken_t qts[MAX_EVENTS];
     struct demi_event *evs[MAX_EVENTS];
@@ -59,23 +59,35 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
 
     if (nevents > 0)
     {
-        // fprintf(stderr, "HERE0 (nevents: %d)\n", nevents);
         int ret = __demi_wait_any(qrs, ready_offsets, &qrs_count, qts, nevents, timeout_us);
         if (ret != 0)
         {
             ERROR("demi_timedwait() failed - %s", strerror(ret));
             return 0;
         }
-
+        // if (qrs_count > 0){
+        //     printf("called wait_any (nevents: %d)\n", nevents);
+        //     printf("%ld results returned\n", qrs_count);
+        //     for (size_t i = 0; i < qrs_count; i++)
+        //         printf("ready_offsets[%zu]: %p\n", i, (void *)&ready_offsets[i]);
+            
+        //     for (size_t i = 0; i < qrs_count; i++)
+        //     {
+        //         size_t ready_offset = ready_offsets[i];
+        //         printf("ready_offsets[%zu]: %zu\n", i, ready_offset);
+        //     }
+        // }
         for (size_t i = 0; i < qrs_count; i++)
         {
             size_t ready_offset = ready_offsets[i];
 
             evs[ready_offset]->qr = qrs[i];
+            // printf("completed qd: %d\n", evs[ready_offset]->qr.qr_qd);
             switch (evs[ready_offset]->qr.qr_opcode)
             {
                 case DEMI_OPC_ACCEPT:
                 {
+                    // printf("ACCEPT\n");
                     // Fill in event.
                     events[nevents].events = evs[ready_offset]->ev.events;
                     events[nevents].data.fd = evs[ready_offset]->sockqd;
@@ -96,6 +108,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
 
                 case DEMI_OPC_POP:
                 {
+                    // printf("POP, ready_offset: %zu, qd: %d\n", ready_offset, evs[ready_offset]->qr.qr_qd);
                     // Fill in event.
                     events[nevents].events = evs[ready_offset]->ev.events;
                     events[nevents].data.fd = evs[ready_offset]->sockqd;
@@ -106,11 +119,13 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
 
                     // Store I/O queue operation result.
                     queue_man_set_pop_result(evs[ready_offset]->sockqd, evs[ready_offset]);
+                    // printf("nevents: %d\n", nevents);
                 }
                 break;
 
                 case DEMI_OPC_PUSH:
                 {
+                    // printf("PUSH\n");
                     // TODO: implement.
                     UNIMPLEMETED("parse result of demi_push()");
                 }
@@ -118,6 +133,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
 
                 case DEMI_OPC_FAILED:
                 {
+                    // printf("FAIL\n");
                     // Handle timeout: re-issue operation.
                     if (evs[ready_offset]->qr.qr_value.err == ETIMEDOUT)
                     {
