@@ -253,6 +253,7 @@ pub fn enable_user_connection(libos: &crate::LibOS) {
     match libos {
         crate::LibOS::NetworkLibOS(libos) => match libos {
             crate::demikernel::libos::network::NetworkLibOS::Catnip(libos) => {
+                #[cfg(feature = "tcp-migration")]
                 libos.ipv4.tcp.inner.borrow_mut().enable_user_connection()
             },
             _ => unimplemented!(),
@@ -261,6 +262,7 @@ pub fn enable_user_connection(libos: &crate::LibOS) {
 }
 
 pub fn set_user_connection_context(libos: &crate::LibOS, qd: QDesc, context: Rc<dyn UserConnectionContext>) {
+    #[cfg(feature = "tcp-migration")]
     match libos {
         crate::LibOS::NetworkLibOS(libos) => match libos {
             crate::demikernel::libos::network::NetworkLibOS::Catnip(libos) => libos
