@@ -1,3 +1,8 @@
+# redis-maintenance-bench.cpp
+- eval$ `git clone https://github.com/chriskohlhoff/asio.git`
+- eval$ `g++ -std=c++11 -I ./asio/asio/include -o redis-maintenance-bench redis-maintenance-bench.cpp -lpthread -lboost_system`
+
+
 # Running on nsl cluster
 ## Cluster Information
 - We use three nodes (node 7, 8, 9) and one switch (sw1)

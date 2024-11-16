@@ -670,6 +670,7 @@ impl InetStack {
                 // Found one, so extract the result and return.
                 if handle.has_completed() {
                     let (qd, result): (QDesc, OperationResult) = self.take_operation(handle);
+                    capy_log!("qd {:?} (index: {}) is complete", qd, i);
                     qrs[completed] = super::catnip::interop::pack_result(rt.clone(), result, qd, qt.into()); // Store the completed handle result.
                     indices[completed] = i; // Store the index of the result.
                     completed += 1;
@@ -682,6 +683,7 @@ impl InetStack {
 
             if completed > 0 {
                 capy_log!("return {} completed", completed);
+                capy_log!("Indices: {:?}", indices);
                 return Ok(completed);
             }
 
