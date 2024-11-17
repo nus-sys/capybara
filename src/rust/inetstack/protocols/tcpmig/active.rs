@@ -300,7 +300,10 @@ impl ActiveMigration {
         // print the length of recv_queue here
         capy_log_mig!("Length of recv_queue: {}", state.recv_queue_len());
 
-        let buf = state.serialize();
+        // let buf = state.serialize();
+        let mut buf = Buffer::Heap(DataBuffer::new(state.serialized_size()).expect("can allocate buffer"));
+        state.serialize_into(&mut buf);
+
         let tcpmig_hdr = TcpMigHeader::new(
             self.origin,
             self.client,

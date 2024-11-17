@@ -1436,13 +1436,28 @@ pub mod state {
             self.app_state = MigratedApplicationState::Registered(app_state);
         }
 
-        fn serialized_size(&self) -> usize {
+        pub fn serialized_size(&self) -> usize {
             self.cb.serialized_size()
                 + 1
                 + match &self.app_state {
                     MigratedApplicationState::Registered(state) => state.borrow().serialized_size(),
                     MigratedApplicationState::None | MigratedApplicationState::MigratedIn(..) => 0,
                 }
+        }
+
+        pub fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
+            let buf = self.cb.serialize_into(buf);
+            // omit obsolete app_state
+            buf
+        }
+
+        pub fn deserialize_from(buf: &mut Buffer) -> Self {
+            let cb = ControlBlockState::deserialize_from(buf);
+            // omit obsolete app_state
+            Self {
+                cb,
+                app_state: MigratedApplicationState::None,
+            }
         }
     }
 
