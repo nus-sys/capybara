@@ -378,6 +378,7 @@ http-server-be1:
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
+	MIG_PER_N=1000000 \
 	numactl -m0 taskset --cpu-list 2 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10001
 
@@ -590,17 +591,17 @@ clean-redis-data:
 # REDIS + TLS #
 
 redis-server-node8:
-	cd ../capybara-redis/src && \
+	cd ../cr/src && \
 	sudo -E \
 	$(ENV) \
 	CORE_ID=1 \
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
-	./redis-server ../config/node8.conf
+	./redis-server ../config/node8_10001.conf
 
 
-redis-server-node9:
+redis-server-node9-10000:
 	cd ../cr/src && \
 	sudo -E \
 	$(ENV) \
@@ -608,4 +609,43 @@ redis-server-node9:
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
-	./redis-server ../config/node9.conf
+	./redis-server ../config/node9_10000.conf
+
+
+redis-server-node9-10001:
+	cd ../cr/src && \
+	sudo -E \
+	$(ENV) \
+	CORE_ID=2 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	LD_PRELOAD=$(LIBDIR)/libshim.so \
+	./redis-server ../config/node9_10001.conf
+
+redis-server-node9-10002:
+	cd ../cr/src && \
+	sudo -E \
+	$(ENV) \
+	CORE_ID=3 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	LD_PRELOAD=$(LIBDIR)/libshim.so \
+	./redis-server ../config/node9_10002.conf
+
+redis-server-node9-10003:
+	cd ../cr/src && \
+	sudo -E \
+	$(ENV) \
+	CORE_ID=4 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	LD_PRELOAD=$(LIBDIR)/libshim.so \
+	./redis-server ../config/node9_10003.conf
+
+run-proxy-node8:
+	sudo -E \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
+	$(ENV) \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 2 numactl -m0 \
+	$(ELF_DIR)/proxy.elf 10.0.1.8:10000 10.0.1.8:10001

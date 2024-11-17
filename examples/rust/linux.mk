@@ -25,6 +25,7 @@ all: all-examples
 	cp -f $(BUILD_DIR)/examples/dpdk-ctrl $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
 	cp -f $(BUILD_DIR)/examples/http-server $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)
 	cp -f $(BUILD_DIR)/examples/tcp-server $(BINDIR)/examples/rust/tcp-server.$(EXEC_SUFFIX)
+	cp -f $(BUILD_DIR)/examples/proxy $(BINDIR)/examples/rust/proxy.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/capybara-switch $(BINDIR)/examples/rust/capybara-switch.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/proxy-server-fe $(BINDIR)/examples/rust/proxy-server-fe.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/proxy-server-be $(BINDIR)/examples/rust/proxy-server-be.$(EXEC_SUFFIX)
@@ -45,11 +46,12 @@ all-examples:
 #	$(CARGO) build --example tcpmig-server-single $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration
 #	@echo "$(CARGO) build --example tcpmig-client $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example tcpmig-client $(CARGO_FEATURES) $(CARGO_FLAGS)
-	RUSTFLAGS=-Awarnings $(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
+#	RUSTFLAGS=-Awarnings $(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
 #	@echo "$(CARGO) build --example tcp-ping-pong $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example tcp-ping-pong $(CARGO_FEATURES) $(CARGO_FLAGS)
-	RUSTFLAGS=-Awarnings $(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
-	RUSTFLAGS=-Awarnings $(CARGO) build --example tcp-server $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
+#	RUSTFLAGS=-Awarnings $(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
+#	RUSTFLAGS=-Awarnings $(CARGO) build --example tcp-server $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES) --features=tcp-migration,manual-tcp-migration
+	RUSTFLAGS=-Awarnings $(CARGO) build --example proxy $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
 #	$(CARGO) build --example capybara-switch $(CARGO_FEATURES) $(CARGO_FLAGS) --features=capybara-switch
 #,capy-profile
 #	$(CARGO) build --example proxy-server-fe $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)

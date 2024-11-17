@@ -68,7 +68,7 @@ impl NetworkLibOS {
             NetworkLibOS::Catpowder(libos) => libos.wait_any2(qts),
             #[cfg(feature = "catnap-libos")]
             // NetworkLibOS::Catnap(libos) => unimplemented!("changed wait_any() signature"),
-            NetworkLibOS::Catnap(libos) => libos.wait_any2(qts, qrs, indices),
+            NetworkLibOS::Catnap(libos) => libos.wait_any2(qts, qrs, indices, timeout),
             #[cfg(feature = "catcollar-libos")]
             NetworkLibOS::Catcollar(libos) => libos.wait_any2(qts),
             #[cfg(feature = "catnip-libos")]
