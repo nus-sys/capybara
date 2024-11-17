@@ -9,11 +9,6 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
-use demikernel::inetstack::protocols::tcp::peer::{
-    enable_user_connection,
-    set_user_connection_context,
-    UserConnectionContext,
-};
 
 use ::std::{
     env,
@@ -23,7 +18,7 @@ use ::std::{
 };
 use ctrlc;
 use std::{
-    cell::RefCell,
+    cell::Cell,
     collections::{
         hash_map::Entry,
         HashMap,
@@ -148,7 +143,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     let libos_name: LibOSName = LibOSName::from_env().unwrap();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
-    enable_user_connection(&libos);
+    // enable_user_connection(&libos);
 
     let sockqd: QDesc = libos
         .socket(libc::AF_INET, libc::SOCK_STREAM, 0)
@@ -182,35 +177,14 @@ fn server(local: SocketAddrV4) -> Result<()> {
             let (index, qd) = (*index, *qd);
             qts.swap_remove(index);
 
-            struct Context(RefCell<Vec<u8>>);
-            impl UserConnectionContext for Context {
-                fn migrate_in(&self, buffer: demikernel::runtime::memory::Buffer) {
-                    server_log!("migrate in");
-                    let mut buf = self.0.borrow_mut();
-                    assert!(buf.is_empty());
-                    buf.extend_from_slice(&buffer);
-                }
-
-                fn migrate_out(&self) {
-                    server_log!("migrate out")
-                }
-
-                fn buf_size(&self) -> usize {
-                    self.0.borrow().len()
-                }
-
-                fn write(&self, buf: &mut [u8]) {
-                    buf.copy_from_slice(&self.0.borrow());
-                }
-            }
-
+            struct Context(Rc<Cell<Vec<u8>>>);
             match result {
                 OperationResult::Accept(new_qd) => {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
-                    let context = Rc::new(Context(RefCell::new(Vec::new())));
-                    set_user_connection_context(&libos, new_qd, context.clone());
+                    let context = Rc::new(Context(Rc::new(Cell::new(Vec::new()))));
+                    // set_user_connection(&libos, new_qd, context.clone());
 
                     connstate.insert(new_qd, context);
                     #[cfg(feature = "manual-tcp-migration")]
@@ -230,7 +204,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Pop(_, recvbuf) => {
                     server_log!("POP complete");
                     let state = connstate.get(&qd).unwrap();
-                    let sent = push_data_and_run(&mut state.0.borrow_mut(), &recvbuf, |bytes| {
+                    let sent = push_data_and_run(&mut Vec::new(), &recvbuf, |bytes| {
                         let qt = libos.push2(qd, bytes).expect("can push");
                         qts.push(qt);
                     });
@@ -245,7 +219,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             server_log!("Migrating after {} more requests, Issued POP", remaining);
                         } else {
                             server_log!("Should be migrated (no POP issued)");
-                            server_log!("BUFFER DATA SIZE = {}", state.0.borrow().len());
+                            // server_log!("BUFFER DATA SIZE = {}", state.0.borrow().len());
                             libos.initiate_migration(qd).unwrap();
                             entry.remove();
                         }

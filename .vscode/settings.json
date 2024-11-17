@@ -10,5 +10,4 @@
     "PKG_CONFIG_PATH": "${userHome}/lib/x86_64-linux-gnu/pkgconfig"
   },
   "C_Cpp.intelliSenseCacheSize": 0,
-  "C_Cpp_Runner.msvcBatchPath": ""
 }

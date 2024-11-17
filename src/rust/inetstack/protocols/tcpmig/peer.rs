@@ -29,7 +29,6 @@ use crate::{
             peer::{
                 state::TcpState,
                 TcpMigContext,
-                UserConnectionContext,
             },
             segment::TcpHeader,
         },
@@ -84,7 +83,7 @@ pub enum TcpmigReceiveStatus {
     Rejected(SocketAddrV4, SocketAddrV4),
     ReturnedBySwitch(SocketAddrV4, SocketAddrV4),
     PrepareMigrationAcked(QDesc),
-    StateReceived(TcpState, Buffer),
+    StateReceived(TcpState),
     MigrationCompleted,
 
     // Heartbeat protocol.
@@ -106,8 +105,7 @@ pub struct TcpMigPeer {
     /// key = remote.
     active_migrations: HashMap<SocketAddrV4, ActiveMigration>,
 
-    // unused. removed to avoid confusion
-    // incoming_user_data: HashMap<SocketAddrV4, Buffer>,
+    incoming_user_data: HashMap<SocketAddrV4, Buffer>,
 
     self_udp_port: u16,
 
@@ -143,7 +141,7 @@ impl TcpMigPeer {
             local_link_addr,
             local_ipv4_addr,
             active_migrations: HashMap::new(),
-            // incoming_user_data: HashMap::new(),
+            incoming_user_data: HashMap::new(),
             self_udp_port: SELF_UDP_PORT, // TEMP
 
             heartbeat_message: Box::new(TcpMigSegment::new(
@@ -254,9 +252,9 @@ impl TcpMigPeer {
 
         capy_log_mig!("Active migration {:?}", remote);
         let mut status = active.process_packet(ipv4_hdr, hdr, buf, ctx)?;
-        match &mut status {
+        match status {
             TcpmigReceiveStatus::PrepareMigrationAcked(..) => (),
-            TcpmigReceiveStatus::StateReceived(state, _) => {
+            TcpmigReceiveStatus::StateReceived(ref mut state) => {
                 // capy_profile_merge_previous!("migrate_ack");
 
                 // Push user data into queue.
@@ -283,15 +281,9 @@ impl TcpMigPeer {
                 // Remove active migration.
                 entry.remove();
 
-                // ? lol
-                // capy_log_mig!("1");
-                // capy_log_mig!(
-                //     "2, active_migrations: {:?}, removing {}",
-                //     self.active_migrations.keys().collect::<Vec<_>>(),
-                //     remote
-                // );
+                capy_log_mig!("1");
                 capy_log_mig!(
-                    "active_migrations: {:?}, removing {}",
+                    "2, active_migrations: {:?}, removing {}",
                     self.active_migrations.keys().collect::<Vec<_>>(),
                     remote
                 );
@@ -364,7 +356,7 @@ impl TcpMigPeer {
         active.send_connection_state(state);
 
         // Remove migrated user data if present.
-        // self.incoming_user_data.remove(&remote);
+        self.incoming_user_data.remove(&remote);
     }
 
     /// Returns the moved buffers for further use by the caller if packet was not buffered.
