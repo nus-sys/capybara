@@ -6,6 +6,7 @@
 //==============================================================================
 
 use super::{
+    peer::user_connection::MigrateOut,
     segment::{
         MigrationStage,
         TcpMigDefragmenter,
@@ -286,7 +287,7 @@ impl ActiveMigration {
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::empty()));
     }
 
-    pub fn send_connection_state(&mut self, state: TcpState) {
+    pub fn send_connection_state(&mut self, state: TcpState, user_data: MigrateOut) {
         // capy_time_log!("SERIALIZE_STATE,({})", self.client);
         assert_eq!(self.last_sent_stage, MigrationStage::PrepareMigration);
 
@@ -301,8 +302,10 @@ impl ActiveMigration {
         capy_log_mig!("Length of recv_queue: {}", state.recv_queue_len());
 
         // let buf = state.serialize();
-        let mut buf = Buffer::Heap(DataBuffer::new(state.serialized_size()).expect("can allocate buffer"));
-        state.serialize_into(&mut buf);
+        let buf_size = state.serialized_size() + user_data.serialized_size();
+        let mut buf = Buffer::Heap(DataBuffer::new(buf_size).expect("can allocate buffer"));
+        let mut remaining_buf = state.serialize_into(&mut buf);
+        user_data.serialize(&mut remaining_buf);
 
         let tcpmig_hdr = TcpMigHeader::new(
             self.origin,

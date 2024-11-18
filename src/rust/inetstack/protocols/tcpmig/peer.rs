@@ -100,6 +100,8 @@ pub struct TcpMigPeer {
     /// Local IPv4 address.
     local_ipv4_addr: Ipv4Addr,
 
+    user_connection: user_connection::Peer,
+
     /// Connections being actively migrated in/out.
     ///
     /// key = remote.
@@ -140,6 +142,7 @@ impl TcpMigPeer {
             rt: rt.clone(),
             local_link_addr,
             local_ipv4_addr,
+            user_connection: user_connection::Peer::Nop,
             active_migrations: HashMap::new(),
             incoming_user_data: HashMap::new(),
             self_udp_port: SELF_UDP_PORT, // TEMP
@@ -262,28 +265,36 @@ impl TcpMigPeer {
                     assert!(self.incoming_user_data.insert(remote, data).is_none());
                 } */
 
-                let conn = state.connection();
-                capy_log_mig!("======= MIGRATING IN STATE ({}, {}) =======", conn.0, conn.1);
+                let (local_addr, remote_addr) = state.connection();
+                capy_log_mig!("======= MIGRATING IN STATE ({local_addr}, {remote_addr}) =======");
 
                 match state.app_state {
                     MigratedApplicationState::MigratedIn(..) => {
                         capy_log_mig!("Received app state from migration");
                         self.application_state
-                            .insert(conn.1, std::mem::take(&mut state.app_state));
+                            .insert(remote_addr, std::mem::take(&mut state.app_state));
                     },
                     _ => (),
                 }
 
                 // Remove active migration.
                 // entry.remove();
+
+                self.user_connection
+                    .migrate_in(remote_addr, Buffer::Heap(DataBuffer::empty()));
             },
             TcpmigReceiveStatus::MigrationCompleted => {
                 // Remove active migration.
                 entry.remove();
 
-                capy_log_mig!("1");
+                // capy_log_mig!("1");
+                // capy_log_mig!(
+                //     "2, active_migrations: {:?}, removing {}",
+                //     self.active_migrations.keys().collect::<Vec<_>>(),
+                //     remote
+                // );
                 capy_log_mig!(
-                    "2, active_migrations: {:?}, removing {}",
+                    "active_migrations: {:?}, removing {}",
                     self.active_migrations.keys().collect::<Vec<_>>(),
                     remote
                 );
@@ -341,7 +352,7 @@ impl TcpMigPeer {
         active.initiate_migration();
     }
 
-    pub fn send_tcp_state(&mut self, mut state: TcpState) {
+    pub fn migrate_out_connection_state(&mut self, mut state: TcpState) {
         let remote = state.remote();
 
         match self.application_state.remove(&remote) {
@@ -353,7 +364,8 @@ impl TcpMigPeer {
         }
 
         let active = self.active_migrations.get_mut(&remote).unwrap();
-        active.send_connection_state(state);
+        let user_state = self.user_connection.migrate_out(remote);
+        active.send_connection_state(state, user_state);
 
         // Remove migrated user data if present.
         self.incoming_user_data.remove(&remote);
@@ -444,4 +456,79 @@ pub fn log_print() {
     unsafe { LOG.as_ref().unwrap_unchecked() }
         .iter()
         .for_each(|len| println!("{}", len));
+}
+
+pub mod user_connection {
+    use std::{
+        cell::RefCell,
+        collections::HashMap,
+        io::Write,
+        net::SocketAddrV4,
+        rc::Rc,
+    };
+
+    use crate::runtime::memory::Buffer;
+
+    #[derive(Clone)]
+    pub enum Peer {
+        Nop,
+        SharedBuf(Rc<RefCell<SharedBufPeer>>),
+        //
+    }
+
+    pub enum MigrateOut {
+        Nop,
+        Buf(Vec<u8>),
+        //
+    }
+
+    impl Peer {
+        pub fn migrate_in(&self, remote: SocketAddrV4, data: Buffer) {
+            match self {
+                Self::Nop => {},
+                Self::SharedBuf(peer) => peer.borrow_mut().migrate_in(remote, data),
+            }
+        }
+
+        pub fn migrate_out(&self, remote: SocketAddrV4) -> MigrateOut {
+            match self {
+                Self::Nop => MigrateOut::Nop,
+                Self::SharedBuf(peer) => peer.borrow_mut().migrate_out(remote),
+            }
+        }
+    }
+
+    #[derive(Default)]
+    pub struct SharedBufPeer {
+        pub connections: HashMap<SocketAddrV4, Vec<u8>>,
+    }
+
+    impl SharedBufPeer {
+        fn migrate_in(&mut self, remote: SocketAddrV4, data: Buffer) {
+            let replaced = self.connections.insert(remote, data.to_vec());
+            assert!(replaced.is_none())
+        }
+
+        fn migrate_out(&mut self, remote: SocketAddrV4) -> MigrateOut {
+            MigrateOut::Buf(self.connections.remove(&remote).expect("exist connection state"))
+        }
+    }
+
+    impl MigrateOut {
+        pub fn serialized_size(&self) -> usize {
+            match self {
+                Self::Nop => 0,
+                Self::Buf(buf) => buf.len(),
+            }
+        }
+
+        pub fn serialize(&self, buf: &mut &mut [u8]) {
+            match self {
+                Self::Nop => {},
+                Self::Buf(data) => {
+                    buf.write(data).expect("can write");
+                },
+            }
+        }
+    }
 }

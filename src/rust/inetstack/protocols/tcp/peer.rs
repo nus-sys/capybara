@@ -1072,8 +1072,7 @@ impl TcpPeer {
 
     pub fn migrate_out_and_send(&mut self, qd: QDesc) {
         let mut inner = self.inner.borrow_mut();
-        let state = inner.migrate_out_connection(qd).unwrap();
-        inner.tcpmig.send_tcp_state(state);
+        inner.migrate_out_and_send(qd).expect("can migrate out and send");
     }
 
     pub fn initiate_migration_by_addr(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
@@ -1183,8 +1182,7 @@ impl Inner {
                 // If fast migration is allowed, migrate out the connection immediately.
                 // if true { /* ACTIVATE THIS FOR MIG_DELAY EVAL */
                 // if self.tcpmig_poll_state.is_fast_migrate_enabled() { /* COMMENT OUT THIS FOR MIG_DELAY EVAL */
-                let state = self.migrate_out_connection(qd)?;
-                self.tcpmig.send_tcp_state(state);
+                self.migrate_out_and_send(qd)?;
                 // }
             },
             TcpmigReceiveStatus::StateReceived(state) => {
@@ -1194,6 +1192,12 @@ impl Inner {
                 self.recv_queue_stats.update_threshold(global_queue_len_sum);
             },
         };
+        Ok(())
+    }
+
+    fn migrate_out_and_send(&mut self, qd: QDesc) -> Result<(), Fail> {
+        let state = self.migrate_out_connection(qd)?;
+        self.tcpmig.migrate_out_connection_state(state);
         Ok(())
     }
 
