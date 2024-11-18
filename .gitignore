@@ -29,3 +29,8 @@ Cargo.lock
 # eval
 eval/__pycache__/
 p4/includes/p4include/*
+
+# JSON compliation database
+compile_commands.json
+# clangd
+.cache
