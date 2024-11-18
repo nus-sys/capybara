@@ -1071,8 +1071,10 @@ impl TcpPeer {
     }
 
     pub fn migrate_out_and_send(&mut self, qd: QDesc) {
-        let mut inner = self.inner.borrow_mut();
-        inner.migrate_out_and_send(qd).expect("can migrate out and send");
+        self.inner
+            .borrow_mut()
+            .migrate_out_and_send(qd)
+            .expect("can migrate out and send")
     }
 
     pub fn initiate_migration_by_addr(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
@@ -1137,6 +1139,10 @@ impl TcpPeer {
             None => panic!("socket does not exist"), // return Err(Fail::new(EBADF, "socket does not exist")),
         };
         inner.tcpmig.get_migrated_application_state(remote)
+    }
+
+    pub fn with_mig_peer<T>(&self, f: impl FnOnce(&mut TcpMigPeer) -> T) -> T {
+        f(&mut self.inner.borrow_mut().tcpmig)
     }
 }
 

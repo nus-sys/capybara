@@ -41,7 +41,6 @@ export INPUT ?= $(CURDIR)/nettest/input
 
 # Rust
 export CARGO ?= $(shell which cargo || echo "$(HOME)/.cargo/bin/cargo" )
-export CARGO := RUSTFLAGS=$(RUSTFLAGS) $(CARGO)
 export CARGO_FLAGS += --profile $(BUILD)
 
 # C

@@ -63,6 +63,7 @@ use ::std::{
     thread,
 };
 use std::{
+    borrow::BorrowMut,
     cell::RefCell,
     collections::hash_map::Entry,
     time::Instant,
@@ -504,6 +505,10 @@ pub mod user_connection {
     }
 
     impl SharedBufPeer {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
         fn migrate_in(&mut self, remote: SocketAddrV4, data: Buffer) {
             let replaced = self.connections.insert(remote, data.to_vec());
             assert!(replaced.is_none())
@@ -526,9 +531,19 @@ pub mod user_connection {
             match self {
                 Self::Nop => {},
                 Self::Buf(data) => {
-                    buf.write(data).expect("can write");
+                    buf.write_all(data).expect("can write");
                 },
             }
         }
     }
+}
+
+pub fn set_user_connection_peer_shared_buf(libos: &crate::LibOS, peer: Rc<RefCell<user_connection::SharedBufPeer>>) {
+    let crate::LibOS::NetworkLibOS(crate::demikernel::libos::network::NetworkLibOS::Catnip(libos)) = libos else {
+        unimplemented!()
+    };
+    libos
+        .ipv4
+        .tcp
+        .with_mig_peer(|mig_peer| mig_peer.user_connection = user_connection::Peer::SharedBuf(peer))
 }

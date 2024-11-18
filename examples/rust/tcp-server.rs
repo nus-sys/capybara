@@ -153,7 +153,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
     libos.listen(sockqd, 300).expect("listen socket");
 
     let mut qts: Vec<QToken> = Vec::new();
-    let mut connstate = HashMap::new();
 
     qts.push(libos.accept(sockqd).expect("accept"));
 
@@ -177,16 +176,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
             let (index, qd) = (*index, *qd);
             qts.swap_remove(index);
 
-            struct Context(Rc<Cell<Vec<u8>>>);
             match result {
                 OperationResult::Accept(new_qd) => {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
-                    let context = Rc::new(Context(Rc::new(Cell::new(Vec::new()))));
-                    // set_user_connection(&libos, new_qd, context.clone());
-
-                    connstate.insert(new_qd, context);
                     #[cfg(feature = "manual-tcp-migration")]
                     {
                         let replaced = requests_remaining.insert(new_qd, mig_after);
@@ -203,7 +197,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                 OperationResult::Pop(_, recvbuf) => {
                     server_log!("POP complete");
-                    let state = connstate.get(&qd).unwrap();
                     let sent = push_data_and_run(&mut Vec::new(), &recvbuf, |bytes| {
                         let qt = libos.push2(qd, bytes).expect("can push");
                         qts.push(qt);
