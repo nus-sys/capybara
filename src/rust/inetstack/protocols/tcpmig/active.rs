@@ -201,7 +201,7 @@ impl ActiveMigration {
                         // capy_profile!("migrate_ack");
 
                         // Handle fragmentation.
-                        let (hdr, buf) = match self.defragmenter.defragment(hdr, buf) {
+                        let (hdr, mut buf) = match self.defragmenter.defragment(hdr, buf) {
                             Some((hdr, buf)) => (hdr, buf),
                             None => {
                                 capy_log_mig!("Receiving CONN_STATE fragments...");
@@ -210,7 +210,8 @@ impl ActiveMigration {
                         };
                         capy_time_log!("RECV_STATE,({})", self.client);
 
-                        let mut state = TcpState::deserialize(buf);
+                        // let mut state = TcpState::deserialize(buf);
+                        let mut state = TcpState::deserialize_from(&mut buf);
 
                         // Overwrite local address.
                         state.set_local(SocketAddrV4::new(self.local_ipv4_addr, self.self_udp_port));
@@ -233,7 +234,7 @@ impl ActiveMigration {
                         // Take the buffered packets.
                         // let pkts = std::mem::take(&mut self.recv_queue);
 
-                        return Ok(TcpmigReceiveStatus::StateReceived(state));
+                        return Ok(TcpmigReceiveStatus::StateReceived(state, Some(buf)));
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE")),
                 }

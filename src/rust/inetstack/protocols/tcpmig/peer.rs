@@ -84,7 +84,8 @@ pub enum TcpmigReceiveStatus {
     Rejected(SocketAddrV4, SocketAddrV4),
     ReturnedBySwitch(SocketAddrV4, SocketAddrV4),
     PrepareMigrationAcked(QDesc),
-    StateReceived(TcpState),
+    // Some(buf) when ActiveMigration -> TcpMigPeer, None when TcpMigPeer -> TcpPeer
+    StateReceived(TcpState, Option<Buffer>),
     MigrationCompleted,
 
     // Heartbeat protocol.
@@ -256,9 +257,9 @@ impl TcpMigPeer {
 
         capy_log_mig!("Active migration {:?}", remote);
         let mut status = active.process_packet(ipv4_hdr, hdr, buf, ctx)?;
-        match status {
+        match &mut status {
             TcpmigReceiveStatus::PrepareMigrationAcked(..) => (),
-            TcpmigReceiveStatus::StateReceived(ref mut state) => {
+            TcpmigReceiveStatus::StateReceived(state, data) => {
                 // capy_profile_merge_previous!("migrate_ack");
 
                 // Push user data into queue.
@@ -281,8 +282,7 @@ impl TcpMigPeer {
                 // Remove active migration.
                 // entry.remove();
 
-                self.user_connection
-                    .migrate_in(remote_addr, Buffer::Heap(DataBuffer::empty()));
+                self.user_connection.migrate_in(remote_addr, data.take().unwrap())
             },
             TcpmigReceiveStatus::MigrationCompleted => {
                 // Remove active migration.
@@ -353,7 +353,7 @@ impl TcpMigPeer {
         active.initiate_migration();
     }
 
-    pub fn migrate_out_connection_state(&mut self, mut state: TcpState) {
+    pub fn migrate_out_connection_state(&mut self, qd: QDesc, mut state: TcpState) {
         let remote = state.remote();
 
         match self.application_state.remove(&remote) {
@@ -365,7 +365,7 @@ impl TcpMigPeer {
         }
 
         let active = self.active_migrations.get_mut(&remote).unwrap();
-        let user_state = self.user_connection.migrate_out(remote);
+        let user_state = self.user_connection.migrate_out(qd);
         active.send_connection_state(state, user_state);
 
         // Remove migrated user data if present.
@@ -393,7 +393,8 @@ impl TcpMigPeer {
     }
 
     /// Returns the buffered packets for the migrated connection.
-    pub fn close_active_migration(&mut self, remote: SocketAddrV4) -> Option<Vec<(TcpHeader, Buffer)>> {
+    pub fn close_active_migration(&mut self, remote: SocketAddrV4, qd: QDesc) -> Option<Vec<(TcpHeader, Buffer)>> {
+        self.user_connection.associate_qd(remote, qd);
         self.active_migrations
             .remove(&remote)
             .map(|mut active| active.take_buffered_packets())
@@ -468,7 +469,10 @@ pub mod user_connection {
         rc::Rc,
     };
 
-    use crate::runtime::memory::Buffer;
+    use crate::{
+        runtime::memory::Buffer,
+        QDesc,
+    };
 
     #[derive(Clone)]
     pub enum Peer {
@@ -491,17 +495,25 @@ pub mod user_connection {
             }
         }
 
-        pub fn migrate_out(&self, remote: SocketAddrV4) -> MigrateOut {
+        pub fn associate_qd(&self, remote: SocketAddrV4, qd: QDesc) {
+            match self {
+                Self::Nop => {},
+                Self::SharedBuf(peer) => peer.borrow_mut().associate_qd(remote, qd),
+            }
+        }
+
+        pub fn migrate_out(&self, qd: QDesc) -> MigrateOut {
             match self {
                 Self::Nop => MigrateOut::Nop,
-                Self::SharedBuf(peer) => peer.borrow_mut().migrate_out(remote),
+                Self::SharedBuf(peer) => peer.borrow_mut().migrate_out(qd),
             }
         }
     }
 
     #[derive(Default)]
     pub struct SharedBufPeer {
-        pub connections: HashMap<SocketAddrV4, Vec<u8>>,
+        pub connections: HashMap<QDesc, Vec<u8>>,
+        migrating: HashMap<SocketAddrV4, Buffer>,
     }
 
     impl SharedBufPeer {
@@ -510,12 +522,18 @@ pub mod user_connection {
         }
 
         fn migrate_in(&mut self, remote: SocketAddrV4, data: Buffer) {
-            let replaced = self.connections.insert(remote, data.to_vec());
+            let replaced = self.migrating.insert(remote, data);
             assert!(replaced.is_none())
         }
 
-        fn migrate_out(&mut self, remote: SocketAddrV4) -> MigrateOut {
-            MigrateOut::Buf(self.connections.remove(&remote).expect("exist connection state"))
+        fn associate_qd(&mut self, remote: SocketAddrV4, qd: QDesc) {
+            let data = self.migrating.remove(&remote).expect("exist migrating data");
+            let replaced = self.connections.insert(qd, data.to_vec());
+            assert!(replaced.is_none())
+        }
+
+        fn migrate_out(&mut self, qd: QDesc) -> MigrateOut {
+            MigrateOut::Buf(self.connections.remove(&qd).expect("exist connection data"))
         }
     }
 

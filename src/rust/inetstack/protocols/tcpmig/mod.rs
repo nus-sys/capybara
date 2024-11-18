@@ -5,7 +5,7 @@ mod active;
 
 use std::{cell::Cell, io::Write};
 
-pub use peer::{TcpMigPeer, log_print, TcpmigReceiveStatus, MigratedApplicationState};
+pub use peer::{TcpMigPeer, log_print, TcpmigReceiveStatus, MigratedApplicationState, set_user_connection_peer_shared_buf};
 
 use crate::QDesc;
 

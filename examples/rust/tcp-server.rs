@@ -9,6 +9,7 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
+use demikernel::inetstack::protocols::tcpmig::set_user_connection_peer_shared_buf;
 
 use ::std::{
     env,
@@ -18,7 +19,7 @@ use ::std::{
 };
 use ctrlc;
 use std::{
-    cell::Cell,
+    cell::RefCell,
     collections::{
         hash_map::Entry,
         HashMap,
@@ -143,7 +144,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     let libos_name: LibOSName = LibOSName::from_env().unwrap();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
-    // enable_user_connection(&libos);
+    let user_connection_peer = Rc::new(RefCell::new(Default::default()));
+    set_user_connection_peer_shared_buf(&libos, user_connection_peer.clone());
 
     let sockqd: QDesc = libos
         .socket(libc::AF_INET, libc::SOCK_STREAM, 0)
@@ -181,6 +183,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
+                    user_connection_peer.borrow_mut().connections.entry(new_qd).or_default();
                     #[cfg(feature = "manual-tcp-migration")]
                     {
                         let replaced = requests_remaining.insert(new_qd, mig_after);
@@ -197,10 +200,18 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                 OperationResult::Pop(_, recvbuf) => {
                     server_log!("POP complete");
-                    let sent = push_data_and_run(&mut Vec::new(), &recvbuf, |bytes| {
-                        let qt = libos.push2(qd, bytes).expect("can push");
-                        qts.push(qt);
-                    });
+                    let sent = push_data_and_run(
+                        user_connection_peer
+                            .borrow_mut()
+                            .connections
+                            .get_mut(&qd)
+                            .expect("exist connection state"),
+                        &recvbuf,
+                        |bytes| {
+                            let qt = libos.push2(qd, bytes).expect("can push");
+                            qts.push(qt);
+                        },
+                    );
                     server_log!("Issued {sent} PUSHes");
                     #[cfg(feature = "manual-tcp-migration")]
                     if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {

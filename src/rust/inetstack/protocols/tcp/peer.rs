@@ -421,7 +421,7 @@ impl TcpPeer {
         #[cfg(feature = "tcp-migration")]
         {
             // Process buffered packets.
-            if let Some(buffered) = inner.tcpmig.close_active_migration(remote) {
+            if let Some(buffered) = inner.tcpmig.close_active_migration(remote, qd) {
                 capy_time_log!("CONN_ACCEPTED,({})", remote);
                 for (mut hdr, data) in buffered {
                     capy_log_mig!("start receiving target-buffered packets into the CB");
@@ -640,18 +640,18 @@ impl TcpPeer {
         }
     }
 
-    pub fn endpoints(&self, fd: QDesc) -> Result<(SocketAddrV4, SocketAddrV4), Fail> {
-        let inner = self.inner.borrow();
-        let key = match inner.sockets.get(&fd) {
-            Some(Socket::Established { local, remote }) => (*local, *remote),
-            Some(..) => return Err(Fail::new(ENOTCONN, "connection not established")),
-            None => return Err(Fail::new(EBADF, "bad queue descriptor")),
-        };
-        match inner.established.get(&key) {
-            Some(ref s) => Ok(s.endpoints()),
-            None => Err(Fail::new(ENOTCONN, "connection not established")),
-        }
-    }
+    // pub fn endpoints(&self, fd: QDesc) -> Result<(SocketAddrV4, SocketAddrV4), Fail> {
+    //     let inner = self.inner.borrow();
+    //     let key = match inner.sockets.get(&fd) {
+    //         Some(Socket::Established { local, remote }) => (*local, *remote),
+    //         Some(..) => return Err(Fail::new(ENOTCONN, "connection not established")),
+    //         None => return Err(Fail::new(EBADF, "bad queue descriptor")),
+    //     };
+    //     match inner.established.get(&key) {
+    //         Some(ref s) => Ok(s.endpoints()),
+    //         None => Err(Fail::new(ENOTCONN, "connection not established")),
+    //     }
+    // }
 }
 
 impl Inner {
@@ -1191,7 +1191,7 @@ impl Inner {
                 self.migrate_out_and_send(qd)?;
                 // }
             },
-            TcpmigReceiveStatus::StateReceived(state) => {
+            TcpmigReceiveStatus::StateReceived(state, ..) => {
                 self.migrate_in_connection(state)?;
             },
             TcpmigReceiveStatus::HeartbeatResponse(global_queue_len_sum) => {
@@ -1203,7 +1203,7 @@ impl Inner {
 
     fn migrate_out_and_send(&mut self, qd: QDesc) -> Result<(), Fail> {
         let state = self.migrate_out_connection(qd)?;
-        self.tcpmig.migrate_out_connection_state(state);
+        self.tcpmig.migrate_out_connection_state(qd, state);
         Ok(())
     }
 
