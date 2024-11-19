@@ -184,6 +184,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
                     user_connection_peer.borrow_mut().connections.entry(new_qd).or_default();
+                    server_log!("{:?}", user_connection_peer.borrow().connections);
                     #[cfg(feature = "manual-tcp-migration")]
                     {
                         let replaced = requests_remaining.insert(new_qd, mig_after);
@@ -200,6 +201,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                 OperationResult::Pop(_, recvbuf) => {
                     server_log!("POP complete");
+                    server_log!("{:?}", &**recvbuf);
                     let sent = push_data_and_run(
                         user_connection_peer
                             .borrow_mut()

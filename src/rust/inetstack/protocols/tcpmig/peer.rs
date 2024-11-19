@@ -394,10 +394,12 @@ impl TcpMigPeer {
 
     /// Returns the buffered packets for the migrated connection.
     pub fn close_active_migration(&mut self, remote: SocketAddrV4, qd: QDesc) -> Option<Vec<(TcpHeader, Buffer)>> {
-        self.user_connection.associate_qd(remote, qd);
-        self.active_migrations
+        let migration = self
+            .active_migrations
             .remove(&remote)
-            .map(|mut active| active.take_buffered_packets())
+            .map(|mut active| active.take_buffered_packets())?;
+        self.user_connection.associate_qd(remote, qd);
+        Some(migration)
     }
 
     pub fn send_heartbeat(&mut self, queue_len: usize) {
@@ -464,6 +466,7 @@ pub mod user_connection {
     use std::{
         cell::RefCell,
         collections::HashMap,
+        ffi::c_void,
         io::Write,
         net::SocketAddrV4,
         rc::Rc,
@@ -537,6 +540,13 @@ pub mod user_connection {
         }
     }
 
+    pub struct FfiPeer {
+        pub migrate_in: unsafe extern "C" fn(i32, *const u8, usize),
+        pub migrate_out: unsafe extern "C" fn(i32) -> *const c_void,
+        pub serialized_size: unsafe extern "C" fn(*const c_void) -> usize,
+        pub serialize: unsafe extern "C" fn(*mut u8, usize) -> usize,
+    }
+
     impl MigrateOut {
         pub fn serialized_size(&self) -> usize {
             match self {
@@ -545,11 +555,12 @@ pub mod user_connection {
             }
         }
 
-        pub fn serialize(&self, buf: &mut &mut [u8]) {
+        pub fn serialize<'buf>(&self, mut buf: &'buf mut [u8]) -> &'buf mut [u8] {
             match self {
-                Self::Nop => {},
+                Self::Nop => buf,
                 Self::Buf(data) => {
-                    buf.write_all(data).expect("can write");
+                    (&mut buf).write_all(data).expect("can write");
+                    buf
                 },
             }
         }

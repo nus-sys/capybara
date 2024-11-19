@@ -305,8 +305,8 @@ impl ActiveMigration {
         // let buf = state.serialize();
         let buf_size = state.serialized_size() + user_data.serialized_size();
         let mut buf = Buffer::Heap(DataBuffer::new(buf_size).expect("can allocate buffer"));
-        let mut remaining_buf = state.serialize_into(&mut buf);
-        user_data.serialize(&mut remaining_buf);
+        let remaining_buf = state.serialize_into(&mut buf);
+        user_data.serialize(remaining_buf);
 
         let tcpmig_hdr = TcpMigHeader::new(
             self.origin,

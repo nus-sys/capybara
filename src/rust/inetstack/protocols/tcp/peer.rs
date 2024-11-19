@@ -421,7 +421,7 @@ impl TcpPeer {
         #[cfg(feature = "tcp-migration")]
         {
             // Process buffered packets.
-            if let Some(buffered) = inner.tcpmig.close_active_migration(remote, qd) {
+            if let Some(buffered) = inner.tcpmig.close_active_migration(remote, new_qd) {
                 capy_time_log!("CONN_ACCEPTED,({})", remote);
                 for (mut hdr, data) in buffered {
                     capy_log_mig!("start receiving target-buffered packets into the CB");
@@ -1448,7 +1448,7 @@ pub mod state {
 
         pub fn serialized_size(&self) -> usize {
             self.cb.serialized_size()
-                + 1
+                // + 1
                 + match &self.app_state {
                     MigratedApplicationState::Registered(state) => state.borrow().serialized_size(),
                     MigratedApplicationState::None | MigratedApplicationState::MigratedIn(..) => 0,
