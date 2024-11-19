@@ -607,7 +607,7 @@ impl TcpPeer {
             Some(Socket::Listening { .. }) => return Poll::Ready(Err(Fail::new(ENOTCONN, "socket listening"))),
             #[cfg(feature = "tcp-migration")]
             Some(Socket::MigratedOut { .. }) => {
-                return Poll::Ready(Err(Fail::new(crate::ETCPMIG, "socket migrated out")))
+                return Poll::Ready(Err(Fail::new(crate::ETCPMIG, "cannot recv, socket migrated out")))
             },
             None => return Poll::Ready(Err(Fail::new(EBADF, "bad queue descriptor"))),
         };
@@ -641,7 +641,7 @@ impl TcpPeer {
         let key = match inner.sockets.get(&fd) {
             Some(Socket::Established { local, remote }) => (*local, *remote),
             #[cfg(feature = "tcp-migration")]
-            Some(Socket::MigratedOut { .. }) => return Err(Fail::new(crate::ETCPMIG, "socket migrated out")),
+            Some(Socket::MigratedOut { .. }) => return Err(Fail::new(crate::ETCPMIG, "cannot send, socket migrated out")),
             Some(..) => {
                 eprintln!("connection not established");
                 return Err(Fail::new(ENOTCONN, "connection not established"));

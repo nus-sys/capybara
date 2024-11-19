@@ -972,7 +972,7 @@ impl InetStack {
     }
 
 
-    #[cfg(feature = "manual-tcp-migration")]
+    
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         self.ipv4.tcp.initiate_migration_by_qd(qd)
     }
