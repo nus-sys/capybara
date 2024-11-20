@@ -150,6 +150,23 @@ impl TcpMigPeer {
         }
     }
 
+    pub fn should_migrate(&self) -> bool {
+        // if self.mig_off != 0 {
+        //     return false;
+        // }
+
+        static mut FLAG: i32 = 0;
+
+        unsafe {
+            // if FLAG == 5 {
+            //     FLAG = 0;
+            // }
+            FLAG += 1;
+            // eprintln!("FLAG: {}", FLAG);
+            FLAG > 30
+        }
+    }
+
     pub fn set_port(&mut self, port: u16) {
         self.self_udp_port = port;
     }
@@ -183,8 +200,8 @@ impl TcpMigPeer {
                 self.rt.clone(),
                 self.local_ipv4_addr,
                 self.local_link_addr,
-                FRONTEND_IP,
-                FRONTEND_MAC, // Need to go through the switch 
+                if self.local_ipv4_addr == FRONTEND_IP { BACKEND_IP } else { FRONTEND_IP },
+                if self.local_link_addr == FRONTEND_MAC { BACKEND_MAC } else { FRONTEND_MAC },  // Need to go through the switch 
                 self.self_udp_port,
                 hdr.origin.port(), 
                 hdr.origin,
@@ -280,10 +297,10 @@ impl TcpMigPeer {
             self.rt.clone(),
             self.local_ipv4_addr,
             self.local_link_addr,
-            FRONTEND_IP,
-            FRONTEND_MAC, 
+            if self.local_ipv4_addr == FRONTEND_IP { BACKEND_IP } else { FRONTEND_IP },
+            if self.local_link_addr == FRONTEND_MAC { BACKEND_MAC } else { FRONTEND_MAC }, 
             self.self_udp_port,
-            if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
+            10000, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
             local,
             remote,
             Some(qd),
