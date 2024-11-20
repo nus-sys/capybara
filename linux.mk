@@ -613,3 +613,6 @@ redis-server-node9:
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
 	./redis-server ../config/node9.conf
+
+tlse:
+	$(MAKE) -C shim run-tlse BINDIR=$(BINDIR)/shim

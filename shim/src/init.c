@@ -22,7 +22,9 @@ int __init()
     queue_man_init();
     epoll_table_init();
 
+    TRACE("__demi_init start");
     ret = __demi_init(argc, argv);
+    TRACE("__demi_init done %d", ret);
 
     if (ret != 0)
     {
@@ -30,5 +32,8 @@ int __init()
         return -1;
     }
 
+    TRACE("set user connection");
+    demi_set_user_connection_peer_ffi(NULL, NULL, NULL, NULL);
+    TRACE("set user connection done");
     return 0;
 }

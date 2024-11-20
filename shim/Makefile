@@ -39,6 +39,12 @@ all-shim:
 all-tests: all-shim
 	$(MAKE) -C test/hello all
 
+tlse: all-shim
+	$(MAKE) -C test/tlse all
+
+run-tlse:
+	$(MAKE) -C test/tlse run
+
 # Copies build artifacts to the INSTALL_PREFIX directory.
 install: all
 	mkdir -p $(INSTALL_PREFIX)/include $(INSTALL_PREFIX)/lib
@@ -59,3 +65,4 @@ clean-shim:
 # Cleans up all tests.
 clean-tests:
 	$(MAKE) -C test/hello clean
+	$(MAKE) -C test/tlse clean

@@ -6,6 +6,7 @@
 
 #include <demi/types.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <sys/socket.h>
 
 #ifdef __cplusplus
@@ -141,6 +142,13 @@ extern "C"
     extern void demi_print_queue_length_log(void);
 
 #endif /* __DEMIKERNEL_TCPMIG__ */
+
+    extern void demi_set_user_connection_peer_ffi(
+        void (*migrate_in)(int qd, const uint8_t *, size_t),
+        void *(*migrate_out)(int qd),
+        size_t (*serialized_size)(const void *),
+        size_t (*serialize)(const void *, uint8_t *, size_t)
+    );
 
 #ifdef __cplusplus
 }
