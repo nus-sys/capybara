@@ -14,6 +14,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <glue.h>
+#include <unistd.h>
 
 static size_t fill_sga(const struct iovec *iov, demi_sgarray_t *sga,
     size_t iovcnt);
@@ -52,6 +53,11 @@ ssize_t __send(int sockfd, const void *buf, size_t len, int flags)
 
 ssize_t __write(int sockfd, const void *buf, size_t count)
 {
+    // suppress stdout/stderr false positive
+    if (sockfd == STDOUT_FILENO || sockfd == STDERR_FILENO) {
+        errno = EBADF;
+        return -1;
+    }
     fprintf(stderr, "send.c::__write()\n");
     // Check if this socket descriptor is managed by Demikernel.
     // If that is the not case, then fail to let the Linux kernel handle it.

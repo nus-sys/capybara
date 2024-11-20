@@ -345,11 +345,13 @@ int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t
 
 int getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
+    fprintf(stderr, "interpose.c::getsockname(sockfd = %d)\n", sockfd);
     INTERPOSE_CALL(int, libc_getsockname, __getsockname, sockfd, addr, addrlen);
 }
 
 int getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
+    fprintf(stderr, "interpose.c::getpeername(sockfd = %d)\n", sockfd);
     INTERPOSE_CALL(int, libc_getpeername, __getpeername, sockfd, addr, addrlen);
 }
 
