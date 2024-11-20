@@ -287,7 +287,7 @@ for i in range(num_backends):
     p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
     p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xc5ad)
     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.9'))
-    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + i)
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + (i % 4))
 
 
 p4.Egress.reg_min_rps_server_port.mod(REGISTER_INDEX=0, f1=0)

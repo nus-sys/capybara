@@ -48,5 +48,5 @@ table l2_forwarding {
         0xffffffffffff : broadcast();
     }
     default_action = drop();
-    size = 128;
+    size = 16;
 }

@@ -1,7 +1,6 @@
-# manufactured base on cluster hardware sheet 2022.12.04
 from bfrtcli import *
-from netaddr import EUI, IPAddress
-class endhost_switch():
+
+class resource_utilization():
     #
     # Helper Functions to deal with ports
     #
@@ -22,13 +21,7 @@ class endhost_switch():
     # (once proper BfRt support is added). As of SDE-9.2.0 the support is mixed.
     # As a result the function contains some workarounds.
     def clear_all(self, verbose=True, batching=True, clear_ports=False):
-        port = bfrt.port.port
-        port.clear()
-        for entry in bfrt.pre.node.dump(return_ents=True) or []:
-            entry.remove()
-        for entry in bfrt.pre.mgid.dump(return_ents=True) or []:
-            entry.remove()
-        
+    
         table_list = bfrt.info(return_info=True, print_info=False)
 
         # Remove port tables from the list
@@ -122,19 +115,131 @@ class endhost_switch():
         bfrt.complete_operations()
 
     def __init__(self, default_ttl=60000):
-        self.p4 = bfrt.endhost_switch.pipe
-        # self.all_ports  = [port.key[b'$DEV_PORT']
-        #                    for port in bfrt.port.port.get(regex=1,
-        #                                                   return_ents=True,
-        #                                                   print_ents=False)]
+        self.p4 = bfrt.resource_utilization.pipe
+        self.all_ports  = [port.key[b'$DEV_PORT']
+                           for port in bfrt.port.port.get(regex=1,
+                                                          return_ents=True,
+                                                          print_ents=False)]
         self.l2_age_ttl = default_ttl
-        
+
     def setup(self):
         self.clear_all()
         self.__init__()
 
-    
+        # Enable learning on SMAC
+        # print("Initializing learning on SMAC ... ", end='', flush=True)
+        # try:
+        #     self.p4.IngressDeparser.l2_digest.callback_deregister()
+        # except:
+        #     pass
+        # self.p4.IngressDeparser.l2_digest.callback_register(self.learning_cb)
+        # print("Done")
 
+        # Enable migration learning
+        print("Initializing learning on TCP migration ... ", end='', flush=True)
+        try:
+            self.p4.IngressDeparser.migration_digest.callback_deregister()
+        except:
+            pass
+        self.p4.IngressDeparser.migration_digest.callback_register(self.learning_migration)
+        # print("Done")
+        
+
+        # Enable aging on SMAC
+        # print("Inializing Aging on SMAC ... ", end='', flush=True)
+        # self.p4.Ingress.smac.idle_table_set_notify(enable=False,
+        #                                            callback=None)
+
+        # self.p4.Ingress.smac.idle_table_set_notify(enable=True,
+        #                                            callback=self.aging_cb,
+        #                                            interval = 10000,
+        #                                            min_ttl  = 10000,
+        #                                            max_ttl  = 60000)
+        # print("Done")
+
+    @staticmethod
+    def aging_cb(dev_id, pipe_id, direction, parser_id, entry):
+        smac = bfrt.resource_utilization.pipe.Ingress.smac
+        dmac = bfrt.resource_utilization.pipe.Ingress.dmac
+
+        mac_addr = entry.key[b'hdr.ethernet.src_mac']
+
+        print("Aging out: MAC: {}".format(mac(mac_addr)))
+
+        entry.remove() # from smac
+        try:
+            dmac.delete(dst_mac=mac_addr)
+        except:
+            print("WARNING: Could not find the matching DMAC entry")
+
+    @staticmethod
+    def learning_cb(dev_id, pipe_id, direction, parser_id, session, msg):
+        smac = bfrt.resource_utilization.pipe.Ingress.smac
+        dmac = bfrt.resource_utilization.pipe.Ingress.dmac
+
+        for digest in msg:
+            port     = digest["ingress_port"]
+            mac_move = digest["mac_move"]
+            mac_addr  = digest["src_mac"]
+
+            old_port = port ^ mac_move # Because mac_move = ingress_port ^ port
+
+            print("MAC: {},  Port={}".format(
+                mac(mac_addr), port), end="", flush=True)
+
+            if mac_move != 0:
+                print("(Move from port={})".format(old_port))
+            else:
+                print("(New)")
+
+            # Since we do not have access to self, we have to use
+            # the hardcoded value for the TTL :(
+            smac.entry_with_smac_hit(src_mac=mac_addr,
+                                     port=port,
+                                     is_static=False,
+                                     ENTRY_TTL=60000).push()
+            dmac.entry_with_dmac_unicast(dst_mac=mac_addr,
+                                         port=port).push()
+        return 0
+
+    @staticmethod
+    def learning_migration(dev_id, pipe_id, direction, parser_id, session, msg):
+        # migrate_request = bfrt.resource_utilization.pipe.Ingress.migrate_request
+        # migrate_reply = bfrt.resource_utilization.pipe.Ingress.migrate_reply
+        
+        for digest in msg:
+            src_mac        =   digest["src_mac"]
+            dst_mac        =    digest["dst_mac"]
+            src_ip         =   digest["src_ip"];
+            dst_ip         =   digest["dst_ip"];
+            src_port         =   digest["src_port"];
+            dst_port         =   digest["dst_port"];
+            # meta_ip         =   digest["meta_ip"];
+            # meta_port         =   digest["meta_port"];
+
+            # hash_digest1         =   digest["hash_digest1"];
+            # hash_digest         =   digest["hash_digest"];
+
+            # print("Hash: {}\n".format(hash_digest), end="", flush=True)
+            # print("src: {}:{}, dst: {}:{}, meta: {},{}\nHash1: {} and Hash2: {}\n".format(
+            #     ip(src_ip), src_port, ip(dst_ip), dst_port, ip(meta_ip), meta_port, hash_digest1, hash_digest2), end="", flush=True)
+
+            print("\n{}:{}:{} => {}:{}:{} \n".format(
+                mac(src_mac), ip(src_ip), src_port, mac(dst_mac), ip(dst_ip), dst_port), end="", flush=True)
+
+
+            # Since we do not have access to self, we have to use
+            # the hardcoded value for the TTL :(
+            # migrate_request.entry_with_migrate_request_hit(dst_mac=origin_mac, dst_ip=origin_ip, dst_port=origin_port,
+            #                                                 migrate_mac=dst_mac, migrate_ip=dst_ip, migrate_port=dst_port, migrate_egress_port=egress_port).push()
+            # migrate_reply.entry_with_migrate_reply_hit(src_mac=dst_mac, src_ip=dst_ip, src_port=dst_port,
+            #                                                 migrate_mac=origin_mac, migrate_ip=origin_ip, migrate_port=origin_port).push()
+        return 0
+
+    def l2_add_smac_drop(self, vid, mac_addr):
+        mac_addr = mac(mac_addr)
+        self.p4.Ingress.smac.entry_with_smac_drop(
+            src_mac=mac_addr).push()
 
 def set_bcast(ports):
     # Broadcast
@@ -145,39 +250,8 @@ def set_bcast(ports):
                 MULTICAST_NODE_L1_XID=[0]).push()
 
 
-p4 = bfrt.endhost_switch.pipe
-
 ### Setup L2 learning
-sl2 = endhost_switch(default_ttl=10000)
+sl2 = resource_utilization(default_ttl=10000)
 sl2.setup()
-
-routes = (
-    (0x08c0ebb6cd5d, 32, '100G'), # node7
-    (0x08c0ebb6e805, 36, '100G'), # node8
-    (0x08c0ebb6c5ad, 24, '100G'), # node9
-    #
-)
-port = bfrt.port.port
-for _, dev_port, speed in routes:
-    formatted_speed = 'BF_SPEED_{}'.format(speed)
-    port.add(
-        DEV_PORT=dev_port,
-        PORT_ENABLE=True,
-        SPEED=formatted_speed,
-        FEC='BF_FEC_TYP_NONE',
-        AUTO_NEGOTIATION='PM_AN_FORCE_DISABLE'
-    )
-
-
-p4.Ingress.l2_forwarding_decision.clear()
-p4.Ingress.l2_forwarding_decision.add_with_broadcast(dst_mac=0xffffffffffff)
-for addr, port, _ in routes:
-    p4.Ingress.l2_forwarding_decision.add_with_l2_forward(dst_mac=addr, port=port)
-    bfrt.pre.node.add(port, port, [], [port])
-    bfrt.pre.prune.mod(port, [port])
-bfrt.pre.mgid.add(
-    1,
-    [port for _, port, _ in routes],
-    [False for _ in routes],
-    [0 for _ in routes])
+set_bcast([24, 32, 36])
 bfrt.complete_operations()
