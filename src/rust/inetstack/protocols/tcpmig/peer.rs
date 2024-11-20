@@ -66,6 +66,7 @@ use std::{
     borrow::BorrowMut,
     cell::RefCell,
     collections::hash_map::Entry,
+    ffi::c_void,
     time::Instant,
 };
 
@@ -464,11 +465,15 @@ pub fn log_print() {
 
 pub mod user_connection {
     use std::{
-        cell::RefCell,
+        cell::{
+            Cell,
+            RefCell,
+        },
         collections::HashMap,
         ffi::c_void,
         io::Write,
         net::SocketAddrV4,
+        ptr::null,
         rc::Rc,
     };
 
@@ -477,38 +482,65 @@ pub mod user_connection {
         QDesc,
     };
 
-    #[derive(Clone)]
     pub enum Peer {
         Nop,
         SharedBuf(Rc<RefCell<SharedBufPeer>>),
-        //
+        Ffi(FfiPeer),
     }
 
     pub enum MigrateOut {
         Nop,
         Buf(Vec<u8>),
-        //
+        Ffi(*const c_void),
     }
 
     impl Peer {
-        pub fn migrate_in(&self, remote: SocketAddrV4, data: Buffer) {
+        pub fn migrate_in(&mut self, remote: SocketAddrV4, data: Buffer) {
             match self {
                 Self::Nop => {},
                 Self::SharedBuf(peer) => peer.borrow_mut().migrate_in(remote, data),
+                Self::Ffi(peer) => peer.migrate_in(remote, data),
             }
         }
 
-        pub fn associate_qd(&self, remote: SocketAddrV4, qd: QDesc) {
+        pub fn associate_qd(&mut self, remote: SocketAddrV4, qd: QDesc) {
             match self {
                 Self::Nop => {},
                 Self::SharedBuf(peer) => peer.borrow_mut().associate_qd(remote, qd),
+                Self::Ffi(peer) => peer.associate_qd(remote, qd),
             }
         }
 
-        pub fn migrate_out(&self, qd: QDesc) -> MigrateOut {
+        pub fn migrate_out(&mut self, qd: QDesc) -> MigrateOut {
             match self {
                 Self::Nop => MigrateOut::Nop,
                 Self::SharedBuf(peer) => peer.borrow_mut().migrate_out(qd),
+                Self::Ffi(peer) => peer.migrate_out(qd),
+            }
+        }
+    }
+
+    impl MigrateOut {
+        pub fn serialized_size(&self) -> usize {
+            match self {
+                Self::Nop => 0,
+                Self::Buf(data) => data.len(),
+                Self::Ffi(data) => unsafe { (FFI.get().serialized_size)(*data) },
+            }
+        }
+
+        pub fn serialize<'buf>(&self, mut buf: &'buf mut [u8]) -> &'buf mut [u8] {
+            match self {
+                Self::Nop => buf,
+                Self::Buf(data) => {
+                    (&mut buf).write_all(data).expect("can write");
+                    buf
+                },
+                Self::Ffi(data) => {
+                    let remaining_len = unsafe { (FFI.get().serialize)(*data, buf.as_mut_ptr(), buf.len()) };
+                    let used_len = buf.len() - remaining_len;
+                    &mut buf[used_len..]
+                },
             }
         }
     }
@@ -540,29 +572,56 @@ pub mod user_connection {
         }
     }
 
-    pub struct FfiPeer {
+    #[derive(Clone, Copy)]
+    pub struct Ffi {
         pub migrate_in: unsafe extern "C" fn(i32, *const u8, usize),
         pub migrate_out: unsafe extern "C" fn(i32) -> *const c_void,
         pub serialized_size: unsafe extern "C" fn(*const c_void) -> usize,
-        pub serialize: unsafe extern "C" fn(*mut u8, usize) -> usize,
+        pub serialize: unsafe extern "C" fn(*const c_void, *mut u8, usize) -> usize,
     }
 
-    impl MigrateOut {
-        pub fn serialized_size(&self) -> usize {
-            match self {
-                Self::Nop => 0,
-                Self::Buf(buf) => buf.len(),
-            }
+    #[allow(unused)]
+    unsafe extern "C" fn default_migrate_in(fd: i32, buf: *const u8, buf_len: usize) {}
+    #[allow(unused)]
+    unsafe extern "C" fn default_migrate_out(fd: i32) -> *const c_void {
+        null()
+    }
+    #[allow(unused)]
+    unsafe extern "C" fn default_serialized_size(data: *const c_void) -> usize {
+        0
+    }
+    #[allow(unused)]
+    unsafe extern "C" fn default_serialize(data: *const c_void, buf: *mut u8, buf_len: usize) -> usize {
+        0
+    }
+
+    thread_local! {
+        pub static FFI: Cell<Ffi> = Cell::new(Ffi {
+            migrate_in: default_migrate_in,
+            migrate_out: default_migrate_out,
+            serialized_size: default_serialized_size,
+            serialize: default_serialize
+        })
+    }
+
+    #[derive(Default)]
+    pub struct FfiPeer {
+        migrating: HashMap<SocketAddrV4, Buffer>,
+    }
+
+    impl FfiPeer {
+        fn migrate_in(&mut self, remote: SocketAddrV4, data: Buffer) {
+            let replaced = self.migrating.insert(remote, data);
+            assert!(replaced.is_none())
         }
 
-        pub fn serialize<'buf>(&self, mut buf: &'buf mut [u8]) -> &'buf mut [u8] {
-            match self {
-                Self::Nop => buf,
-                Self::Buf(data) => {
-                    (&mut buf).write_all(data).expect("can write");
-                    buf
-                },
-            }
+        fn associate_qd(&mut self, remote: SocketAddrV4, qd: QDesc) {
+            let data = self.migrating.remove(&remote).expect("exist migrating data");
+            unsafe { (FFI.get().migrate_in)(qd.into(), data.as_ptr(), data.len()) }
+        }
+
+        fn migrate_out(&mut self, qd: QDesc) -> MigrateOut {
+            MigrateOut::Ffi(unsafe { (FFI.get().migrate_out)(qd.into()) })
         }
     }
 }
@@ -575,4 +634,26 @@ pub fn set_user_connection_peer_shared_buf(libos: &crate::LibOS, peer: Rc<RefCel
         .ipv4
         .tcp
         .with_mig_peer(|mig_peer| mig_peer.user_connection = user_connection::Peer::SharedBuf(peer))
+}
+
+pub unsafe fn set_user_connection_peer_ffi(
+    libos: &crate::LibOS,
+    migrate_in: unsafe extern "C" fn(i32, *const u8, usize),
+    migrate_out: unsafe extern "C" fn(i32) -> *const std::ffi::c_void,
+    serialized_size: unsafe extern "C" fn(*const std::ffi::c_void) -> usize,
+    serialize: unsafe extern "C" fn(*const c_void, *mut u8, usize) -> usize,
+) {
+    user_connection::FFI.set(user_connection::Ffi {
+        migrate_in,
+        migrate_out,
+        serialized_size,
+        serialize,
+    });
+    let crate::LibOS::NetworkLibOS(crate::demikernel::libos::network::NetworkLibOS::Catnip(libos)) = libos else {
+        unimplemented!()
+    };
+    libos
+        .ipv4
+        .tcp
+        .with_mig_peer(|mig_peer| mig_peer.user_connection = user_connection::Peer::Ffi(Default::default()))
 }

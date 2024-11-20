@@ -1,15 +1,28 @@
-pub mod constants;
-pub mod segment;
-mod peer;
 mod active;
+pub mod constants;
+mod peer;
+pub mod segment;
 
-use std::{cell::Cell, io::Write};
+use std::{
+    cell::Cell,
+    io::Write,
+};
 
-pub use peer::{TcpMigPeer, log_print, TcpmigReceiveStatus, MigratedApplicationState, set_user_connection_peer_shared_buf};
+pub use peer::{
+    log_print,
+    set_user_connection_peer_ffi,
+    set_user_connection_peer_shared_buf,
+    MigratedApplicationState,
+    TcpMigPeer,
+    TcpmigReceiveStatus,
+};
 
 use crate::QDesc;
 
-use super::tcp::peer::state::{Deserialize, Serialize};
+use super::tcp::peer::state::{
+    Deserialize,
+    Serialize,
+};
 
 //======================================================================================================================
 // Constants
@@ -24,13 +37,15 @@ pub const ETCPMIG: libc::c_int = 199;
 pub trait ApplicationState {
     fn serialized_size(&self) -> usize;
     fn serialize(&self, buf: &mut [u8]);
-    fn deserialize(buf: &[u8]) -> Self where Self: Sized;
+    fn deserialize(buf: &[u8]) -> Self
+    where
+        Self: Sized;
 }
 
 #[derive(Default)]
 pub struct TcpmigPollState {
     migrated_qd: Cell<Option<QDesc>>,
-    fast_migrate: Cell<bool>
+    fast_migrate: Cell<bool>,
 }
 
 //======================================================================================================================

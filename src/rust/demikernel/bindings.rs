@@ -22,7 +22,6 @@ use crate::{
         QToken,
     },
 };
-use libc::{c_longlong, size_t};
 use ::libc::{
     c_char,
     c_int,
@@ -43,6 +42,10 @@ use ::std::{
         Duration,
         SystemTime,
     },
+};
+use libc::{
+    c_longlong,
+    size_t,
 };
 
 //======================================================================================================================
@@ -499,14 +502,18 @@ pub extern "C" fn demi_wait_any(
     if qts.is_null() {
         panic!("qts is null");
     }
-    
+
     let max_len = isize::MAX as usize / std::mem::size_of::<QToken>();
     if num_qts as usize > max_len {
         panic!("num_qts exceeds the maximum allowable length");
     }
-    
+
     let qts = unsafe {
-        assert_eq!(qts.align_offset(std::mem::align_of::<QToken>()), 0, "qts pointer is not aligned");
+        assert_eq!(
+            qts.align_offset(std::mem::align_of::<QToken>()),
+            0,
+            "qts pointer is not aligned"
+        );
         slice::from_raw_parts(qts as *const QToken, num_qts as usize)
     };
 
@@ -565,13 +572,17 @@ pub extern "C" fn demi_wait_any_nonblocking(
     // Issue try_wait_any operation.
     let ret = do_syscall(|libos| match libos.try_wait_any(&qts) {
         Ok(None) => {
-            unsafe { *num_out = 0; }
+            unsafe {
+                *num_out = 0;
+            }
             0
         },
         Ok(Some(results)) => {
             let max_len = unsafe { *num_out } as usize;
             assert!(results.len() <= max_len, "Buffer not big enough to store all results");
-            unsafe { *num_out = results.len() as c_int; }
+            unsafe {
+                *num_out = results.len() as c_int;
+            }
 
             let qrs_out = unsafe { slice::from_raw_parts_mut(qrs_out, max_len) };
             let ready_offsets = unsafe { slice::from_raw_parts_mut(ready_offsets, max_len) };
@@ -734,7 +745,7 @@ pub extern "C" fn demi_initiate_migration(qd: c_int) -> c_int {
                 e.errno
             },
         });
-    
+
         match ret {
             Ok(ret) => ret,
             Err(e) => e.errno,
@@ -745,6 +756,26 @@ pub extern "C" fn demi_initiate_migration(qd: c_int) -> c_int {
     {
         0
     }
+}
+
+#[cfg(all(feature = "tcp-migration"))]
+#[no_mangle]
+pub unsafe fn set_user_connection_peer_ffi(
+    migrate_in: unsafe extern "C" fn(i32, *const u8, usize),
+    migrate_out: unsafe extern "C" fn(i32) -> *const std::ffi::c_void,
+    serialized_size: unsafe extern "C" fn(*const std::ffi::c_void) -> usize,
+    serialize: unsafe extern "C" fn(*const c_void, *mut u8, usize) -> usize,
+) {
+    do_syscall(|libos| unsafe {
+        crate::inetstack::protocols::tcpmig::set_user_connection_peer_ffi(
+            libos,
+            migrate_in,
+            migrate_out,
+            serialized_size,
+            serialize,
+        )
+    })
+    .expect("syscall success")
 }
 
 //======================================================================================================================
