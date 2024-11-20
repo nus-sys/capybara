@@ -126,6 +126,9 @@ all-libs-demikernel:
 all-shim: all-libs-demikernel
 	$(MAKE) -C shim all BINDIR=$(BINDIR)/shim
 
+shim-tlse: all-libs-demikernel
+	$(MAKE) -C shim tlse BINDIR=$(BINDIR)/shim
+
 clean-libs: clean-shim clean-libs-demikernel
 
 clean-libs-demikernel:

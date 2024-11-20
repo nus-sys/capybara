@@ -14,14 +14,14 @@ export BINDIR ?= $(CURDIR)/bin
 # C
 export CC := gcc
 export CFLAGS := -std=c99 -D_POSIX_C_SOURCE=199309L
-export CFLAGS += -Werror -Wall -Wextra -O3
+export CFLAGS += -O3
 
 #=======================================================================================================================
 # Build Artifacts
 #=======================================================================================================================
 
 # Source Files
-SRC=$(wildcard *.c)
+SRC=main.c
 
 # Executable File
 EXEC=tlse.elf
@@ -30,12 +30,12 @@ EXEC=tlse.elf
 
 all:
 	mkdir -p $(BINDIR)
-	$(CC) $(CFLAGS) $(SRC) -o $(BINDIR)/$(EXEC)
+	$(CC) $(CFLAGS) $(SRC) -o $(BINDIR)/$(EXEC) -DTLS_AMALGAMATION
 
 run:
 	sudo -E \
 	$(ENV) \
-	CONFIG_PATH=$(CONFIG_DIR)/node7_config.yaml \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
 	$(BINDIR)/$(EXEC)
