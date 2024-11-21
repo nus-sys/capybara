@@ -87,7 +87,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
             {
                 case DEMI_OPC_ACCEPT:
                 {
-                    // printf("ACCEPT\n");
+                    printf("ACCEPT\n");
                     // Fill in event.
                     events[nevents].events = evs[ready_offset]->ev.events;
                     events[nevents].data.fd = evs[ready_offset]->sockqd;
@@ -108,7 +108,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
 
                 case DEMI_OPC_POP:
                 {
-                    // printf("POP, ready_offset: %zu, qd: %d\n", ready_offset, evs[ready_offset]->qr.qr_qd);
+                    printf("POP, ready_offset: %zu, qd: %d\n", ready_offset, evs[ready_offset]->qr.qr_qd);
                     // Fill in event.
                     events[nevents].events = evs[ready_offset]->ev.events;
                     events[nevents].data.fd = evs[ready_offset]->sockqd;
@@ -125,7 +125,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
 
                 case DEMI_OPC_PUSH:
                 {
-                    // printf("PUSH\n");
+                    printf("PUSH\n");
                     // TODO: implement.
                     UNIMPLEMETED("parse result of demi_push()");
                 }
@@ -133,7 +133,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
 
                 case DEMI_OPC_FAILED:
                 {
-                    // printf("FAIL\n");
+                    printf("FAIL\n");
                     // Handle timeout: re-issue operation.
                     if (evs[ready_offset]->qr.qr_value.err == ETIMEDOUT)
                     {

@@ -1,9 +1,4 @@
 // https://github.com/onestraw/epoll-example/blob/master/epoll.c
-/*
- * Attention:
- * To keep things simple, do not handle
- * socket/bind/listen/.../epoll_create/epoll_wait API error
- */
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -17,7 +12,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define DEFAULT_PORT 8080
+#define DEFAULT_PORT 10000
 #define MAX_CONN 16
 #define MAX_EVENTS 32
 #define BUF_SIZE 16
@@ -89,17 +84,19 @@ int server_run() {
     perror("epoll_create1");
     return epfd;
   }
-  if ((code = epoll_ctl_add(epfd, listen_sock, EPOLLIN | EPOLLOUT | EPOLLET))) {
+  if ((code = epoll_ctl_add(epfd, listen_sock, EPOLLIN))) {
     return code;
   }
 
   socklen = sizeof(cli_addr);
-  for (;;) {
+  int N = 0;
+  for (; N < 100; N += 1) {
     nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
     if (nfds < 0) {
       perror("epoll_wait");
       return nfds;
     }
+    printf("nfds=%d\n", nfds);
     for (i = 0; i < nfds; i += 1) {
       if (events[i].data.fd == listen_sock) {
         /* handle new connection */
@@ -116,8 +113,7 @@ int server_run() {
           perror("setnonblocking conn_sock");
           return code;
         }
-        if ((code = epoll_ctl_add(epfd, conn_sock,
-                                  EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP))) {
+        if ((code = epoll_ctl_add(epfd, conn_sock, EPOLLIN | EPOLLRDHUP))) {
           return code;
         }
       } else if (events[i].events & EPOLLIN) {
@@ -140,11 +136,12 @@ int server_run() {
           }
         }
       } else {
-        printf("[+] unexpected\n");
+        printf("[+] unexpected fd=%d events=%u\n", events[i].data.fd,
+               events[i].events);
       }
       /* check if the connection is closing */
-      if (events[i].events & (EPOLLRDHUP | EPOLLHUP)) {
-        printf("[+] connection closed\n");
+      if (events[i].events & EPOLLRDHUP) {
+        printf("[+] connection closed fd=%d\n", events[i].data.fd);
         if ((code = epoll_ctl(epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL))) {
           perror("epoll_ctl");
           return code;
@@ -157,6 +154,7 @@ int server_run() {
       }
     }
   }
+  return 0;
 }
 
 #if 0
