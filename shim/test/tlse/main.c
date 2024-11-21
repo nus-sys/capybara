@@ -1,302 +1,202 @@
-#include "./tlse.c"
-
-#include <inttypes.h>
-#include <signal.h>
-#include <stdint.h>
+// https://github.com/onestraw/epoll-example/blob/master/epoll.c
+/*
+ * Attention:
+ * To keep things simple, do not handle
+ * socket/bind/listen/.../epoll_create/epoll_wait API error
+ */
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h> //strlen
+#include <string.h>
+#include <strings.h>
 #include <sys/epoll.h>
-
-#ifdef _WIN32
-#include <winsock2.h>
-#define socklen_t int
-#else
-#include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <unistd.h>
-#endif
 
-static char identity_str[0xFF] = {0};
+#define DEFAULT_PORT 8080
+#define MAX_CONN 16
+#define MAX_EVENTS 32
+#define BUF_SIZE 16
+#define MAX_LINE 256
 
-int read_from_file(const char *fname, void *buf, int max_len) {
-  FILE *f = fopen(fname, "rb");
-  if (f) {
-    int size = fread(buf, 1, max_len - 1, f);
-    if (size > 0)
-      ((unsigned char *)buf)[size] = 0;
-    else
-      ((unsigned char *)buf)[0] = 0;
-    fclose(f);
-    return size;
+int server_run();
+
+int main(int argc, char *argv[]) { return server_run(); }
+
+/*
+ * register events of fd to epfd
+ */
+static int epoll_ctl_add(int epfd, int fd, uint32_t events) {
+  struct epoll_event ev;
+  ev.events = events;
+  ev.data.fd = fd;
+  if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
+    perror("epoll_ctl()\n");
+    return -1;
   }
   return 0;
 }
 
-void load_keys(struct TLSContext *context, char *fname, char *priv_fname) {
-  unsigned char buf[0xFFFF];
-  unsigned char buf2[0xFFFF];
-  int size = read_from_file(fname, buf, 0xFFFF);
-  int size2 = read_from_file(priv_fname, buf2, 0xFFFF);
-  if (size > 0 && context) {
-    tls_load_certificates(context, buf, size);
-    tls_load_private_key(context, buf2, size2);
-    // tls_print_certificate(fname);
-  }
+static void set_sockaddr(struct sockaddr_in *addr) {
+  bzero((char *)addr, sizeof(struct sockaddr_in));
+  addr->sin_family = AF_INET;
+  addr->sin_addr.s_addr = INADDR_ANY;
+  addr->sin_port = htons(DEFAULT_PORT);
 }
 
-int send_pending(int client_sock, struct TLSContext *context) {
-  unsigned int out_buffer_len = 0;
-  const unsigned char *out_buffer =
-      tls_get_write_buffer(context, &out_buffer_len);
-  unsigned int out_buffer_index = 0;
-  int send_res = 0;
-  while ((out_buffer) && (out_buffer_len > 0)) {
-    int res = send(client_sock, (char *)&out_buffer[out_buffer_index],
-                   out_buffer_len, 0);
-    if (res <= 0) {
-      send_res = res;
-      break;
-    }
-    out_buffer_len -= res;
-    out_buffer_index += res;
+static int setnonblocking(int sockfd) {
+  if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL, 0) | O_NONBLOCK) == -1) {
+    return -1;
   }
-  tls_buffer_clear(context);
-  return send_res;
+  return 0;
 }
 
-// verify signature
-int verify_signature(struct TLSContext *context,
-                     struct TLSCertificate **certificate_chain, int len) {
-  if (len) {
-    struct TLSCertificate *cert = certificate_chain[0];
-    if (cert) {
-      snprintf(identity_str, sizeof(identity_str), "%s, %s(%s) (issued by: %s)",
-               cert->subject, cert->entity, cert->location,
-               cert->issuer_entity);
-      fprintf(stderr, "Verified: %s\n", identity_str);
-    }
-  }
-  return no_error;
-}
-
-int main(int argc, char *argv[]) {
-  int socket_desc, client_sock, read_size;
-  socklen_t c;
-  struct sockaddr_in server, client;
-  unsigned char client_message[0xFFFF];
-
-#ifdef _WIN32
-  WSADATA wsaData;
-  WSAStartup(MAKEWORD(2, 2), &wsaData);
-#else
-  signal(SIGPIPE, SIG_IGN);
-#endif
-
-  socket_desc = socket(AF_INET, SOCK_STREAM, 0);
-  if (socket_desc == -1) {
-    printf("Could not create socket");
-    return 0;
-  }
-
-  int port = 2000;
-  if (argc > 1) {
-    port = atoi(argv[1]);
-    if (port <= 0)
-      port = 2000;
-  }
-  server.sin_family = AF_INET;
-  server.sin_addr.s_addr = INADDR_ANY;
-  server.sin_port = htons(port);
-
-  int enable = 1;
-  setsockopt(socket_desc, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
-
-  if (bind(socket_desc, (struct sockaddr *)&server, sizeof(server)) < 0) {
-    perror("bind failed. Error");
-    return 1;
-  }
-
-  listen(socket_desc, 3);
-
-  int epfd = epoll_create1(0);
-  if (epfd == -1) {
-    perror("epoll_create1");
-    exit(EXIT_FAILURE);
-  }
-  struct epoll_event ev;
-  ev.events = EPOLLIN;
-  ev.data.fd = socket_desc;
-  if (epoll_ctl(epfd, EPOLL_CTL_ADD, socket_desc, &ev) == -1) {
-    perror("epoll_ctl: listen_sock");
-    exit(EXIT_FAILURE);
-  }
-
-  c = sizeof(struct sockaddr_in);
-
-  unsigned int size;
-
-  struct TLSContext *server_context = tls_create_context(1, TLS_V12);
-  // load keys
-  load_keys(server_context, "/usr/local/tls/svr.crt", "/usr/local/tls/svr.key");
-
-  char source_buf[0xFFFF];
-  int source_size = sprintf(source_buf, "tlshelloworld.c");
-  fprintf(stderr, "ready\n");
-
-#define MAX_EVENTS 10
+/*
+ * epoll echo server
+ */
+int server_run() {
+  int i, n, epfd, nfds, listen_sock, conn_sock, code;
+  socklen_t socklen;
+  char buf[BUF_SIZE];
+  struct sockaddr_in srv_addr;
+  struct sockaddr_in cli_addr;
   struct epoll_event events[MAX_EVENTS];
 
-  while (1) {
-    identity_str[0] = 0;
+  listen_sock = socket(AF_INET, SOCK_STREAM, 0);
 
-    epoll_wait(epfd, events, MAX_EVENTS, -1);
-
-    client_sock = accept(socket_desc, (struct sockaddr *)&client, &c);
-    if (client_sock < 0) {
-      perror("accept failed");
-      return 1;
-    }
-    struct TLSContext *context = tls_accept(server_context);
-
-    // uncomment next line to request client certificate
-    tls_request_client_certificate(context);
-
-    // make the TLS context serializable (this must be called before
-    // negotiation)
-    tls_make_exportable(context, 1);
-
-    struct epoll_event ev;
-    ev.events = EPOLLIN;
-    ev.data.fd = client_sock;
-    if (epoll_ctl(epfd, EPOLL_CTL_ADD, client_sock, &ev) == -1) {
-      perror("epoll_ctl: conn_sock");
-      exit(EXIT_FAILURE);
-    }
-
-    fprintf(stderr, "Client connected\n");
-    while (1) {
-      int nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
-      if (nfds == -1) {
-        perror("epoll_wait");
-        return EXIT_FAILURE;
-      }
-      for (int n = 0; n < nfds; n += 1) {
-        if (events[n].data.fd != client_sock) {
-          continue;
-        }
-        while ((read_size = recv(client_sock, client_message,
-                                 sizeof(client_message), 0)) > 0) {
-          int consumed = tls_consume_stream(context, client_message, read_size,
-                                            verify_signature);
-          if (consumed < 0) {
-            fprintf(stderr, "Error in stream consume\n");
-            break;
-          }
-        }
-        if (read_size < 0) {
-          perror("cannot recv");
-          return (EXIT_FAILURE);
-        }
-        if (tls_established(context) < 0) {
-          fprintf(stderr, "Error in establishing tls\n");
-          break;
-        }
-        if (tls_established(context) == 0) {
-          continue;
-        }
-        fprintf(stderr, "USED CIPHER: %s\n", tls_cipher_name(context));
-      }
-    }
-
-    send_pending(client_sock, context);
-
-    if (read_size > 0) {
-      fprintf(stderr, "USED CIPHER: %s\n", tls_cipher_name(context));
-      int ref_packet_count = 0;
-      int res;
-      while ((read_size = recv(client_sock, client_message,
-                               sizeof(client_message), 0)) > 0) {
-        if (tls_consume_stream(context, client_message, read_size,
-                               verify_signature) < 0) {
-          fprintf(stderr, "Error in stream consume\n");
-          break;
-        }
-        send_pending(client_sock, context);
-        if (tls_established(context) == 1) {
-          unsigned char read_buffer[0xFFFF];
-          int read_size =
-              tls_read(context, read_buffer, sizeof(read_buffer) - 1);
-          if (read_size > 0) {
-            read_buffer[read_size] = 0;
-            unsigned char export_buffer[0xFFF];
-            // simulate serialization / deserialization to another process
-            char sni[0xFF];
-            sni[0] = 0;
-            if (context->sni)
-              snprintf(sni, 0xFF, "%s", context->sni);
-            /* COOL STUFF => */ int size = tls_export_context(
-                context, export_buffer, sizeof(export_buffer), 1);
-            if (size > 0) {
-              /* COOLER STUFF => */ struct TLSContext *imported_context =
-                  tls_import_context(export_buffer, size);
-              // This is cool because a context can be sent to an existing
-              // process. It will work both with fork and with already existing
-              // worker process.
-              fprintf(stderr, "Imported context (size: %i): %" PRIxPTR "\n",
-                      size, (uintptr_t)imported_context);
-              if (imported_context) {
-                // destroy old context
-                tls_destroy_context(context);
-                // simulate serialization/deserialization of context
-                context = imported_context;
-              }
-            }
-            // ugly inefficient code ... don't write like me
-            char send_buffer[0xF000];
-            char send_buffer_with_header[0xF000];
-            char out_buffer[0xFFF];
-            int tls_version = 2;
-            switch (context->version) {
-            case TLS_V10:
-              tls_version = 0;
-              break;
-            case TLS_V11:
-              tls_version = 1;
-              break;
-            }
-            snprintf(send_buffer, sizeof(send_buffer),
-                     "Hello world from TLS 1.%i (used chipher is: %s), SNI: "
-                     "%s\r\nYour identity is: %s\r\n\r\nCertificate: "
-                     "%s\r\n\r\nBelow is the received header:\r\n%s\r\nAnd the "
-                     "source code for this example: \r\n\r\n%s",
-                     tls_version, tls_cipher_name(context), sni, identity_str,
-                     tls_certificate_to_string(server_context->certificates[0],
-                                               out_buffer, sizeof(out_buffer)),
-                     read_buffer, source_buf);
-            int content_length = strlen(send_buffer);
-            snprintf(send_buffer_with_header, sizeof(send_buffer),
-                     "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: "
-                     "text/plain\r\nContent-length: %i\r\n\r\n%s",
-                     content_length, send_buffer);
-            tls_write(context, (unsigned char const *)send_buffer_with_header,
-                      strlen(send_buffer_with_header));
-            tls_close_notify(context);
-            send_pending(client_sock, context);
-            break;
-          }
-        }
-      }
-    }
-#ifdef __WIN32
-    shutdown(client_sock, SD_BOTH);
-    closesocket(client_sock);
-#else
-    shutdown(client_sock, SHUT_RDWR);
-    close(client_sock);
-#endif
-    tls_destroy_context(context);
+  set_sockaddr(&srv_addr);
+  if ((code =
+           bind(listen_sock, (struct sockaddr *)&srv_addr, sizeof(srv_addr)))) {
+    perror("bind");
+    return code;
   }
-  tls_destroy_context(server_context);
-  return 0;
+
+  if ((code = setnonblocking(listen_sock))) {
+    perror("setnonblocking listen_sock");
+    return code;
+  }
+  if ((code = listen(listen_sock, MAX_CONN))) {
+    perror("bind");
+    return code;
+  }
+
+  epfd = epoll_create1(0);
+  if (epfd < 0) {
+    perror("epoll_create1");
+    return epfd;
+  }
+  if ((code = epoll_ctl_add(epfd, listen_sock, EPOLLIN | EPOLLOUT | EPOLLET))) {
+    return code;
+  }
+
+  socklen = sizeof(cli_addr);
+  for (;;) {
+    nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
+    if (nfds < 0) {
+      perror("epoll_wait");
+      return nfds;
+    }
+    for (i = 0; i < nfds; i += 1) {
+      if (events[i].data.fd == listen_sock) {
+        /* handle new connection */
+        conn_sock = accept(listen_sock, (struct sockaddr *)&cli_addr, &socklen);
+        if (conn_sock < 0) {
+          perror("accept");
+          return conn_sock;
+        }
+
+        inet_ntop(AF_INET, (char *)&(cli_addr.sin_addr), buf, sizeof(cli_addr));
+        printf("[+] connected with %s:%d\n", buf, ntohs(cli_addr.sin_port));
+
+        if ((code = setnonblocking(conn_sock))) {
+          perror("setnonblocking conn_sock");
+          return code;
+        }
+        if ((code = epoll_ctl_add(epfd, conn_sock,
+                                  EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP))) {
+          return code;
+        }
+      } else if (events[i].events & EPOLLIN) {
+        /* handle EPOLLIN event */
+        for (;;) {
+          bzero(buf, sizeof(buf));
+          n = read(events[i].data.fd, buf, sizeof(buf));
+          if (n <= 0) {
+            if (n == 0 || errno == EAGAIN) {
+              break;
+            }
+            perror("read");
+            return n;
+          }
+          printf("[+] data: %s\n", buf);
+          n = write(events[i].data.fd, buf, strlen(buf));
+          if (n < 0 && n != EAGAIN) {
+            perror("write");
+            return n;
+          }
+        }
+      } else {
+        printf("[+] unexpected\n");
+      }
+      /* check if the connection is closing */
+      if (events[i].events & (EPOLLRDHUP | EPOLLHUP)) {
+        printf("[+] connection closed\n");
+        if ((code = epoll_ctl(epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL))) {
+          perror("epoll_ctl");
+          return code;
+        }
+        if ((code = close(events[i].data.fd))) {
+          perror("close");
+          return code;
+        }
+        continue;
+      }
+    }
+  }
 }
+
+#if 0
+/*
+ * test clinet
+ */
+void client_run() {
+  int n;
+  int c;
+  int sockfd;
+  char buf[MAX_LINE];
+  struct sockaddr_in srv_addr;
+
+  sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+  set_sockaddr(&srv_addr);
+
+  if (connect(sockfd, (struct sockaddr *)&srv_addr, sizeof(srv_addr)) < 0) {
+    perror("connect()");
+    exit(1);
+  }
+
+  for (;;) {
+    printf("input: ");
+    fgets(buf, sizeof(buf), stdin);
+    c = strlen(buf) - 1;
+    buf[c] = '\0';
+    write(sockfd, buf, c + 1);
+
+    bzero(buf, sizeof(buf));
+    while (errno != EAGAIN && (n = read(sockfd, buf, sizeof(buf))) > 0) {
+      printf("echo: %s\n", buf);
+      bzero(buf, sizeof(buf));
+
+      c -= n;
+      if (c <= 0) {
+        break;
+      }
+    }
+  }
+  close(sockfd);
+}
+#endif

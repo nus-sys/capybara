@@ -1,7 +1,7 @@
 from socket import *
 
 sock = socket(AF_INET, SOCK_STREAM)
-sock.connect(("10.0.1.8", 10000))
+sock.connect(("10.0.1.7", 8080))
 print(sock)
 while True:
     try:
