@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h> //strlen
+#include <sys/epoll.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -118,6 +119,19 @@ int main(int argc, char *argv[]) {
 
   listen(socket_desc, 3);
 
+  int epfd = epoll_create1(0);
+  if (epfd == -1) {
+    perror("epoll_create1");
+    exit(EXIT_FAILURE);
+  }
+  struct epoll_event ev;
+  ev.events = EPOLLIN;
+  ev.data.fd = socket_desc;
+  if (epoll_ctl(epfd, EPOLL_CTL_ADD, socket_desc, &ev) == -1) {
+    perror("epoll_ctl: listen_sock");
+    exit(EXIT_FAILURE);
+  }
+
   c = sizeof(struct sockaddr_in);
 
   unsigned int size;
@@ -129,8 +143,14 @@ int main(int argc, char *argv[]) {
   char source_buf[0xFFFF];
   int source_size = sprintf(source_buf, "tlshelloworld.c");
   fprintf(stderr, "ready\n");
+
+#define MAX_EVENTS 10
+  struct epoll_event events[MAX_EVENTS];
+
   while (1) {
     identity_str[0] = 0;
+
+    epoll_wait(epfd, events, MAX_EVENTS, -1);
 
     client_sock = accept(socket_desc, (struct sockaddr *)&client, &c);
     if (client_sock < 0) {
@@ -146,12 +166,47 @@ int main(int argc, char *argv[]) {
     // negotiation)
     tls_make_exportable(context, 1);
 
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.fd = client_sock;
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, client_sock, &ev) == -1) {
+      perror("epoll_ctl: conn_sock");
+      exit(EXIT_FAILURE);
+    }
+
     fprintf(stderr, "Client connected\n");
-    while ((read_size = recv(client_sock, client_message,
-                             sizeof(client_message), 0)) > 0) {
-      if (tls_consume_stream(context, client_message, read_size,
-                             verify_signature) > 0)
-        break;
+    while (1) {
+      int nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
+      if (nfds == -1) {
+        perror("epoll_wait");
+        return EXIT_FAILURE;
+      }
+      for (int n = 0; n < nfds; n += 1) {
+        if (events[n].data.fd != client_sock) {
+          continue;
+        }
+        while ((read_size = recv(client_sock, client_message,
+                                 sizeof(client_message), 0)) > 0) {
+          int consumed = tls_consume_stream(context, client_message, read_size,
+                                            verify_signature);
+          if (consumed < 0) {
+            fprintf(stderr, "Error in stream consume\n");
+            break;
+          }
+        }
+        if (read_size < 0) {
+          perror("cannot recv");
+          return (EXIT_FAILURE);
+        }
+        if (tls_established(context) < 0) {
+          fprintf(stderr, "Error in establishing tls\n");
+          break;
+        }
+        if (tls_established(context) == 0) {
+          continue;
+        }
+        fprintf(stderr, "USED CIPHER: %s\n", tls_cipher_name(context));
+      }
     }
 
     send_pending(client_sock, context);
