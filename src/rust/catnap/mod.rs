@@ -77,7 +77,11 @@ use ::std::{
         SocketAddrV4,
     },
     os::unix::prelude::RawFd,
-    time::SystemTime,
+    time::{
+        Duration,
+        Instant,
+        SystemTime,
+    },
 };
 
 #[cfg(feature = "profiler")]
@@ -421,11 +425,11 @@ impl CatnapLibOS {
     } */
 
     /// Waits for any operation to complete.
-    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
+    pub fn wait_any2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize], timeout: Option<Duration>) -> Result<usize, Fail> {
         #[cfg(feature = "profiler")]
         timer!("catnap::wait_any2");
         trace!("wait_any2() {:?}", qts);
-
+        let begin = Instant::now();
         loop {
             // Poll first, so as to give pending operations a chance to complete.
             self.runtime.scheduler.poll();
@@ -435,7 +439,6 @@ impl CatnapLibOS {
                 if completed == qrs.len() {
                     break;
                 }
-
                 // Retrieve associated schedule handle.
                 let mut handle: SchedulerHandle = match self.runtime.scheduler.from_raw_handle(qt.into()) {
                     Some(handle) => handle,
@@ -457,6 +460,12 @@ impl CatnapLibOS {
 
             if completed > 0 {
                 return Ok(completed);
+            }
+
+            if let Some(timeout) = timeout {
+                if timeout <= begin.elapsed() {
+                    return Ok(0);
+                }
             }
         }
     }
