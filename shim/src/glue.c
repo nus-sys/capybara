@@ -5,6 +5,7 @@
 #include <demi/sga.h>
 #include <demi/wait.h>
 
+#include <stdio.h>
 #include <unistd.h>
 #include <assert.h>
 #include <sys/types.h>

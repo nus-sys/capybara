@@ -52,47 +52,10 @@ macro_rules! server_log {
     };
 }
 
-// fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
-//     let h = BuildHasherDefault::<DefaultHasher>::default().hash_one(data);
-//     let data = format!("{h:08x}");
-//     libos.push2(qd, data.as_bytes()).expect("push success")
-// }
-
 #[inline(always)]
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|window| window == needle)
 }
-
-// fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[u8], qts: &mut Vec<QToken>) -> usize {
-//     server_log!("buffer.data_size() {}", buffer.data_size());
-//     // fast path: no previous data in the stream and this request contains exactly one HTTP request
-//     if buffer.data_size() == 0 {
-//         if find_subsequence(data, b"\r\n\r\n").unwrap_or(data.len()) == data.len() - 4 {
-//             server_log!("responding 1");
-//             let resp_qt = respond_to_request(libos, qd, data);
-//             qts.push(resp_qt);
-//             return 1;
-//         }
-//     }
-//     // println!("* CHECK *\n");
-//     // Copy new data into buffer
-//     buffer.get_empty_buf()[..data.len()].copy_from_slice(data);
-//     buffer.push_data(data.len());
-//     server_log!("buffer.data_size() {}", buffer.data_size());
-//     for sent in 0.. {
-//         let dbuf = buffer.get_data();
-//         if let Some(idx) = find_subsequence(dbuf, b"\r\n\r\n") {
-//             server_log!("responding 2");
-//             let resp_qt = respond_to_request(libos, qd, &dbuf[..idx + 4]);
-//             qts.push(resp_qt);
-//             buffer.pull_data(idx + 4);
-//             buffer.try_shrink().unwrap();
-//         } else {
-//             return sent;
-//         }
-//     }
-//     unreachable!()
-// }
 
 fn push_data_and_run(buf: &mut Vec<u8>, mut data: &[u8], mut push: impl FnMut(&[u8])) -> usize {
     let eoi = b"\r\n\r\n";

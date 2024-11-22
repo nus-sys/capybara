@@ -126,9 +126,6 @@ all-libs-demikernel:
 all-shim: all-libs-demikernel
 	$(MAKE) -C shim all BINDIR=$(BINDIR)/shim
 
-shim-tlse: all-libs-demikernel
-	$(MAKE) -C shim tlse BINDIR=$(BINDIR)/shim
-
 clean-libs: clean-shim clean-libs-demikernel
 
 clean-libs-demikernel:
@@ -617,11 +614,6 @@ redis-server-node9-10000:
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
 	./redis-server ../config/node9.conf
-
-tlse:
-	$(MAKE) -C shim run-tlse BINDIR=$(BINDIR)/shim
-	./redis-server ../config/node9_10000.conf
-
 
 redis-server-node9-10001:
 	cd ../cr/src && \
