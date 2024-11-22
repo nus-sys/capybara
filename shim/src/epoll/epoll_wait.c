@@ -160,10 +160,14 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
                             UNIMPLEMETED("add EPOLLOUT event");
                         }
                     }
+                    if (evs[ready_offset]->qr.qr_value.err == 199)
+                    {
+                        evs[ready_offset]->qt = -1;
+                    }
 
                     WARN("operation failed - %s", strerror(evs[ready_offset]->qr.qr_value.err));
                     errno = EINTR;
-                    return -1;
+                    // return -1;
                 }
                 break;
 
