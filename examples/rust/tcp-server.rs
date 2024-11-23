@@ -9,7 +9,10 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
-use demikernel::inetstack::protocols::tcpmig::set_user_connection_peer_shared_buf;
+use demikernel::inetstack::protocols::tcpmig::{
+    set_user_connection_peer_buf,
+    user_connection_entry,
+};
 
 use ::std::{
     env,
@@ -19,19 +22,12 @@ use ::std::{
 };
 use ctrlc;
 use std::{
-    cell::RefCell,
     collections::{
         hash_map::Entry,
         HashMap,
     },
     env::args,
-    hash::{
-        BuildHasher as _,
-        BuildHasherDefault,
-        DefaultHasher,
-    },
     mem::take,
-    rc::Rc,
 };
 
 #[cfg(feature = "profiler")]
@@ -57,12 +53,12 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|window| window == needle)
 }
 
-fn push_data_and_run(buf: &mut Vec<u8>, mut data: &[u8], mut push: impl FnMut(&[u8])) -> usize {
-    let eoi = b"\r\n\r\n";
+fn push_data(buf: &mut Vec<u8>, mut data: &[u8], mut push: impl FnMut(&[u8])) -> usize {
+    let eoi = b"\r\n\r\n"; // end of input i guess
 
     let offset = find_subsequence(data, eoi);
     if buf.is_empty() && offset == Some(data.len() - eoi.len()) {
-        respond(data, push);
+        push(data);
         return 1;
     }
 
@@ -71,12 +67,12 @@ fn push_data_and_run(buf: &mut Vec<u8>, mut data: &[u8], mut push: impl FnMut(&[
         return 0;
     };
     buf.extend(&data[..offset + eoi.len()]);
-    respond(&take(buf), &mut push);
+    push(&take(buf));
 
     let mut count = 1;
     data = &data[offset + eoi.len()..];
     while let Some(offset) = find_subsequence(data, eoi) {
-        respond(&data[..offset + eoi.len()], &mut push);
+        push(&data[..offset + eoi.len()]);
         count += 1;
         data = &data[offset + eoi.len()..];
     }
@@ -84,10 +80,11 @@ fn push_data_and_run(buf: &mut Vec<u8>, mut data: &[u8], mut push: impl FnMut(&[
     count
 }
 
-fn respond(item: &[u8], mut push: impl FnMut(&[u8])) {
-    let h = BuildHasherDefault::<DefaultHasher>::default().hash_one(item);
-    let data = format!("{h:08x}");
-    push(data.as_bytes())
+fn respond(item: &[u8]) -> Vec<u8> {
+    let Ok(s) = std::str::from_utf8(item) else {
+        return b"error".into();
+    };
+    s.to_uppercase().into()
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
@@ -107,8 +104,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     let libos_name: LibOSName = LibOSName::from_env().unwrap();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
-    let user_connection_peer = Rc::new(RefCell::new(Default::default()));
-    set_user_connection_peer_shared_buf(&libos, user_connection_peer.clone());
+    set_user_connection_peer_buf(&libos);
 
     let sockqd: QDesc = libos
         .socket(libc::AF_INET, libc::SOCK_STREAM, 0)
@@ -146,8 +142,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
-                    user_connection_peer.borrow_mut().connections.entry(new_qd).or_default();
-                    server_log!("{:?}", user_connection_peer.borrow().connections);
+                    // user_connection_entry(&libos, new_qd, |entry| entry.or_default());
+                    // server_log!("{:?}", user_connection_peer.borrow().connections);
                     #[cfg(feature = "manual-tcp-migration")]
                     {
                         let replaced = requests_remaining.insert(new_qd, mig_after);
@@ -165,19 +161,15 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Pop(_, recvbuf) => {
                     server_log!("POP complete");
                     server_log!("{:?}", &**recvbuf);
-                    let sent = push_data_and_run(
-                        user_connection_peer
-                            .borrow_mut()
-                            .connections
-                            .get_mut(&qd)
-                            .expect("exist connection state"),
-                        &recvbuf,
-                        |bytes| {
-                            let qt = libos.push2(qd, bytes).expect("can push");
-                            qts.push(qt);
-                        },
-                    );
-                    server_log!("Issued {sent} PUSHes");
+                    let mut inputs = Vec::new();
+                    let count = user_connection_entry(&libos, qd, |entry| {
+                        push_data(entry.or_default(), &recvbuf, |input| inputs.push(input.to_vec()))
+                    });
+                    for input in inputs {
+                        let qt = libos.push2(qd, &respond(&input)).expect("can push");
+                        qts.push(qt)
+                    }
+                    server_log!("Issued {count} PUSHes");
                     #[cfg(feature = "manual-tcp-migration")]
                     if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {
                         let remaining = entry.get_mut();

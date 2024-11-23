@@ -10,8 +10,9 @@ use std::{
 
 pub use peer::{
     log_print,
+    set_user_connection_peer_buf,
     set_user_connection_peer_ffi,
-    set_user_connection_peer_shared_buf,
+    user_connection_entry,
     MigratedApplicationState,
     TcpMigPeer,
     TcpmigReceiveStatus,

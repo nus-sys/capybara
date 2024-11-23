@@ -44,10 +44,11 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
     // fprintf(stderr, "VALID EPFD\n");
     // We intentionally set the timeout to zero, because
     // millisecond timeouts are too coarse-grain for Demikernel.
-    timeout = 0;
+    // timeout = 0;
     // timeout = 2000; // temporarily set 2s for debugging purpose
 
-    long long timeout_us = (timeout == -1) ? -1 : (timeout * 1000);
+    // long long timeout_us = (timeout == -1) ? -1 : (timeout * 1000);
+    long long timeout_us = (timeout == -1) ? -1 : 0;
 
     demi_qresult_t qrs[MAX_EVENTS];
     size_t ready_offsets[MAX_EVENTS];

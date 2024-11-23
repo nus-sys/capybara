@@ -465,16 +465,15 @@ pub fn log_print() {
 
 pub mod user_connection {
     use std::{
-        cell::{
-            Cell,
-            RefCell,
+        cell::Cell,
+        collections::{
+            hash_map::Entry,
+            HashMap,
         },
-        collections::HashMap,
         ffi::c_void,
         io::Write,
         net::SocketAddrV4,
         ptr::null,
-        rc::Rc,
     };
 
     use crate::{
@@ -484,7 +483,7 @@ pub mod user_connection {
 
     pub enum Peer {
         Nop,
-        SharedBuf(Rc<RefCell<SharedBufPeer>>),
+        Buf(BufPeer),
         Ffi(FfiPeer),
     }
 
@@ -498,7 +497,7 @@ pub mod user_connection {
         pub fn migrate_in(&mut self, remote: SocketAddrV4, data: Buffer) {
             match self {
                 Self::Nop => {},
-                Self::SharedBuf(peer) => peer.borrow_mut().migrate_in(remote, data),
+                Self::Buf(peer) => peer.migrate_in(remote, data),
                 Self::Ffi(peer) => peer.migrate_in(remote, data),
             }
         }
@@ -506,7 +505,7 @@ pub mod user_connection {
         pub fn associate_qd(&mut self, remote: SocketAddrV4, qd: QDesc) {
             match self {
                 Self::Nop => {},
-                Self::SharedBuf(peer) => peer.borrow_mut().associate_qd(remote, qd),
+                Self::Buf(peer) => peer.migration_complete(remote, qd),
                 Self::Ffi(peer) => peer.associate_qd(remote, qd),
             }
         }
@@ -514,7 +513,7 @@ pub mod user_connection {
         pub fn migrate_out(&mut self, qd: QDesc) -> MigrateOut {
             match self {
                 Self::Nop => MigrateOut::Nop,
-                Self::SharedBuf(peer) => peer.borrow_mut().migrate_out(qd),
+                Self::Buf(peer) => peer.migrate_out(qd),
                 Self::Ffi(peer) => peer.migrate_out(qd),
             }
         }
@@ -546,22 +545,18 @@ pub mod user_connection {
     }
 
     #[derive(Default)]
-    pub struct SharedBufPeer {
-        pub connections: HashMap<QDesc, Vec<u8>>,
+    pub struct BufPeer {
+        connections: HashMap<QDesc, Vec<u8>>,
         migrating: HashMap<SocketAddrV4, Buffer>,
     }
 
-    impl SharedBufPeer {
-        pub fn new() -> Self {
-            Self::default()
-        }
-
+    impl BufPeer {
         fn migrate_in(&mut self, remote: SocketAddrV4, data: Buffer) {
             let replaced = self.migrating.insert(remote, data);
             assert!(replaced.is_none())
         }
 
-        fn associate_qd(&mut self, remote: SocketAddrV4, qd: QDesc) {
+        fn migration_complete(&mut self, remote: SocketAddrV4, qd: QDesc) {
             let data = self.migrating.remove(&remote).expect("exist migrating data");
             let replaced = self.connections.insert(qd, data.to_vec());
             assert!(replaced.is_none())
@@ -569,6 +564,10 @@ pub mod user_connection {
 
         fn migrate_out(&mut self, qd: QDesc) -> MigrateOut {
             MigrateOut::Buf(self.connections.remove(&qd).expect("exist connection data"))
+        }
+
+        pub fn entry(&mut self, qd: QDesc) -> Entry<'_, QDesc, Vec<u8>> {
+            self.connections.entry(qd)
         }
     }
 
@@ -626,14 +625,26 @@ pub mod user_connection {
     }
 }
 
-pub fn set_user_connection_peer_shared_buf(libos: &crate::LibOS, peer: Rc<RefCell<user_connection::SharedBufPeer>>) {
+pub fn user_connection_entry<T>(libos: &crate::LibOS, qd: QDesc, f: impl FnOnce(Entry<'_, QDesc, Vec<u8>>) -> T) -> T {
+    let crate::LibOS::NetworkLibOS(crate::demikernel::libos::network::NetworkLibOS::Catnip(libos)) = libos else {
+        unimplemented!()
+    };
+    libos.ipv4.tcp.with_mig_peer(|mig_peer| {
+        let user_connection::Peer::Buf(peer) = &mut mig_peer.user_connection else {
+            unimplemented!()
+        };
+        f(peer.entry(qd))
+    })
+}
+
+pub fn set_user_connection_peer_buf(libos: &crate::LibOS) {
     let crate::LibOS::NetworkLibOS(crate::demikernel::libos::network::NetworkLibOS::Catnip(libos)) = libos else {
         unimplemented!()
     };
     libos
         .ipv4
         .tcp
-        .with_mig_peer(|mig_peer| mig_peer.user_connection = user_connection::Peer::SharedBuf(peer))
+        .with_mig_peer(|mig_peer| mig_peer.user_connection = user_connection::Peer::Buf(Default::default()))
 }
 
 pub unsafe fn set_user_connection_peer_ffi(
