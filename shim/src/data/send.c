@@ -14,7 +14,6 @@
 #include <string.h>
 #include <sys/types.h>
 #include <glue.h>
-#include <unistd.h>
 
 static size_t fill_sga(const struct iovec *iov, demi_sgarray_t *sga,
     size_t iovcnt);
