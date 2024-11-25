@@ -64,7 +64,11 @@ use ::std::{
 };
 use std::{
     borrow::BorrowMut,
-    cell::RefCell,
+    cell::{
+        Cell,
+        OnceCell,
+        RefCell,
+    },
     collections::hash_map::Entry,
     ffi::c_void,
     time::Instant,
@@ -179,16 +183,30 @@ impl TcpMigPeer {
         //     return false;
         // }
 
-        static mut FLAG: i32 = 0;
+        // static mut FLAG: i32 = 0;
 
-        unsafe {
-            // if FLAG == 5 {
-            //     FLAG = 0;
-            // }
-            FLAG += 1;
-            eprintln!("FLAG: {}", FLAG);
-            FLAG == 30
+        // unsafe {
+        //     // if FLAG == 5 {
+        //     //     FLAG = 0;
+        //     // }
+        //     FLAG += 1;
+        //     eprintln!("FLAG: {}", FLAG);
+        //     FLAG == 30
+        // }
+        thread_local! {
+            static COUNT: Cell<u32> = Cell::new(0);
+            static MIGRATE_AFTER: OnceCell<Option<u32>> = OnceCell::new();
         }
+        let Some(migrate_after) = MIGRATE_AFTER.with(|migrate_after| {
+            migrate_after
+                .get_or_init(|| std::env::var("MIG_AFTER").ok().map(|n| n.parse().unwrap()))
+                .clone()
+        }) else {
+            return false;
+        };
+        let count = COUNT.get();
+        COUNT.set(count + 1);
+        count == migrate_after
     }
 
     pub fn set_port(&mut self, port: u16) {

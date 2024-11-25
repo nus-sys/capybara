@@ -761,9 +761,9 @@ pub extern "C" fn demi_initiate_migration(qd: c_int) -> c_int {
 #[cfg(all(feature = "tcp-migration"))]
 #[no_mangle]
 pub unsafe fn demi_set_user_connection_peer_ffi(
-    migrate_in: unsafe extern "C" fn(i32, *const u8, usize),
-    migrate_out: unsafe extern "C" fn(i32) -> *const std::ffi::c_void,
-    serialized_size: unsafe extern "C" fn(*const std::ffi::c_void) -> usize,
+    migrate_in: unsafe extern "C" fn(c_int, *const u8, usize),
+    migrate_out: unsafe extern "C" fn(c_int) -> *const c_void,
+    serialized_size: unsafe extern "C" fn(*const c_void) -> usize,
     serialize: unsafe extern "C" fn(*const c_void, *mut u8, usize) -> usize,
 ) {
     println!(
