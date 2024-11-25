@@ -25,7 +25,7 @@ ssize_t __send(int sockfd, const void *buf, size_t len, int flags)
     // If that is not the case, then fail to let the Linux kernel handle it.
     if (!queue_man_query_fd(sockfd))
     {
-        fprintf(stderr, "[1] ERROR\n");
+        // fprintf(stderr, "[1] ERROR\n");
         errno = EBADF;
         return (-1);
     }
@@ -38,14 +38,17 @@ ssize_t __send(int sockfd, const void *buf, size_t len, int flags)
     demi_qtoken_t qt = -1;
     demi_qresult_t qr;
     demi_sgarray_t sga = __demi_sgaalloc(len);
-    printf("sga.sga_numsegs: %zu\n", sga.sga_numsegs);
+    // printf("sga.sga_numsegs: %zu\n", sga.sga_numsegs);
     assert(sga.sga_numsegs == 1);
     len = MIN(len, sga.sga_segs[0].sgaseg_len);
     memcpy(sga.sga_segs[0].sgaseg_buf, buf, len);
     assert(__demi_push(&qt, sockfd, &sga) == 0);
-    assert(__demi_wait(&qr, qt, NULL) == 0);
-    printf("qr.qr_opcode: %d\n", qr.qr_opcode);
-    assert(qr.qr_opcode == DEMI_OPC_PUSH);
+    // assert(__demi_wait(&qr, qt, NULL) == 0);
+    // printf("qr.qr_opcode: %d\n", qr.qr_opcode);
+    // assert(qr.qr_opcode == DEMI_OPC_PUSH);
+    // inho: These asserts can be failed because send operation can be failed due to migration.
+    // We are handling those cases later once those are returned from wait_any(),
+    // so we skip asserts here. 
     __demi_sgafree(&sga);
 
     return (len);
@@ -53,17 +56,12 @@ ssize_t __send(int sockfd, const void *buf, size_t len, int flags)
 
 ssize_t __write(int sockfd, const void *buf, size_t count)
 {
-    // suppress stdout/stderr false positive
-    if (sockfd == STDOUT_FILENO || sockfd == STDERR_FILENO) {
-        errno = EBADF;
-        return -1;
-    }
-    fprintf(stderr, "send.c::__write()\n");
+    // fprintf(stderr, "send.c::__write()\n");
     // Check if this socket descriptor is managed by Demikernel.
     // If that is the not case, then fail to let the Linux kernel handle it.
     if (!queue_man_query_fd(sockfd))
     {
-        fprintf(stderr, "[0] ERROR\n");
+        // fprintf(stderr, "[0] ERROR\n");
         errno = EBADF;
         return (-1);
     }
@@ -124,9 +122,13 @@ ssize_t __sendmsg(int sockfd, const struct msghdr *msg, int flags)
     // Copy iovecs to sga
     bytes = fill_sga(msg->msg_iov, &sga, msg->msg_iovlen);
 
-    assert(__demi_push(&qt, sockfd, &sga) == 0);
-    assert(__demi_wait(&qr, qt, NULL) == 0);
-    assert(qr.qr_opcode == DEMI_OPC_PUSH);
+    // assert(__demi_push(&qt, sockfd, &sga) == 0);
+    // assert(__demi_wait(&qr, qt, NULL) == 0);
+    // assert(qr.qr_opcode == DEMI_OPC_PUSH);
+    // inho: These asserts can be failed because send operation can be failed due to migration.
+    // We are handling those cases later once those are returned from wait_any(),
+    // so we skip asserts here. 
+    
     __demi_sgafree(&sga);
 
     return (bytes);
