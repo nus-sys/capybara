@@ -56,6 +56,10 @@ void make_requests(int connection_id, const std::string &host, const std::string
             return;
         }
 
+        // Add a 10ms delay before sending the first request
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+
         while (!stop_benchmark.load()) {
             auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -69,6 +73,7 @@ void make_requests(int connection_id, const std::string &host, const std::string
     } catch (const std::exception &e) {
         total_failures++;
         if (!backup_host.empty()) {
+            std::cerr << "Connection " << connection_id << " - Switching to backup server " << backup_host << ":" << backup_port << "\n";
             make_requests(connection_id, backup_host, backup_port, "", "", redis_key, timestamps);
         }
     }
