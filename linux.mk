@@ -9,6 +9,7 @@ export PREFIX ?= $(HOME)
 export INSTALL_PREFIX ?= $(HOME)
 export PKG_CONFIG_PATH ?= $(shell find $(PREFIX)/lib/ -name '*pkgconfig*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
 export LD_LIBRARY_PATH = $(CURDIR)/lib:$(shell find $(PREFIX)/lib/ -name '*x86_64-linux-gnu*' -type d 2> /dev/null | xargs | sed -e 's/\s/:/g')
+export RUSTFLAGS = -Awarnings
 
 #=======================================================================================================================
 # Build Configuration
@@ -119,7 +120,7 @@ all-libs: all-shim all-libs-demikernel
 all-libs-demikernel:
 	@echo "LD_LIBRARY_PATH: $(LD_LIBRARY_PATH)"
 	@echo "PKG_CONFIG_PATH: $(PKG_CONFIG_PATH)"
-	RUSTFLAGS=-Awarnings $(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS)
+	$(CARGO) build --lib $(CARGO_FEATURES) $(CARGO_FLAGS)
 	cp -f $(BUILD_DIR)/$(DEMIKERNEL_LIB) $(LIBDIR)/$(DEMIKERNEL_LIB)
 
 all-shim: all-libs-demikernel
@@ -212,6 +213,9 @@ check-fmt-c:
 # Check code style formatting for Rust.
 check-fmt-rust:
 	$(CARGO) fmt --all -- --check
+
+clippy:
+	$(CARGO) clippy $(CARGO_FEATURES) $(CARGO_FLAGS)
 
 #=======================================================================================================================
 # Clean
@@ -609,8 +613,7 @@ redis-server-node9-10000:
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
-	./redis-server ../config/node9_10000.conf
-
+	./redis-server ../config/node9.conf
 
 redis-server-node9-10001:
 	cd ../cr/src && \

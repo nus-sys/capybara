@@ -9,10 +9,9 @@ use ::demikernel::{
     QDesc,
     QToken,
 };
-use demikernel::inetstack::protocols::tcp::peer::{
-    enable_user_connection,
-    set_user_connection_context,
-    UserConnectionContext,
+use demikernel::inetstack::protocols::tcpmig::{
+    set_user_connection_peer_buf,
+    user_connection_entry,
 };
 
 use ::std::{
@@ -23,19 +22,12 @@ use ::std::{
 };
 use ctrlc;
 use std::{
-    cell::RefCell,
     collections::{
         hash_map::Entry,
         HashMap,
     },
     env::args,
-    hash::{
-        BuildHasher as _,
-        BuildHasherDefault,
-        DefaultHasher,
-    },
     mem::take,
-    rc::Rc,
 };
 
 #[cfg(feature = "profiler")]
@@ -56,54 +48,17 @@ macro_rules! server_log {
     };
 }
 
-// fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
-//     let h = BuildHasherDefault::<DefaultHasher>::default().hash_one(data);
-//     let data = format!("{h:08x}");
-//     libos.push2(qd, data.as_bytes()).expect("push success")
-// }
-
 #[inline(always)]
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|window| window == needle)
 }
 
-// fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[u8], qts: &mut Vec<QToken>) -> usize {
-//     server_log!("buffer.data_size() {}", buffer.data_size());
-//     // fast path: no previous data in the stream and this request contains exactly one HTTP request
-//     if buffer.data_size() == 0 {
-//         if find_subsequence(data, b"\r\n\r\n").unwrap_or(data.len()) == data.len() - 4 {
-//             server_log!("responding 1");
-//             let resp_qt = respond_to_request(libos, qd, data);
-//             qts.push(resp_qt);
-//             return 1;
-//         }
-//     }
-//     // println!("* CHECK *\n");
-//     // Copy new data into buffer
-//     buffer.get_empty_buf()[..data.len()].copy_from_slice(data);
-//     buffer.push_data(data.len());
-//     server_log!("buffer.data_size() {}", buffer.data_size());
-//     for sent in 0.. {
-//         let dbuf = buffer.get_data();
-//         if let Some(idx) = find_subsequence(dbuf, b"\r\n\r\n") {
-//             server_log!("responding 2");
-//             let resp_qt = respond_to_request(libos, qd, &dbuf[..idx + 4]);
-//             qts.push(resp_qt);
-//             buffer.pull_data(idx + 4);
-//             buffer.try_shrink().unwrap();
-//         } else {
-//             return sent;
-//         }
-//     }
-//     unreachable!()
-// }
-
-fn push_data_and_run(buf: &mut Vec<u8>, mut data: &[u8], mut push: impl FnMut(&[u8])) -> usize {
-    let eoi = b"\r\n\r\n";
+fn push_data(buf: &mut Vec<u8>, mut data: &[u8], mut push: impl FnMut(&[u8])) -> usize {
+    let eoi = b"\r\n\r\n"; // end of input i guess
 
     let offset = find_subsequence(data, eoi);
     if buf.is_empty() && offset == Some(data.len() - eoi.len()) {
-        respond(data, push);
+        push(data);
         return 1;
     }
 
@@ -112,12 +67,12 @@ fn push_data_and_run(buf: &mut Vec<u8>, mut data: &[u8], mut push: impl FnMut(&[
         return 0;
     };
     buf.extend(&data[..offset + eoi.len()]);
-    respond(&take(buf), &mut push);
+    push(&take(buf));
 
     let mut count = 1;
     data = &data[offset + eoi.len()..];
     while let Some(offset) = find_subsequence(data, eoi) {
-        respond(&data[..offset + eoi.len()], &mut push);
+        push(&data[..offset + eoi.len()]);
         count += 1;
         data = &data[offset + eoi.len()..];
     }
@@ -125,10 +80,11 @@ fn push_data_and_run(buf: &mut Vec<u8>, mut data: &[u8], mut push: impl FnMut(&[
     count
 }
 
-fn respond(item: &[u8], mut push: impl FnMut(&[u8])) {
-    let h = BuildHasherDefault::<DefaultHasher>::default().hash_one(item);
-    let data = format!("{h:08x}");
-    push(data.as_bytes())
+fn respond(item: &[u8]) -> Vec<u8> {
+    let Ok(s) = std::str::from_utf8(item) else {
+        return b"error".into();
+    };
+    s.to_uppercase().into()
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
@@ -148,7 +104,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     let libos_name: LibOSName = LibOSName::from_env().unwrap();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
-    enable_user_connection(&libos);
+    set_user_connection_peer_buf(&libos);
 
     let sockqd: QDesc = libos
         .socket(libc::AF_INET, libc::SOCK_STREAM, 0)
@@ -158,7 +114,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
     libos.listen(sockqd, 300).expect("listen socket");
 
     let mut qts: Vec<QToken> = Vec::new();
-    let mut connstate = HashMap::new();
 
     qts.push(libos.accept(sockqd).expect("accept"));
 
@@ -182,37 +137,13 @@ fn server(local: SocketAddrV4) -> Result<()> {
             let (index, qd) = (*index, *qd);
             qts.swap_remove(index);
 
-            struct Context(RefCell<Vec<u8>>);
-            impl UserConnectionContext for Context {
-                fn migrate_in(&self, buffer: demikernel::runtime::memory::Buffer) {
-                    server_log!("migrate in");
-                    let mut buf = self.0.borrow_mut();
-                    assert!(buf.is_empty());
-                    buf.extend_from_slice(&buffer);
-                }
-
-                fn migrate_out(&self) {
-                    server_log!("migrate out")
-                }
-
-                fn buf_size(&self) -> usize {
-                    self.0.borrow().len()
-                }
-
-                fn write(&self, buf: &mut [u8]) {
-                    buf.copy_from_slice(&self.0.borrow());
-                }
-            }
-
             match result {
                 OperationResult::Accept(new_qd) => {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
-                    let context = Rc::new(Context(RefCell::new(Vec::new())));
-                    set_user_connection_context(&libos, new_qd, context.clone());
-
-                    connstate.insert(new_qd, context);
+                    // user_connection_entry(&libos, new_qd, |entry| entry.or_default());
+                    // server_log!("{:?}", user_connection_peer.borrow().connections);
                     #[cfg(feature = "manual-tcp-migration")]
                     {
                         let replaced = requests_remaining.insert(new_qd, mig_after);
@@ -229,12 +160,16 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                 OperationResult::Pop(_, recvbuf) => {
                     server_log!("POP complete");
-                    let state = connstate.get(&qd).unwrap();
-                    let sent = push_data_and_run(&mut state.0.borrow_mut(), &recvbuf, |bytes| {
-                        let qt = libos.push2(qd, bytes).expect("can push");
-                        qts.push(qt);
+                    server_log!("{:?}", &**recvbuf);
+                    let mut inputs = Vec::new();
+                    let count = user_connection_entry(&libos, qd, |entry| {
+                        push_data(entry.or_default(), &recvbuf, |input| inputs.push(input.to_vec()))
                     });
-                    server_log!("Issued {sent} PUSHes");
+                    for input in inputs {
+                        let qt = libos.push2(qd, &respond(&input)).expect("can push");
+                        qts.push(qt)
+                    }
+                    server_log!("Issued {count} PUSHes");
                     #[cfg(feature = "manual-tcp-migration")]
                     if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {
                         let remaining = entry.get_mut();
@@ -245,7 +180,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                             server_log!("Migrating after {} more requests, Issued POP", remaining);
                         } else {
                             server_log!("Should be migrated (no POP issued)");
-                            server_log!("BUFFER DATA SIZE = {}", state.0.borrow().len());
+                            // server_log!("BUFFER DATA SIZE = {}", state.0.borrow().len());
                             libos.initiate_migration(qd).unwrap();
                             entry.remove();
                         }

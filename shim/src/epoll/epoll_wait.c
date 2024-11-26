@@ -44,7 +44,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
     // fprintf(stderr, "VALID EPFD\n");
     // We intentionally set the timeout to zero, because
     // millisecond timeouts are too coarse-grain for Demikernel.
-    timeout = 0;
+    // timeout = 0;
     // timeout = 2000; // temporarily set 2s for debugging purpose
 
     long long timeout_us = (timeout == -1) ? -1 : (timeout * 1000);
@@ -77,6 +77,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
         //         printf("ready_offsets[%zu]: %zu\n", i, ready_offset);
         //     }
         // }
+        nevents = 0;
         for (size_t i = 0; i < qrs_count; i++)
         {
             size_t ready_offset = ready_offsets[i];

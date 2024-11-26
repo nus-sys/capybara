@@ -205,75 +205,10 @@ pub struct Inner {
     migration_directory: HashMap<SocketAddrV4, SocketAddrV4>,
     #[cfg(feature = "capybara-switch")]
     num_backends: usize,
-
-    #[cfg(feature = "tcp-migration")]
-    user_connection: Option<UserConnection>,
 }
 
 pub struct TcpPeer {
     pub(super) inner: Rc<RefCell<Inner>>,
-}
-
-pub trait UserConnectionContext {
-    // the pair of _state update_ methods
-    // the trait is designed to work with `Rc<dyn _>` so the methods take `&self`, but they are
-    // expected to generate side effect and not reentrant
-
-    // be called inside `set_user_connection_context(..)` call, indicating the accepting connection
-    // is an incoming migration
-    // to ensure this method is called before any IO on the connection,
-    // `set_user_connection_context(..)` should be called immediately after accepting
-    fn migrate_in(&self, data: Buffer);
-    // be called when the connection has been migrated out, and no more data will be received from
-    // the connection (no more should be written to the connection as well)
-    // it is *not* called inside `initiate_migration_*(..)` call
-    fn migrate_out(&self);
-
-    // the following methods are expected to be pure (although they are probably only called once
-    // per migration anyway)
-    fn buf_size(&self) -> usize;
-    fn write(&self, buf: &mut [u8]);
-}
-
-#[cfg(feature = "tcp-migration")]
-struct UserConnection {
-    // interfaces for capybara to user defined connections
-    // inserted when calling `set_user_connection_context(..)` on accepted QDesc
-    // removed when calling `initiate_migration_*(..)` interfaces or when the connection is closed
-    // it is application's responsibility to call `set_user_connection_context(..)` on every
-    // accepted connections (as long as `enable_user_connection()` is called), or the migration
-    // behavior will be undefined
-    contexts: HashMap<QDesc, Rc<dyn UserConnectionContext>>,
-    // incoming migration user data, temporarily hold before application calls
-    // `set_user_connection_context(..)`
-    pending_migrate_in: HashMap<SocketAddrV4, Buffer>,
-}
-
-pub fn enable_user_connection(libos: &crate::LibOS) {
-    match libos {
-        crate::LibOS::NetworkLibOS(libos) => match libos {
-            crate::demikernel::libos::network::NetworkLibOS::Catnip(libos) => {
-                #[cfg(feature = "tcp-migration")]
-                libos.ipv4.tcp.inner.borrow_mut().enable_user_connection()
-            },
-            _ => unimplemented!(),
-        },
-    }
-}
-
-pub fn set_user_connection_context(libos: &crate::LibOS, qd: QDesc, context: Rc<dyn UserConnectionContext>) {
-    #[cfg(feature = "tcp-migration")]
-    match libos {
-        crate::LibOS::NetworkLibOS(libos) => match libos {
-            crate::demikernel::libos::network::NetworkLibOS::Catnip(libos) => libos
-                .ipv4
-                .tcp
-                .inner
-                .borrow_mut()
-                .set_user_connection_context(qd, context),
-            _ => unimplemented!(),
-        },
-    }
 }
 
 //==============================================================================
@@ -486,7 +421,7 @@ impl TcpPeer {
         #[cfg(feature = "tcp-migration")]
         {
             // Process buffered packets.
-            if let Some(buffered) = inner.tcpmig.close_active_migration(remote) {
+            if let Some(buffered) = inner.tcpmig.close_active_migration(remote, new_qd) {
                 capy_time_log!("CONN_ACCEPTED,({})", remote);
                 for (mut hdr, data) in buffered {
                     capy_log_mig!("start receiving target-buffered packets into the CB");
@@ -709,18 +644,18 @@ impl TcpPeer {
         }
     }
 
-    pub fn endpoints(&self, fd: QDesc) -> Result<(SocketAddrV4, SocketAddrV4), Fail> {
-        let inner = self.inner.borrow();
-        let key = match inner.sockets.get(&fd) {
-            Some(Socket::Established { local, remote }) => (*local, *remote),
-            Some(..) => return Err(Fail::new(ENOTCONN, "connection not established")),
-            None => return Err(Fail::new(EBADF, "bad queue descriptor")),
-        };
-        match inner.established.get(&key) {
-            Some(ref s) => Ok(s.endpoints()),
-            None => Err(Fail::new(ENOTCONN, "connection not established")),
-        }
-    }
+    // pub fn endpoints(&self, fd: QDesc) -> Result<(SocketAddrV4, SocketAddrV4), Fail> {
+    //     let inner = self.inner.borrow();
+    //     let key = match inner.sockets.get(&fd) {
+    //         Some(Socket::Established { local, remote }) => (*local, *remote),
+    //         Some(..) => return Err(Fail::new(ENOTCONN, "connection not established")),
+    //         None => return Err(Fail::new(EBADF, "bad queue descriptor")),
+    //     };
+    //     match inner.established.get(&key) {
+    //         Some(ref s) => Ok(s.endpoints()),
+    //         None => Err(Fail::new(ENOTCONN, "connection not established")),
+    //     }
+    // }
 }
 
 impl Inner {
@@ -810,19 +745,7 @@ impl Inner {
                 .unwrap_or_else(|_| String::from("1"))
                 .parse::<usize>()
                 .expect("Invalid NUM_BACKENDS value"),
-
-            #[cfg(feature = "tcp-migration")]
-            user_connection: None,
         }
-    }
-
-    #[cfg(feature = "tcp-migration")]
-    pub fn enable_user_connection(&mut self) {
-        let replaced = self.user_connection.replace(UserConnection {
-            contexts: Default::default(),
-            pending_migrate_in: Default::default(),
-        });
-        assert!(replaced.is_none())
     }
 
     #[cfg(not(feature = "capybara-switch"))]
@@ -1152,9 +1075,10 @@ impl TcpPeer {
     }
 
     pub fn migrate_out_and_send(&mut self, qd: QDesc) {
-        let mut inner = self.inner.borrow_mut();
-        let state = inner.migrate_out_connection(qd).unwrap();
-        inner.tcpmig.send_tcp_state(state);
+        self.inner
+            .borrow_mut()
+            .migrate_out_and_send(qd)
+            .expect("can migrate out and send")
     }
 
     pub fn initiate_migration_by_addr(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
@@ -1220,6 +1144,10 @@ impl TcpPeer {
         };
         inner.tcpmig.get_migrated_application_state(remote)
     }
+
+    pub fn with_mig_peer<T>(&self, f: impl FnOnce(&mut TcpMigPeer) -> T) -> T {
+        f(&mut self.inner.borrow_mut().tcpmig)
+    }
 }
 
 #[cfg(feature = "tcp-migration")]
@@ -1229,22 +1157,6 @@ pub struct TcpMigContext {
 
 #[cfg(feature = "tcp-migration")]
 impl Inner {
-    pub fn set_user_connection_context(&mut self, qd: QDesc, context: Rc<dyn UserConnectionContext>) {
-        let Some(user_connection) = &mut self.user_connection else {
-            unimplemented!("user connection is not enabled")
-        };
-        let remote = if let Socket::Established { remote, .. } = &self.sockets[&qd] {
-            remote
-        } else {
-            unimplemented!("connection is not established")
-        };
-        if let Some(user_data) = user_connection.pending_migrate_in.remove(remote) {
-            context.migrate_in(user_data)
-        }
-        let replaced = user_connection.contexts.insert(qd, context);
-        assert!(replaced.is_none())
-    }
-
     fn receive_tcpmig(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         use super::super::tcpmig::TcpmigReceiveStatus;
 
@@ -1280,17 +1192,22 @@ impl Inner {
                 // If fast migration is allowed, migrate out the connection immediately.
                 // if true { /* ACTIVATE THIS FOR MIG_DELAY EVAL */
                 // if self.tcpmig_poll_state.is_fast_migrate_enabled() { /* COMMENT OUT THIS FOR MIG_DELAY EVAL */
-                let state = self.migrate_out_connection(qd)?;
-                self.tcpmig.send_tcp_state(state);
+                self.migrate_out_and_send(qd)?;
                 // }
             },
-            TcpmigReceiveStatus::StateReceived(state, buf) => {
-                self.migrate_in_connection(state, buf)?;
+            TcpmigReceiveStatus::StateReceived(state, ..) => {
+                self.migrate_in_connection(state)?;
             },
             TcpmigReceiveStatus::HeartbeatResponse(global_queue_len_sum) => {
                 self.recv_queue_stats.update_threshold(global_queue_len_sum);
             },
         };
+        Ok(())
+    }
+
+    fn migrate_out_and_send(&mut self, qd: QDesc) -> Result<(), Fail> {
+        let state = self.migrate_out_connection(qd)?;
+        self.tcpmig.migrate_out_connection_state(qd, state);
         Ok(())
     }
 
@@ -1336,17 +1253,10 @@ impl Inner {
         // Fixed it by waking the scheduler task right before migrating the connection.
         cb.wake_scheduler_task();
 
-        let user_conn = if let Some(user_connection) = &mut self.user_connection {
-            let context = user_connection.contexts.remove(&qd).unwrap();
-            context.migrate_out();
-            Some(context)
-        } else {
-            None
-        };
-        Ok(TcpState::new(cb.as_ref().into(), user_conn))
+        Ok(TcpState::new(cb.as_ref().into()))
     }
 
-    fn migrate_in_connection(&mut self, state: TcpState, user_data: Buffer) -> Result<(), Fail> {
+    fn migrate_in_connection(&mut self, state: TcpState) -> Result<(), Fail> {
         capy_profile!("PROF_IMPORT");
         // TODO: Handle user data from the state.
 
@@ -1361,7 +1271,6 @@ impl Inner {
             self.tcp_config.get_ack_delay_timeout(),
             state.cb,
         );
-        let remote = cb.get_remote();
 
         // Receive all target-buffered packets into the CB.
         /* for (mut hdr, data) in buffered {
@@ -1373,13 +1282,6 @@ impl Inner {
             Some(passive) => passive.push_migrated_in(cb),
             None => return Err(Fail::new(libc::EBADF, "socket not listening")),
         };
-
-        if let Some(user_connection) = &mut self.user_connection {
-            let replaced = user_connection.pending_migrate_in.insert(remote, user_data);
-            assert!(replaced.is_none())
-        } else {
-            assert!(user_data.is_empty())
-        }
 
         Ok(())
     }
@@ -1479,12 +1381,6 @@ pub mod state {
     pub struct TcpState {
         pub cb: ControlBlockState,
         pub app_state: MigratedApplicationState,
-        // None for a. disabled user connection b. incoming migrated connection whose user
-        // connection is not specified yet
-        // this results in a bit asymmetry between serialize and deserialize: deserialization does
-        // not cover the user data, which is preserved and pass to user connection context as is
-        // hope not too confusing
-        pub user_conn: Option<Rc<dyn super::UserConnectionContext>>,
     }
 
     impl Serialize for TcpState {
@@ -1494,11 +1390,10 @@ pub mod state {
     }
 
     impl TcpState {
-        pub fn new(cb: ControlBlockState, user_conn: Option<Rc<dyn super::UserConnectionContext>>) -> Self {
+        pub fn new(cb: ControlBlockState) -> Self {
             Self {
                 cb,
                 app_state: MigratedApplicationState::None,
-                user_conn,
             }
         }
 
@@ -1523,55 +1418,60 @@ pub mod state {
             let mut buf = Buffer::Heap(DataBuffer::new(self.serialized_size()).unwrap());
             let remaining = self.cb.serialize_into(&mut buf);
 
-            // match &self.app_state {
-            //     MigratedApplicationState::Registered(state) if state.borrow().serialized_size() == 0 => {
-            //         remaining[0] = 0;
-            //     },
-            //     MigratedApplicationState::Registered(state) => {
-            //         remaining[0] = 1;
-            //         state.borrow().serialize(&mut remaining[1..]);
-            //     },
-            //     MigratedApplicationState::None | MigratedApplicationState::MigratedIn(..) => {
-            //         remaining[0] = 0;
-            //     },
-            // }
-            assert!(matches!(self.app_state, MigratedApplicationState::None));
-            if let Some(user_conn) = &self.user_conn {
-                user_conn.write(remaining);
+            match &self.app_state {
+                MigratedApplicationState::Registered(state) if state.borrow().serialized_size() == 0 => {
+                    remaining[0] = 0;
+                },
+                MigratedApplicationState::Registered(state) => {
+                    remaining[0] = 1;
+                    state.borrow().serialize(&mut remaining[1..]);
+                },
+                MigratedApplicationState::None | MigratedApplicationState::MigratedIn(..) => {
+                    remaining[0] = 0;
+                },
             }
 
             buf
         }
 
-        pub fn deserialize(buf: &mut Buffer) -> Self {
+        pub fn deserialize(mut buf: Buffer) -> Self {
             // capy_profile!("PROF_DESERIALIZE");
-            let cb = ControlBlockState::deserialize_from(buf);
-            // let app_state = if buf[0] == 0 {
-            //     MigratedApplicationState::None
-            // } else {
-            //     buf.adjust(1);
-            //     MigratedApplicationState::MigratedIn(buf)
-            // };
-            let app_state = MigratedApplicationState::None;
-            Self {
-                cb,
-                app_state,
-                user_conn: None,
-            }
+            let cb = ControlBlockState::deserialize_from(&mut buf);
+            let app_state = if buf[0] == 0 {
+                MigratedApplicationState::None
+            } else {
+                buf.adjust(1);
+                MigratedApplicationState::MigratedIn(buf)
+            };
+            Self { cb, app_state }
         }
 
         pub fn add_app_state(&mut self, app_state: Rc<RefCell<dyn ApplicationState>>) {
             self.app_state = MigratedApplicationState::Registered(app_state);
         }
 
-        fn serialized_size(&self) -> usize {
+        pub fn serialized_size(&self) -> usize {
             self.cb.serialized_size()
                 // + 1
-                // + match &self.app_state {
-                //     MigratedApplicationState::Registered(state) => state.borrow().serialized_size(),
-                //     MigratedApplicationState::None | MigratedApplicationState::MigratedIn(..) => 0,
-                // }
-                + self.user_conn.as_ref().map(|user_conn| user_conn.buf_size()).unwrap_or_default()
+                + match &self.app_state {
+                    MigratedApplicationState::Registered(state) => state.borrow().serialized_size(),
+                    MigratedApplicationState::None | MigratedApplicationState::MigratedIn(..) => 0,
+                }
+        }
+
+        pub fn serialize_into<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
+            let buf = self.cb.serialize_into(buf);
+            // omit obsolete app_state
+            buf
+        }
+
+        pub fn deserialize_from(buf: &mut Buffer) -> Self {
+            let cb = ControlBlockState::deserialize_from(buf);
+            // omit obsolete app_state
+            Self {
+                cb,
+                app_state: MigratedApplicationState::None,
+            }
         }
     }
 
@@ -1625,7 +1525,6 @@ pub mod state {
             TcpState {
                 cb: super::super::super::established::test_get_control_block_state(),
                 app_state: MigratedApplicationState::None,
-                user_conn: None,
             }
         }
 
@@ -1705,10 +1604,10 @@ pub mod state {
             };
             assert_eq!(count, i);
 
-            let (hdr, mut buf) = segment.unwrap();
+            let (hdr, buf) = segment.unwrap();
             let state = {
                 // capy_profile!("deserialise");
-                TcpState::deserialize(&mut buf)
+                TcpState::deserialize(buf)
             };
             assert_eq!(state.cb, get_state().cb);
 

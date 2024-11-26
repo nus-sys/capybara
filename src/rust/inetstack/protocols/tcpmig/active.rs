@@ -6,6 +6,7 @@
 //==============================================================================
 
 use super::{
+    peer::user_connection::MigrateOut,
     segment::{
         MigrationStage,
         TcpMigDefragmenter,
@@ -209,7 +210,8 @@ impl ActiveMigration {
                         };
                         capy_time_log!("RECV_STATE,({})", self.client);
 
-                        let mut state = TcpState::deserialize(&mut buf);
+                        // let mut state = TcpState::deserialize(buf);
+                        let mut state = TcpState::deserialize_from(&mut buf);
 
                         // Overwrite local address.
                         state.set_local(SocketAddrV4::new(self.local_ipv4_addr, self.self_udp_port));
@@ -232,7 +234,7 @@ impl ActiveMigration {
                         // Take the buffered packets.
                         // let pkts = std::mem::take(&mut self.recv_queue);
 
-                        return Ok(TcpmigReceiveStatus::StateReceived(state, buf));
+                        return Ok(TcpmigReceiveStatus::StateReceived(state, Some(buf)));
                     },
                     _ => return Err(Fail::new(libc::EBADMSG, "expected CONNECTION_STATE")),
                 }
@@ -286,7 +288,7 @@ impl ActiveMigration {
         self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::empty()));
     }
 
-    pub fn send_connection_state(&mut self, state: TcpState) {
+    pub fn send_connection_state(&mut self, state: TcpState, user_data: MigrateOut) {
         // capy_time_log!("SERIALIZE_STATE,({})", self.client);
         assert_eq!(self.last_sent_stage, MigrationStage::PrepareMigration);
 
@@ -300,7 +302,12 @@ impl ActiveMigration {
         // print the length of recv_queue here
         capy_log_mig!("Length of recv_queue: {}", state.recv_queue_len());
 
-        let buf = state.serialize();
+        // let buf = state.serialize();
+        let buf_size = state.serialized_size() + user_data.serialized_size();
+        let mut buf = Buffer::Heap(DataBuffer::new(buf_size).expect("can allocate buffer"));
+        let remaining_buf = state.serialize_into(&mut buf);
+        user_data.serialize(remaining_buf);
+
         let tcpmig_hdr = TcpMigHeader::new(
             self.origin,
             self.client,

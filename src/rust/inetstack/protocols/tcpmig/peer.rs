@@ -29,7 +29,6 @@ use crate::{
             peer::{
                 state::TcpState,
                 TcpMigContext,
-                UserConnectionContext,
             },
             segment::TcpHeader,
         },
@@ -64,8 +63,10 @@ use ::std::{
     thread,
 };
 use std::{
+    borrow::BorrowMut,
     cell::RefCell,
     collections::hash_map::Entry,
+    ffi::c_void,
     time::Instant,
 };
 
@@ -84,7 +85,8 @@ pub enum TcpmigReceiveStatus {
     Rejected(SocketAddrV4, SocketAddrV4),
     ReturnedBySwitch(SocketAddrV4, SocketAddrV4),
     PrepareMigrationAcked(QDesc),
-    StateReceived(TcpState, Buffer),
+    // Some(buf) when ActiveMigration -> TcpMigPeer, None when TcpMigPeer -> TcpPeer
+    StateReceived(TcpState, Option<Buffer>),
     MigrationCompleted,
 
     // Heartbeat protocol.
@@ -101,13 +103,14 @@ pub struct TcpMigPeer {
     /// Local IPv4 address.
     local_ipv4_addr: Ipv4Addr,
 
+    user_connection: user_connection::Peer,
+
     /// Connections being actively migrated in/out.
     ///
     /// key = remote.
     active_migrations: HashMap<SocketAddrV4, ActiveMigration>,
 
-    // unused. removed to avoid confusion
-    // incoming_user_data: HashMap<SocketAddrV4, Buffer>,
+    incoming_user_data: HashMap<SocketAddrV4, Buffer>,
 
     self_udp_port: u16,
 
@@ -142,8 +145,9 @@ impl TcpMigPeer {
             rt: rt.clone(),
             local_link_addr,
             local_ipv4_addr,
+            user_connection: user_connection::Peer::Nop,
             active_migrations: HashMap::new(),
-            // incoming_user_data: HashMap::new(),
+            incoming_user_data: HashMap::new(),
             self_udp_port: SELF_UDP_PORT, // TEMP
 
             heartbeat_message: Box::new(TcpMigSegment::new(
@@ -256,7 +260,7 @@ impl TcpMigPeer {
         let mut status = active.process_packet(ipv4_hdr, hdr, buf, ctx)?;
         match &mut status {
             TcpmigReceiveStatus::PrepareMigrationAcked(..) => (),
-            TcpmigReceiveStatus::StateReceived(state, _) => {
+            TcpmigReceiveStatus::StateReceived(state, data) => {
                 // capy_profile_merge_previous!("migrate_ack");
 
                 // Push user data into queue.
@@ -264,26 +268,27 @@ impl TcpMigPeer {
                     assert!(self.incoming_user_data.insert(remote, data).is_none());
                 } */
 
-                let conn = state.connection();
-                capy_log_mig!("======= MIGRATING IN STATE ({}, {}) =======", conn.0, conn.1);
+                let (local_addr, remote_addr) = state.connection();
+                capy_log_mig!("======= MIGRATING IN STATE ({local_addr}, {remote_addr}) =======");
 
                 match state.app_state {
                     MigratedApplicationState::MigratedIn(..) => {
                         capy_log_mig!("Received app state from migration");
                         self.application_state
-                            .insert(conn.1, std::mem::take(&mut state.app_state));
+                            .insert(remote_addr, std::mem::take(&mut state.app_state));
                     },
                     _ => (),
                 }
 
                 // Remove active migration.
                 // entry.remove();
+
+                self.user_connection.migrate_in(remote_addr, data.take().unwrap())
             },
             TcpmigReceiveStatus::MigrationCompleted => {
                 // Remove active migration.
                 entry.remove();
 
-                // ? lol
                 // capy_log_mig!("1");
                 // capy_log_mig!(
                 //     "2, active_migrations: {:?}, removing {}",
@@ -349,7 +354,7 @@ impl TcpMigPeer {
         active.initiate_migration();
     }
 
-    pub fn send_tcp_state(&mut self, mut state: TcpState) {
+    pub fn migrate_out_connection_state(&mut self, qd: QDesc, mut state: TcpState) {
         let remote = state.remote();
 
         match self.application_state.remove(&remote) {
@@ -361,10 +366,11 @@ impl TcpMigPeer {
         }
 
         let active = self.active_migrations.get_mut(&remote).unwrap();
-        active.send_connection_state(state);
+        let user_state = self.user_connection.migrate_out(qd);
+        active.send_connection_state(state, user_state);
 
         // Remove migrated user data if present.
-        // self.incoming_user_data.remove(&remote);
+        self.incoming_user_data.remove(&remote);
     }
 
     /// Returns the moved buffers for further use by the caller if packet was not buffered.
@@ -388,10 +394,13 @@ impl TcpMigPeer {
     }
 
     /// Returns the buffered packets for the migrated connection.
-    pub fn close_active_migration(&mut self, remote: SocketAddrV4) -> Option<Vec<(TcpHeader, Buffer)>> {
-        self.active_migrations
+    pub fn close_active_migration(&mut self, remote: SocketAddrV4, qd: QDesc) -> Option<Vec<(TcpHeader, Buffer)>> {
+        let migration = self
+            .active_migrations
             .remove(&remote)
-            .map(|mut active| active.take_buffered_packets())
+            .map(|mut active| active.take_buffered_packets())?;
+        self.user_connection.associate_qd(remote, qd);
+        Some(migration)
     }
 
     pub fn send_heartbeat(&mut self, queue_len: usize) {
@@ -452,4 +461,210 @@ pub fn log_print() {
     unsafe { LOG.as_ref().unwrap_unchecked() }
         .iter()
         .for_each(|len| println!("{}", len));
+}
+
+pub mod user_connection {
+    use std::{
+        cell::Cell,
+        collections::{
+            hash_map::Entry,
+            HashMap,
+        },
+        ffi::c_void,
+        io::Write,
+        net::SocketAddrV4,
+        ptr::null,
+    };
+
+    use crate::{
+        runtime::memory::Buffer,
+        QDesc,
+    };
+
+    pub enum Peer {
+        Nop,
+        Buf(BufPeer),
+        Ffi(FfiPeer),
+    }
+
+    pub enum MigrateOut {
+        Nop,
+        Buf(Vec<u8>),
+        Ffi(*const c_void),
+    }
+
+    impl Peer {
+        pub fn migrate_in(&mut self, remote: SocketAddrV4, data: Buffer) {
+            match self {
+                Self::Nop => {},
+                Self::Buf(peer) => peer.migrate_in(remote, data),
+                Self::Ffi(peer) => peer.migrate_in(remote, data),
+            }
+        }
+
+        pub fn associate_qd(&mut self, remote: SocketAddrV4, qd: QDesc) {
+            match self {
+                Self::Nop => {},
+                Self::Buf(peer) => peer.migration_complete(remote, qd),
+                Self::Ffi(peer) => peer.associate_qd(remote, qd),
+            }
+        }
+
+        pub fn migrate_out(&mut self, qd: QDesc) -> MigrateOut {
+            match self {
+                Self::Nop => MigrateOut::Nop,
+                Self::Buf(peer) => peer.migrate_out(qd),
+                Self::Ffi(peer) => peer.migrate_out(qd),
+            }
+        }
+    }
+
+    impl MigrateOut {
+        pub fn serialized_size(&self) -> usize {
+            match self {
+                Self::Nop => 0,
+                Self::Buf(data) => data.len(),
+                Self::Ffi(data) => unsafe { (FFI.get().serialized_size)(*data) },
+            }
+        }
+
+        pub fn serialize<'buf>(&self, mut buf: &'buf mut [u8]) -> &'buf mut [u8] {
+            match self {
+                Self::Nop => buf,
+                Self::Buf(data) => {
+                    (&mut buf).write_all(data).expect("can write");
+                    buf
+                },
+                Self::Ffi(data) => {
+                    let remaining_len = unsafe { (FFI.get().serialize)(*data, buf.as_mut_ptr(), buf.len()) };
+                    let used_len = buf.len() - remaining_len;
+                    &mut buf[used_len..]
+                },
+            }
+        }
+    }
+
+    #[derive(Default)]
+    pub struct BufPeer {
+        connections: HashMap<QDesc, Vec<u8>>,
+        migrating: HashMap<SocketAddrV4, Buffer>,
+    }
+
+    impl BufPeer {
+        fn migrate_in(&mut self, remote: SocketAddrV4, data: Buffer) {
+            let replaced = self.migrating.insert(remote, data);
+            assert!(replaced.is_none())
+        }
+
+        fn migration_complete(&mut self, remote: SocketAddrV4, qd: QDesc) {
+            let data = self.migrating.remove(&remote).expect("exist migrating data");
+            let replaced = self.connections.insert(qd, data.to_vec());
+            assert!(replaced.is_none())
+        }
+
+        fn migrate_out(&mut self, qd: QDesc) -> MigrateOut {
+            MigrateOut::Buf(self.connections.remove(&qd).expect("exist connection data"))
+        }
+
+        pub fn entry(&mut self, qd: QDesc) -> Entry<'_, QDesc, Vec<u8>> {
+            self.connections.entry(qd)
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct Ffi {
+        pub migrate_in: unsafe extern "C" fn(i32, *const u8, usize),
+        pub migrate_out: unsafe extern "C" fn(i32) -> *const c_void,
+        pub serialized_size: unsafe extern "C" fn(*const c_void) -> usize,
+        pub serialize: unsafe extern "C" fn(*const c_void, *mut u8, usize) -> usize,
+    }
+
+    #[allow(unused)]
+    unsafe extern "C" fn default_migrate_in(fd: i32, buf: *const u8, buf_len: usize) {}
+    #[allow(unused)]
+    unsafe extern "C" fn default_migrate_out(fd: i32) -> *const c_void {
+        null()
+    }
+    #[allow(unused)]
+    unsafe extern "C" fn default_serialized_size(data: *const c_void) -> usize {
+        0
+    }
+    #[allow(unused)]
+    unsafe extern "C" fn default_serialize(data: *const c_void, buf: *mut u8, buf_len: usize) -> usize {
+        0
+    }
+
+    thread_local! {
+        pub static FFI: Cell<Ffi> = Cell::new(Ffi {
+            migrate_in: default_migrate_in,
+            migrate_out: default_migrate_out,
+            serialized_size: default_serialized_size,
+            serialize: default_serialize
+        })
+    }
+
+    #[derive(Default)]
+    pub struct FfiPeer {
+        migrating: HashMap<SocketAddrV4, Buffer>,
+    }
+
+    impl FfiPeer {
+        fn migrate_in(&mut self, remote: SocketAddrV4, data: Buffer) {
+            let replaced = self.migrating.insert(remote, data);
+            assert!(replaced.is_none())
+        }
+
+        fn associate_qd(&mut self, remote: SocketAddrV4, qd: QDesc) {
+            let data = self.migrating.remove(&remote).expect("exist migrating data");
+            unsafe { (FFI.get().migrate_in)(qd.into(), data.as_ptr(), data.len()) }
+        }
+
+        fn migrate_out(&mut self, qd: QDesc) -> MigrateOut {
+            MigrateOut::Ffi(unsafe { (FFI.get().migrate_out)(qd.into()) })
+        }
+    }
+}
+
+pub fn user_connection_entry<T>(libos: &crate::LibOS, qd: QDesc, f: impl FnOnce(Entry<'_, QDesc, Vec<u8>>) -> T) -> T {
+    let crate::LibOS::NetworkLibOS(crate::demikernel::libos::network::NetworkLibOS::Catnip(libos)) = libos else {
+        unimplemented!()
+    };
+    libos.ipv4.tcp.with_mig_peer(|mig_peer| {
+        let user_connection::Peer::Buf(peer) = &mut mig_peer.user_connection else {
+            unimplemented!()
+        };
+        f(peer.entry(qd))
+    })
+}
+
+pub fn set_user_connection_peer_buf(libos: &crate::LibOS) {
+    let crate::LibOS::NetworkLibOS(crate::demikernel::libos::network::NetworkLibOS::Catnip(libos)) = libos else {
+        unimplemented!()
+    };
+    libos
+        .ipv4
+        .tcp
+        .with_mig_peer(|mig_peer| mig_peer.user_connection = user_connection::Peer::Buf(Default::default()))
+}
+
+pub unsafe fn set_user_connection_peer_ffi(
+    libos: &crate::LibOS,
+    migrate_in: unsafe extern "C" fn(i32, *const u8, usize),
+    migrate_out: unsafe extern "C" fn(i32) -> *const std::ffi::c_void,
+    serialized_size: unsafe extern "C" fn(*const std::ffi::c_void) -> usize,
+    serialize: unsafe extern "C" fn(*const c_void, *mut u8, usize) -> usize,
+) {
+    user_connection::FFI.set(user_connection::Ffi {
+        migrate_in,
+        migrate_out,
+        serialized_size,
+        serialize,
+    });
+    let crate::LibOS::NetworkLibOS(crate::demikernel::libos::network::NetworkLibOS::Catnip(libos)) = libos else {
+        unimplemented!()
+    };
+    libos
+        .ipv4
+        .tcp
+        .with_mig_peer(|mig_peer| mig_peer.user_connection = user_connection::Peer::Ffi(Default::default()))
 }
