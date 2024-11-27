@@ -301,7 +301,9 @@ impl TcpMigPeer {
                 // Remove active migration.
                 // entry.remove();
 
-                self.user_connection.migrate_in(remote_addr, data.take().unwrap())
+                capy_log_mig!("Call user connection migrate_in(..)");
+                self.user_connection.migrate_in(remote_addr, data.take().unwrap());
+                capy_log_mig!("Call done");
             },
             TcpmigReceiveStatus::MigrationCompleted => {
                 // Remove active migration.

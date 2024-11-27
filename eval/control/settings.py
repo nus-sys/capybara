@@ -1,0 +1,5 @@
+CAPYBARA_DIR = "/local/cowsay/capybara"
+REDIS_DIR = "/local/cowsay/capybara-redis"
+REDIS_CLI_DIR = "/local/cowsay/capybara-redis-cli"
+REDIS_CWD = "/local/cowsay/"
+EPOLL_DIR = "/local/cowsay/capybara-epoll"
