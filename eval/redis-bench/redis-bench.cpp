@@ -10,7 +10,7 @@
 #include <mutex>
 #include <algorithm>
 #include <numeric>
-#include <fstream> // For file operations
+#include <fstream>
 #include <pthread.h>
 
 constexpr int WARMUP_TIME = 5;
@@ -44,8 +44,16 @@ void send_redis_get_request(asio::ssl::stream<tcp::socket>& ssl_socket, const st
     std::istream response_stream(&response);
     std::getline(response_stream, line);
 }
+// void connect_socket(asio::ssl::stream<tcp::socket>& ssl_socket, const std::string& host, const std::string& port) {
+//     // Cast the execution_context to io_context
+//     asio::io_context& io_context = static_cast<asio::io_context&>(ssl_socket.get_executor().context());
 
-void make_requests(int connection_id, const std::string &host, const std::string &port, const std::string &backup_host, const std::string &backup_port, const std::string& redis_key, std::vector<std::chrono::high_resolution_clock::time_point>& timestamps, std::vector<std::chrono::microseconds>& latencies) {
+//     tcp::resolver resolver(io_context);
+//     auto endpoints = resolver.resolve(host, port);
+//     asio::connect(ssl_socket.lowest_layer(), endpoints);
+//     ssl_socket.handshake(asio::ssl::stream_base::client);
+// }
+void make_requests(int connection_id, const std::string &host, const std::string &port, const std::string &backup_host, const std::string &backup_port, const std::string& redis_key, std::vector<std::chrono::high_resolution_clock::time_point>& timestamps, std::vector<std::chrono::microseconds>& latencies, int disconn_after) {
     try {
         pin_thread_to_core(connection_id % 16);
 
@@ -85,8 +93,46 @@ void make_requests(int connection_id, const std::string &host, const std::string
         // Capture the start time of the test
         auto test_start_time = std::chrono::high_resolution_clock::now();
         bool is_warmup_done = false;
+        int requests_since_last_reconnect = 0;
 
         while (!stop_benchmark.load()) {
+            if (disconn_after > 0 && requests_since_last_reconnect >= disconn_after) {
+                // Disconnect
+                ssl_socket.lowest_layer().shutdown(asio::socket_base::shutdown_both, ec);
+                ssl_socket.lowest_layer().close(ec);
+
+                if (ec) {
+                    std::cerr << "Error during disconnect: " << ec.message() << "\n";
+                } else {
+                    std::cerr << "Connection closed. Reconnecting...\n";
+                }
+
+                // Reconnect
+                asio::ssl::stream<tcp::socket> new_ssl_socket(io_context, ssl_context);
+                ssl_socket = std::move(new_ssl_socket);
+
+                auto endpoints = resolver.resolve(host, port);
+                asio::connect(ssl_socket.lowest_layer(), endpoints, ec);
+
+                if (ec) {
+                    std::cerr << "Reconnect failed: " << ec.message() << "\n";
+                    return;
+                }
+
+                // Perform SSL handshake
+                ssl_socket.handshake(asio::ssl::stream_base::client, ec);
+
+                if (ec) {
+                    std::cerr << "Handshake failed after reconnect: " << ec.message() << "\n";
+                    return;
+                }
+
+                std::cerr << "Reconnect successful.\n";
+                requests_since_last_reconnect = 0; // Reset the counter
+
+                // disconn_after = -1;
+            }
+
             auto start_time = std::chrono::high_resolution_clock::now();
 
             send_redis_get_request(ssl_socket, redis_key);
@@ -104,14 +150,14 @@ void make_requests(int connection_id, const std::string &host, const std::string
                 latencies.push_back(latency);
             }
 
-
+            requests_since_last_reconnect++;
             total_requests++;
         }
     } catch (const std::exception &e) {
         total_failures++;
         if (!backup_host.empty()) {
             std::cerr << "Connection " << connection_id << " - Switching to backup server " << backup_host << ":" << backup_port << "\n";
-            make_requests(connection_id, backup_host, backup_port, "", "", redis_key, timestamps, latencies);
+            make_requests(connection_id, backup_host, backup_port, "", "", redis_key, timestamps, latencies, disconn_after);
         }
     }
 }
@@ -120,6 +166,7 @@ int main(int argc, char *argv[]) {
     std::string host, port, backup_host, backup_port, redis_key = "default_key";
     int num_connections = 1;
     int runtime_seconds = 10 + WARMUP_TIME;
+    int disconn_after = -1; // By default, no disconnection/reconnection
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -137,11 +184,13 @@ int main(int argc, char *argv[]) {
             redis_key = argv[++i];
         } else if (arg == "-t" && i + 1 < argc) {
             runtime_seconds = std::stoi(argv[++i]) + WARMUP_TIME;
+        } else if (arg == "--disconn-after" && i + 1 < argc) {
+            disconn_after = std::stoi(argv[++i]);
         }
     }
 
     if (host.empty() || port.empty()) {
-        std::cerr << "Usage: " << argv[0] << " -h <host> -p <port> -c <num_connections> -t <runtime_seconds> [--backup-host <backup_host>] [--backup-port <backup_port>] [--redis-key <key>]\n";
+        std::cerr << "Usage: " << argv[0] << " -h <host> -p <port> -c <num_connections> -t <runtime_seconds> [--backup-host <backup_host>] [--backup-port <backup_port>] [--redis-key <key>] [--disconn-after <requests>]\n";
         return 1;
     }
 
@@ -150,7 +199,7 @@ int main(int argc, char *argv[]) {
     std::vector<std::vector<std::chrono::microseconds>> thread_latencies(num_connections);
 
     for (int i = 0; i < num_connections; ++i) {
-        threads.emplace_back(std::thread(make_requests, i + 1, host, port, backup_host, backup_port, redis_key, std::ref(thread_timestamps[i]), std::ref(thread_latencies[i])));
+        threads.emplace_back(std::thread(make_requests, i + 1, host, port, backup_host, backup_port, redis_key, std::ref(thread_timestamps[i]), std::ref(thread_latencies[i]), disconn_after));
     }
 
     // Run the benchmark for the specified amount of time
