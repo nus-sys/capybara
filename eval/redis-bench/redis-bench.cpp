@@ -4,6 +4,7 @@
 #include <vector>
 #include <chrono>
 #include <asio.hpp>
+#include <asio/ssl.hpp>
 #include <atomic>
 #include <map>
 #include <mutex>
@@ -27,12 +28,12 @@ void pin_thread_to_core(int core_id) {
     }
 }
 
-void send_redis_get_request(tcp::socket& socket, const std::string& key) {
+void send_redis_get_request(asio::ssl::stream<tcp::socket>& ssl_socket, const std::string& key) {
     std::string request = "*2\r\n$3\r\nGET\r\n$" + std::to_string(key.length()) + "\r\n" + key + "\r\n";
-    asio::write(socket, asio::buffer(request));
+    asio::write(ssl_socket, asio::buffer(request));
     
     asio::streambuf response;
-    asio::read_until(socket, response, "\r\n");
+    asio::read_until(ssl_socket, response, "\r\n");
 
     std::string line;
     std::istream response_stream(&response);
@@ -44,22 +45,42 @@ void make_requests(int connection_id, const std::string &host, const std::string
         pin_thread_to_core(connection_id % 16);
 
         asio::io_context io_context;
+        asio::ssl::context ssl_context(asio::ssl::context::tlsv12_client);
+
+        // Load client certificate
+        ssl_context.use_certificate_chain_file("/usr/local/tls/svr.crt");
+
+        // Load private key
+        ssl_context.use_private_key_file("/usr/local/tls/svr.key", asio::ssl::context::pem);
+
+        // Load CA certificate to verify the server
+        ssl_context.load_verify_file("/usr/local/tls/CA.pem");
+
+        // Set verify mode to require a certificate
+        ssl_context.set_verify_mode(asio::ssl::verify_peer);
 
         tcp::resolver resolver(io_context);
-        tcp::socket socket(io_context);
+        asio::ssl::stream<tcp::socket> ssl_socket(io_context, ssl_context);
+
         auto endpoints = resolver.resolve(host, port);
         asio::error_code ec;
-        asio::connect(socket, endpoints, ec);
+        asio::connect(ssl_socket.lowest_layer(), endpoints, ec);
 
         if (ec) {
             std::cerr << "Connection failed: " << ec.message() << "\n";
             return;
         }
 
+        // Perform SSL handshake
+        ssl_socket.handshake(asio::ssl::stream_base::client);
+
+        // Add a 10ms delay before sending the first request
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
         while (!stop_benchmark.load()) {
             auto start_time = std::chrono::high_resolution_clock::now();
 
-            send_redis_get_request(socket, redis_key);
+            send_redis_get_request(ssl_socket, redis_key);
 
             auto end_time = std::chrono::high_resolution_clock::now();
             timestamps.push_back(end_time);
@@ -69,6 +90,7 @@ void make_requests(int connection_id, const std::string &host, const std::string
     } catch (const std::exception &e) {
         total_failures++;
         if (!backup_host.empty()) {
+            std::cerr << "Connection " << connection_id << " - Switching to backup server " << backup_host << ":" << backup_port << "\n";
             make_requests(connection_id, backup_host, backup_port, "", "", redis_key, timestamps);
         }
     }
@@ -77,7 +99,7 @@ void make_requests(int connection_id, const std::string &host, const std::string
 int main(int argc, char *argv[]) {
     std::string host, port, backup_host, backup_port, redis_key = "default_key";
     int num_connections = 1;
-    int runtime_seconds = 10; // Default runtime is 10 seconds
+    int runtime_seconds = 10;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -107,7 +129,7 @@ int main(int argc, char *argv[]) {
     std::vector<std::vector<std::chrono::high_resolution_clock::time_point>> thread_timestamps(num_connections);
 
     for (int i = 0; i < num_connections; ++i) {
-       threads.emplace_back(std::thread(make_requests, i + 1, host, port, backup_host, backup_port, redis_key, std::ref(thread_timestamps[i])));
+        threads.emplace_back(std::thread(make_requests, i + 1, host, port, backup_host, backup_port, redis_key, std::ref(thread_timestamps[i])));
     }
 
     // Run the benchmark for the specified amount of time

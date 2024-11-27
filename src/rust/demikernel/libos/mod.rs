@@ -66,8 +66,6 @@ impl LibOS {
         logging::initialize();
         crate::capylog::init();
 
-        assert_eq!(unsafe { libc::atexit(exit_dump) }, 0, "atexit() call failed");
-
         // Read in configuration file.
         let config_path: String = match env::var("CONFIG_PATH") {
             Ok(config_path) => config_path,
@@ -90,7 +88,10 @@ impl LibOS {
             #[cfg(feature = "catpowder-libos")]
             LibOSName::Catpowder => Self::NetworkLibOS(NetworkLibOS::Catpowder(CatpowderLibOS::new(&config))),
             #[cfg(feature = "catnip-libos")]
-            LibOSName::Catnip => Self::NetworkLibOS(NetworkLibOS::Catnip(CatnipLibOS::new(&config))),
+            LibOSName::Catnip => {
+                assert_eq!(unsafe { libc::atexit(exit_dump) }, 0, "atexit() call failed");
+                Self::NetworkLibOS(NetworkLibOS::Catnip(CatnipLibOS::new(&config)))
+            },
             _ => panic!("unsupported libos"),
         };
 
@@ -185,7 +186,7 @@ impl LibOS {
 
     /// Pushes a scatter-gather array to a TCP socket.
     pub fn push(&mut self, fd: QDesc, sga: &demi_sgarray_t) -> Result<QToken, Fail> {
-        eprintln!("[DEMI] push");
+        // eprintln!("[DEMI] push");
         match self {
             LibOS::NetworkLibOS(libos) => libos.push(fd, sga),
         }
@@ -266,7 +267,6 @@ use crate::inetstack::protocols::tcpmig::ApplicationState;
 
 #[cfg(feature = "tcp-migration")]
 impl LibOS {
-    #[cfg(feature = "manual-tcp-migration")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.initiate_migration(qd),
