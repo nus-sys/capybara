@@ -824,10 +824,10 @@ impl Inner {
             } */
             /* activate this for recv_queue_len vs mig_lat eval */
 
-            // #[cfg(feature = "tcp-migration")]
-            // if self.tcpmig.should_migrate() {
-            //     self.initiate_migration_by_addr((local, remote));
-            // }
+            #[cfg(feature = "tcp-migration")]
+            if self.tcpmig.should_migrate() {
+                self.initiate_migration_by_addr((local, remote));
+            }
 
             return Ok(());
         }
