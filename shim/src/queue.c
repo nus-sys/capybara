@@ -135,27 +135,28 @@ struct demi_event *queue_man_get_accept_result(int qd)
 
 int queue_man_set_pop_result(int qd, struct demi_event *ev)
 {
+    // printf("set pop result (qd: %d)\n", qd);
     pop_result[qd] = (uint64_t)ev;
     return 1;
 }
 
 struct demi_event *queue_man_get_pop_result(int qd)
 {
-    printf("queue.c::queue_man_get_pop_result()\n");
+    // printf("queue.c::queue_man_get_pop_result()\n");
     uint64_t ret = pop_result[qd];
     if (ret == 0){
-        printf("return NULL\n");
+        // printf("return NULL\n");
         return NULL;
     }
 
     struct demi_event *ev = (void *)ret;
     // pop_result[qd] = 0;
-    printf("return proper result\n");
+    // printf("return proper result\n");
     return (ev);
 }
 
 void queue_man_unset_pop_result(int qd)
 {
-    printf("queue.c::queue_man_unset_pop_result()\n");
+    // printf("queue.c::queue_man_unset_pop_result()\n");
     pop_result[qd] = 0;
 }

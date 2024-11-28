@@ -80,6 +80,8 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
         nevents = 0;
         for (size_t i = 0; i < qrs_count; i++)
         {
+            // printf("%zuth result\n", i);
+            
             size_t ready_offset = ready_offsets[i];
 
             evs[ready_offset]->qr = qrs[i];
@@ -102,6 +104,7 @@ int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeou
 
                 case DEMI_OPC_CONNECT:
                 {
+                    // printf("CONNECT\n");
                     // TODO: implement.
                     UNIMPLEMETED("parse result of demi_connect()");
                 }

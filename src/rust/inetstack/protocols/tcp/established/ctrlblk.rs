@@ -327,7 +327,7 @@ impl ControlBlock {
         self.arp.clone()
     }
 
-    pub fn send(&self, buf: Buffer) -> Result<(), Fail> {        
+    pub fn send(&self, buf: Buffer) -> Result<(), Fail> { 
         self.sender.send(buf, self)
     }
 
@@ -1029,6 +1029,8 @@ impl ControlBlock {
             let queue_length = self.receiver.recv_queue.borrow().len();
             
         }
+        capy_log!("pop return ready");
+
         Poll::Ready(Ok(segment))
     }
 

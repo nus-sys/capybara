@@ -88,7 +88,7 @@ pub mod protocols;
 //==============================================================================
 
 const TIMER_RESOLUTION: usize = 64;
-const MAX_RECV_ITERS: usize = 2;
+const MAX_RECV_ITERS: usize = 1;
 
 //==============================================================================
 // InetStack
@@ -505,13 +505,13 @@ impl InetStack {
                 Err(Fail::new(EBADF, "bad queue descriptor"))
             },
         }?;
-        capy_log!("Scheduling POP");
         let handle: SchedulerHandle = match self.scheduler.insert(future) {
             Some(handle) => handle,
             None => return Err(Fail::new(libc::EAGAIN, "cannot schedule co-routine")),
         };
         let qt: QToken = handle.into_raw().into();
         trace!("pop() qt={:?}", qt);
+        capy_log!("Scheduling POP (qd={:?} qt={:?})", qd, qt);
         Ok(qt)
     }
 
@@ -529,7 +529,9 @@ impl InetStack {
 
         loop {
             // Poll first, so as to give pending operations a chance to complete.
-            self.poll_bg_work();
+            capy_log!("START6");
+            self.scheduler.poll();
+            // self.poll_bg_work();
 
             // The operation has completed, so extract the result and return.
             if handle.has_completed() {
@@ -553,6 +555,8 @@ impl InetStack {
 
         loop {
             // Poll first, so as to give pending operations a chance to complete.
+            capy_log!("START5");
+            
             self.poll_bg_work();
 
             // The operation has completed, so extract the result and return.
@@ -580,6 +584,7 @@ impl InetStack {
         let begin = Instant::now();
 
         loop {
+            capy_log!("START2");
             // Poll first, so as to give pending operations a chance to complete.
             self.poll_bg_work();
 
@@ -649,6 +654,7 @@ impl InetStack {
         qts: &[QToken], qrs: &mut [demi_qresult_t], indices: &mut [usize], timeout: Option<Duration>,
     ) -> Result<usize, Fail> {
         let begin = Instant::now();
+        // capy_log!("qts: {:?}", qts);
 
         loop {
             // Poll first, so as to give pending operations a chance to complete.
@@ -658,13 +664,17 @@ impl InetStack {
             // Search for any operation that has completed.
             for (i, &qt) in qts.iter().enumerate() {
                 if completed == qrs.len() {
+                    capy_log!("BREAK");
                     break;
                 }
 
                 // Retrieve associated schedule handle.
                 let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
                     Some(handle) => handle,
-                    None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
+                    None => {
+                        panic!("wait_any(): invalid queue token");
+                        // return Err(Fail::new(libc::EINVAL, "invalid queue token"));
+                    },
                 };
 
                 // Found one, so extract the result and return.
@@ -674,6 +684,7 @@ impl InetStack {
                     qrs[completed] = super::catnip::interop::pack_result(rt.clone(), result, qd, qt.into()); // Store the completed handle result.
                     indices[completed] = i; // Store the index of the result.
                     completed += 1;
+                    capy_log!("completed: {}", completed);
                 } else {
                     // Return this operation to the scheduling queue by removing the associated key
                     // (which would otherwise cause the operation to be freed).
@@ -703,6 +714,8 @@ impl InetStack {
     /// Returns the number of results written to `qrs`.
     pub fn wait_any_nonblocking2(&mut self, qts: &[QToken], qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize]) -> Result<usize, Fail> {
         // Poll first, so as to give pending operations a chance to complete.
+        capy_log!("START4");
+            
         self.poll_bg_work();
 
         let mut completed = 0;
@@ -732,6 +745,8 @@ impl InetStack {
 
     pub fn wait_any_nonblocking_one2(&mut self, qts: &[QToken]) -> Result<Option<(usize, QDesc, OperationResult)>, Fail> {
         // Poll first, so as to give pending operations a chance to complete.
+        capy_log!("START3");
+            
         self.poll_bg_work();
         // Search for any operation that has completed.
         for (i, &qt) in qts.iter().enumerate() {
@@ -900,6 +915,10 @@ impl InetStack {
             };
             if batch.is_empty() {
                 break;
+            }
+            #[cfg(feature = "capy-log")]
+            if batch.len() >= 1 {
+                capy_log!("\n\nReceived batch of size {}", batch.len());
             }
             for pkt in batch {
                 capy_log!("[RX] pkt");

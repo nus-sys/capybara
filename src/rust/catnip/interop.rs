@@ -23,11 +23,14 @@ use ::std::{
 
 pub fn pack_result(rt: Rc<DPDKRuntime>, result: OperationResult, qd: QDesc, qt: u64) -> demi_qresult_t {
     match result {
-        OperationResult::Connect => demi_qresult_t {
-            qr_opcode: demi_opcode_t::DEMI_OPC_CONNECT,
-            qr_qd: qd.into(),
-            qr_qt: qt,
-            qr_value: unsafe { mem::zeroed() },
+        OperationResult::Connect => {
+            capy_log!("CONNECT result");
+            demi_qresult_t {
+                qr_opcode: demi_opcode_t::DEMI_OPC_CONNECT,
+                qr_qd: qd.into(),
+                qr_qt: qt,
+                qr_value: unsafe { mem::zeroed() },
+            }
         },
         OperationResult::Accept(new_qd) => {
             let sin = unsafe { mem::zeroed() };
@@ -37,6 +40,7 @@ pub fn pack_result(rt: Rc<DPDKRuntime>, result: OperationResult, qd: QDesc, qt: 
                     addr: sin,
                 },
             };
+            capy_log!("ACCEPT result");
             demi_qresult_t {
                 qr_opcode: demi_opcode_t::DEMI_OPC_ACCEPT,
                 qr_qd: qd.into(),
@@ -44,11 +48,14 @@ pub fn pack_result(rt: Rc<DPDKRuntime>, result: OperationResult, qd: QDesc, qt: 
                 qr_value,
             }
         },
-        OperationResult::Push => demi_qresult_t {
-            qr_opcode: demi_opcode_t::DEMI_OPC_PUSH,
-            qr_qd: qd.into(),
-            qr_qt: qt,
-            qr_value: unsafe { mem::zeroed() },
+        OperationResult::Push => {
+            capy_log!("PUSH result");
+            demi_qresult_t {
+                qr_opcode: demi_opcode_t::DEMI_OPC_PUSH,
+                qr_qd: qd.into(),
+                qr_qt: qt,
+                qr_value: unsafe { mem::zeroed() },
+            }
         },
         OperationResult::Pop(addr, bytes) => match rt.into_sgarray(bytes) {
             Ok(mut sga) => {
@@ -67,6 +74,7 @@ pub fn pack_result(rt: Rc<DPDKRuntime>, result: OperationResult, qd: QDesc, qt: 
                     sga.sga_addr = unsafe { mem::transmute::<libc::sockaddr_in, libc::sockaddr>(saddr) };
                 }
                 let qr_value = demi_qr_value_t { sga };
+                capy_log!("POP result");
                 demi_qresult_t {
                     qr_opcode: demi_opcode_t::DEMI_OPC_POP,
                     qr_qd: qd.into(),

@@ -186,8 +186,8 @@ impl TcpMigPeer {
             //     FLAG = 0;
             // }
             FLAG += 1;
-            eprintln!("FLAG: {}", FLAG);
-            FLAG == 30
+            // eprintln!("FLAG: {}", FLAG);
+            FLAG > 100
         }
     }
 
@@ -231,8 +231,8 @@ impl TcpMigPeer {
                 self.rt.clone(),
                 self.local_ipv4_addr,
                 self.local_link_addr,
-                FRONTEND_IP,
-                FRONTEND_MAC, // Need to go through the switch
+                if self.local_ipv4_addr == FRONTEND_IP { BACKEND_IP } else { FRONTEND_IP },
+                if self.local_link_addr == FRONTEND_MAC { BACKEND_MAC } else { FRONTEND_MAC }, 
                 self.self_udp_port,
                 hdr.origin.port(),
                 hdr.origin,
@@ -336,8 +336,8 @@ impl TcpMigPeer {
             self.rt.clone(),
             self.local_ipv4_addr,
             self.local_link_addr,
-            BACKEND_IP,  // FRONTEND_IP,
-            BACKEND_MAC, // FRONTEND_MAC,
+            if self.local_ipv4_addr == FRONTEND_IP { BACKEND_IP } else { BACKEND_IP },
+            if self.local_link_addr == FRONTEND_MAC { BACKEND_MAC } else { BACKEND_MAC }, 
             self.self_udp_port,
             10000,
             // if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.

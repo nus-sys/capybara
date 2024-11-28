@@ -602,7 +602,7 @@ redis-server-node8:
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
-	./redis-server ../config/node8_10001.conf
+	./redis-server ../config/node8.conf
 
 
 redis-server-node9-10000:
@@ -650,5 +650,13 @@ run-proxy-node8:
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	$(ENV) \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	taskset --cpu-list 2 numactl -m0 \
+	taskset --cpu-list 1 numactl -m0 \
 	$(ELF_DIR)/proxy.elf 10.0.1.8:10000 10.0.1.8:10001
+
+run-proxy-node9:
+	sudo -E \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	$(ENV) \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 1 numactl -m0 \
+	$(ELF_DIR)/proxy.elf 10.0.1.9:10000 10.0.1.9:10001

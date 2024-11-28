@@ -355,64 +355,64 @@ int getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 
 ssize_t read(int sockfd, void *buf, size_t count)
 {
-    if(sockfd >= 500)
-        fprintf(stderr, "interpose.c::read (sockfd: %d, size: %lu)\n", sockfd, count);
+    // if(sockfd >= 500)
+    //     fprintf(stderr, "interpose.c::read (sockfd: %d, size: %lu)\n", sockfd, count);
     INTERPOSE_CALL(ssize_t, libc_read, __read, sockfd, buf, count);
 }
 
 ssize_t recv(int sockfd, void *buf, size_t len, int flags)
 {
-    fprintf(stderr, "interpose.c::recv\n");
+    // fprintf(stderr, "interpose.c::recv\n");
     INTERPOSE_CALL(ssize_t, libc_recv, __recv, sockfd, buf, len, flags);
 }
 
 ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen)
 {
-    fprintf(stderr, "interpose.c::recvfrom\n");
+    // fprintf(stderr, "interpose.c::recvfrom\n");
     INTERPOSE_CALL(ssize_t, libc_recvfrom, __recvfrom, sockfd, buf, len, flags, src_addr, addrlen);
 }
 
 ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags)
 {
-    fprintf(stderr, "interpose.c::recvmsg\n");
+    // fprintf(stderr, "interpose.c::recvmsg\n");
     INTERPOSE_CALL(ssize_t, libc_recvmsg, __recvmsg, sockfd, msg, flags);
 }
 
 ssize_t readv(int sockfd, const struct iovec *iov, int iovcnt)
 {
-    fprintf(stderr, "interpose.c::readv\n");
+    // fprintf(stderr, "interpose.c::readv\n");
     INTERPOSE_CALL(ssize_t, libc_readv, __readv, sockfd, iov, iovcnt);
 }
 
 ssize_t write(int sockfd, const void *buf, size_t count)
 { 
-    if(sockfd >= 500)
-        fprintf(stderr, "interpose.c::write (sockfd: %d, size: %zu)\n", sockfd, count);
+    // if(sockfd >= 500)
+    //     fprintf(stderr, "interpose.c::write (sockfd: %d, size: %zu)\n", sockfd, count);
 
     INTERPOSE_CALL(ssize_t, libc_write, __write, sockfd, buf, count);
 }
 
 ssize_t send(int sockfd, const void *buf, size_t len, int flags)
 {
-    fprintf(stderr, "interpose.c::send\n");
+    // fprintf(stderr, "interpose.c::send\n");
     INTERPOSE_CALL(ssize_t, libc_send, __send, sockfd, buf, len, flags);
 }
 
 ssize_t sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen)
 {
-    fprintf(stderr, "interpose.c::sendto\n");
+    // fprintf(stderr, "interpose.c::sendto\n");
     INTERPOSE_CALL(ssize_t, libc_sendto, __sendto, sockfd, buf, len, flags, dest_addr, addrlen);
 }
 
 ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags)
 {
-    fprintf(stderr, "interpose.c::sendmsg\n");
+    // fprintf(stderr, "interpose.c::sendmsg\n");
     INTERPOSE_CALL(ssize_t, libc_sendmsg, __sendmsg, sockfd, msg, flags);
 }
 
 ssize_t writev(int sockfd, const struct iovec *iov, int iovcnt)
 {
-    fprintf(stderr, "interpose.c::writev\n");
+    // fprintf(stderr, "interpose.c::writev\n");
     INTERPOSE_CALL(ssize_t, libc_writev, __writev, sockfd, iov, iovcnt);
 }
 
@@ -436,7 +436,7 @@ int epoll_create1(int flags)
 
 int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event)
 {
-    fprintf(stderr, "interpose.c::epoll_ctl\n");
+    // fprintf(stderr, "interpose.c::epoll_ctl\n");
     init_libc();
 
     if (UNLIKELY(in_init) || UNLIKELY(is_reentrant_demi_call()))
@@ -505,7 +505,7 @@ int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout)
     }
 
     errno = last_errno;
-    // if(ret > 0){
+    // if(ret >= 7){
     //     fprintf(stderr, "[DEMI] epoll_wait is returning %d\n", ret);
     //     ret = 1;
     // }
@@ -514,7 +514,7 @@ int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout)
 
 int socket(int domain, int type, int protocol)
 {
-    fprintf(stderr, "interpose.c::socket\n");
+    // fprintf(stderr, "interpose.c::socket\n");
     INTERPOSE_CALL(int, libc_socket, __socket, domain, type, protocol);
 }
 

@@ -119,6 +119,11 @@ impl TcpProxy {
 
     /// Runs the target TCP proxy.
     pub fn run(&mut self) -> Result<!> {
+        ctrlc::set_handler(move || {
+            eprintln!("Received Ctrl-C signal.");
+            std::process::exit(0);
+        }).expect("Error setting Ctrl-C handler");
+
         // Time interval for dumping logs and statistics.
         // This was arbitrarily set, but keep in mind that too short intervals may negatively impact performance.
         let log_interval: Option<Duration> = Some(Duration::from_secs(1));
@@ -149,8 +154,11 @@ impl TcpProxy {
             }
 
             // eprintln!("Incoming wait_any2()");
+            // loop {
             let result_count = self.incoming_libos.wait_any2(&self.incoming_qts, &mut qrs, &mut indices, timeout_incoming).expect("result");
-
+            // if(result_count == 0) {
+            //     break;
+            // }
             let results = &qrs[..result_count];
             let completed_indices = &indices[..result_count];
             
@@ -168,7 +176,7 @@ impl TcpProxy {
                     OperationResult::Pop(_, recvbuf) => {
                         migration_counter += 1;
                         if  self.remote_addr.ip().octets()[3] != 9 {
-                            is_migration_started = (migration_counter > 500000);
+                            is_migration_started = (migration_counter > 400000);
                         }
                         // eprintln!("migration_counter: {}", migration_counter);
                         // eprintln!("incoming_qds: {:?}", self.incoming_qds);
@@ -193,7 +201,7 @@ impl TcpProxy {
                 }
 
             }
-            
+            // }    
             // eprintln!("Outgoing wait_any2()");
             let result_count = self.outgoing_libos.wait_any2(&self.outgoing_qts, &mut qrs, &mut indices, timeout_outgoing).expect("result");
 
@@ -330,7 +338,7 @@ impl TcpProxy {
         };
 
         // Connect to remote address.
-        // eprintln!("ACCEPT => connecting to {}", self.remote_addr);
+        // eprintln!("ACCEPT => connecting to {} at {:?}", self.remote_addr, std::time::SystemTime::now());
         match self.outgoing_libos.connect(new_server_socket, self.remote_addr) {
             // Operation succeeded, register outgoing operation.
             Ok(qt) => self.register_outgoing_operation(new_server_socket, qt)?,
@@ -361,7 +369,7 @@ impl TcpProxy {
 
     /// Handles the completion of a `connect()` operation.
     fn handle_outgoing_connect(&mut self, outgoing_qd: QDesc) {
-        // eprintln!("handle_outgoing_connect outgoing_qd: {:?}", outgoing_qd);
+        // eprintln!("handle_outgoing_connect qd {:?} at {:?}", outgoing_qd, std::time::SystemTime::now());
 
         // It is safe to call expect() here, because `outgoing_qd` is ensured to be in the table of queue descriptors.
         // All queue descriptors are registered when connection is established.

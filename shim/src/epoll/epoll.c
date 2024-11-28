@@ -66,7 +66,9 @@ int epoll_get_ready(int epfd, demi_qtoken_t *qts, struct demi_event **evs)
 
         ev = epoll_get_next(epfd, ev);
     }
-
+    // if(nevents > 2){
+    //     printf("return %d events \n", nevents);
+    // }
     return nevents;
 }
 

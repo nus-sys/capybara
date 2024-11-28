@@ -1,6 +1,7 @@
 # redis-maintenance-bench.cpp
-- ./eval/redis-maintenance-bench$ `git clone https://github.com/chriskohlhoff/asio.git`
-- ./eval/redis-maintenance-bench$ `g++ -std=c++11 -I ./asio/asio/include -o redis-maintenance-bench redis-maintenance-bench.cpp -lpthread -lboost_system`
+- ./eval/redis-bench$ `git clone https://github.com/chriskohlhoff/asio.git`
+- ./eval/redis-bench$ `g++ -std=c++11 -I ./asio/asio/include -o redis-bench redis-bench.cpp -L/usr/lib/x86_64-linux-gnu -lpthread -lboost_system -lssl -lcrypto`
+- ./eval/redis-bench$ `taskset --cpu-list 1 sudo numactl -m0 ./redis-bench -h 10.0.1.8 -p 10000 -c 16 --redis-key mykey --backup-host 10.0.1.9 --backup-port 10000 -t 10`
 
 
 # Running on nsl cluster

@@ -472,7 +472,7 @@ impl TcpPeer {
         if inner.established.insert(key, established).is_some() {
             panic!("duplicate queue descriptor in established sockets table");
         }
-
+        capy_log!("Accept return ready");
         Poll::Ready(Ok(new_qd))
     }
 

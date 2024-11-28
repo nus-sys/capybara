@@ -345,7 +345,7 @@ pub extern "C" fn demi_pushto(
 #[no_mangle]
 pub extern "C" fn demi_push(qtok_out: *mut demi_qtoken_t, qd: c_int, sga: *const demi_sgarray_t) -> c_int {
     trace!("demi_push()");
-    eprintln!("demi_push");
+    // eprintln!("demi_push");
     // Check if scatter-gather array is invalid.
     if sga.is_null() {
         return libc::EINVAL;
@@ -523,13 +523,21 @@ pub extern "C" fn demi_wait_any(
     // TODO: Remove allocations.
     let qrs_len = unsafe { *qrs_count };
     let qrs = unsafe { slice::from_raw_parts_mut(qrs_out, qrs_len) };
-    let ready_offsets = unsafe { slice::from_raw_parts_mut(ready_offsets as *mut usize, qrs_len as usize) };
+    let mut ready_offsets = unsafe { slice::from_raw_parts_mut(ready_offsets as *mut usize, qrs_len as usize) };
 
     // Issue wait_any operation.
-    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.wait_any(&qts, qrs, ready_offsets, timeout) {
+    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.wait_any(&qts, qrs, &mut ready_offsets, timeout) {
         Ok(num_qrs) => {
             assert!(num_qrs <= qrs_len);
             unsafe { *qrs_count = num_qrs };
+            
+            // for i in 0..num_qrs {
+            //     println!("ready_offsets[{}]: {:?}", i, &ready_offsets[i] as *const _);
+            // }
+            // for i in 0..num_qrs {
+            //     println!("ready_offsets[{}]: {}", i, ready_offsets[i]);
+            // }
+
             0
         },
         Err(e) => {
@@ -634,11 +642,11 @@ pub extern "C" fn demi_sgaalloc(size: libc::size_t) -> demi_sgarray_t {
 
     match ret {
         Ok(ret) => {
-            eprintln!("demi_sgalloc::return ret");
+            // eprintln!("demi_sgalloc::return ret");
             ret
         },
         Err(_) => {
-            eprintln!("demi_sgalloc::return null_sga");
+            // eprintln!("demi_sgalloc::return null_sga");
             null_sga
         },
     }

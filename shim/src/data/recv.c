@@ -25,12 +25,12 @@ ssize_t __read(int sockfd, void *buf, size_t count)
     // If that is not the case, then fail to let the Linux kernel handle it.
     if (!queue_man_query_fd(sockfd))
     {
-        if(sockfd >= 500)
-            printf("[0] return EBADF (sockfd: %d)\n", sockfd);
+        // if(sockfd >= 500)
+        //     printf("[0] return EBADF (sockfd: %d)\n", sockfd);
         errno = EBADF;
         return (-1);
     }
-    printf("queue_man_query_fd_pollable()\n");
+    // printf("queue_man_query_fd_pollable()\n");
     // Check if socket descriptor is registered on an epoll instance.
     if ((epfd = queue_man_query_fd_pollable(sockfd)) > 0)
     {
@@ -40,11 +40,11 @@ ssize_t __read(int sockfd, void *buf, size_t count)
         // Check if read operation has completed.
         if ((ev = queue_man_get_pop_result(sockfd)) != NULL)
         {
-            printf("ev->used: %d\n", ev->used);
-            printf("ev->sockqd: %d\n", ev->sockqd);
-            printf("ev->qt: %ld\n", ev->qt);
-            printf("ev->qr.qr_value.sga.sga_segs[0].sgaseg_len: %zu\n", ev->qr.qr_value.sga.sga_segs[0].sgaseg_len);
-            printf("count: %zu\n", count);
+            // printf("ev->used: %d\n", ev->used);
+            // printf("ev->sockqd: %d\n", ev->sockqd);
+            // printf("ev->qt: %ld\n", ev->qt);
+            // printf("ev->qr.qr_value.sga.sga_segs[0].sgaseg_len: %zu\n", ev->qr.qr_value.sga.sga_segs[0].sgaseg_len);
+            // printf("count: %zu\n", count);
             assert(ev->used == 1);
             assert(ev->sockqd == sockfd);
             assert(ev->qt == (demi_qtoken_t)-1);
@@ -55,7 +55,7 @@ ssize_t __read(int sockfd, void *buf, size_t count)
 
             // Round down the number of bytes to read accordingly.
             count = MIN(count, ev->qr.qr_value.sga.sga_segs[0].sgaseg_len);
-            printf("[0] sga_len: %zu, count: %zu\n", ev->qr.qr_value.sga.sga_segs[0].sgaseg_len, count);
+            // printf("[0] sga_len: %zu, count: %zu\n", ev->qr.qr_value.sga.sga_segs[0].sgaseg_len, count);
             if (ev->qr.qr_value.sga.sga_segs[0].sgaseg_len == 0)
             {
                 TRACE("read zero bytes");
@@ -67,7 +67,7 @@ ssize_t __read(int sockfd, void *buf, size_t count)
             {
                 memcpy(buf, ev->qr.qr_value.sga.sga_segs[0].sgaseg_buf, count);
                 if(ev->qr.qr_value.sga.sga_segs[0].sgaseg_len > count){
-                    printf("[1] sga_len: %zu, count: %zu\n", ev->qr.qr_value.sga.sga_segs[0].sgaseg_len, count);
+                    // printf("[1] sga_len: %zu, count: %zu\n", ev->qr.qr_value.sga.sga_segs[0].sgaseg_len, count);
                     ev->qr.qr_value.sga.sga_segs[0].sgaseg_buf = 
                         (void *)((char *)ev->qr.qr_value.sga.sga_segs[0].sgaseg_buf + count);
 
@@ -80,7 +80,7 @@ ssize_t __read(int sockfd, void *buf, size_t count)
             }
             __demi_sgafree(&ev->qr.qr_value.sga);   
             queue_man_unset_pop_result(sockfd);
-            printf("calling __demi_pop (size: %lu)\n", count);
+            // printf("calling __demi_pop (size: %lu)\n", count);
 
             // Re-issue I/O queue operation.
             assert(__demi_pop(&ev->qt, ev->sockqd) == 0);

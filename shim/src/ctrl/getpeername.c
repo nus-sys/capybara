@@ -21,6 +21,7 @@
  */
 int __getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
+    printf("getpeername %d\n", sockfd);
     int ret = -1;
 
     // Check if this socket descriptor is managed by Demikernel.

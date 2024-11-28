@@ -85,7 +85,7 @@ int __demi_close(int qd)
 
 int __demi_push(demi_qtoken_t *qt_out, int qd, const demi_sgarray_t *sga)
 {
-    printf("glue.c::__demi_push\n");
+    // printf("glue.c::__demi_push\n");
     DEMI_CALL(int, demi_push, qt_out, qd, sga);
 }
 
@@ -97,7 +97,7 @@ int __demi_pushto(demi_qtoken_t *qt_out, int sockqd, const demi_sgarray_t *sga,
 
 int __demi_pop(demi_qtoken_t *qt_out, int qd)
 {
-    printf("glue.c::__demi_pop()\n");
+    // printf("glue.c::__demi_pop()\n");
     DEMI_CALL(int, demi_pop, qt_out, qd);
 }
 
@@ -113,12 +113,14 @@ int __demi_sgafree(demi_sgarray_t *sga)
 
 int __demi_wait(demi_qresult_t *qr_out, demi_qtoken_t qt)
 {
+    // printf("__demi_wait\n");
     DEMI_CALL(int, demi_wait, qr_out, qt);
 }
 
 int __demi_wait_any(demi_qresult_t *qrs_out, size_t *ready_offsets, size_t *qrs_count,
                     demi_qtoken_t qts[], size_t num_qts, long long timeout_us)
 {
+    // printf("__demi_wait_any\n");
     DEMI_CALL(int, demi_wait_any, qrs_out, ready_offsets, qrs_count, qts, num_qts, timeout_us);
 }
 
