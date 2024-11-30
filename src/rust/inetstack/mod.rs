@@ -584,7 +584,7 @@ impl InetStack {
         let begin = Instant::now();
 
         loop {
-            capy_log!("START2");
+            // capy_log!("START2");
             // Poll first, so as to give pending operations a chance to complete.
             self.poll_bg_work();
 

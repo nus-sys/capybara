@@ -3,7 +3,6 @@
     "catnip-libos",
     "mlx5",
     "tcp-migration",
-    "manual-tcp-migration",
     "capy-log"
   ],
   "rust-analyzer.check.extraEnv": {

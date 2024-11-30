@@ -14,20 +14,13 @@ use demikernel::inetstack::protocols::tcpmig::{
     user_connection_entry,
 };
 
-use ::std::{
-    env,
+use ctrlc;
+use std::{
+    env::args,
+    mem::take,
     net::SocketAddrV4,
     panic,
     str::FromStr,
-};
-use ctrlc;
-use std::{
-    collections::{
-        hash_map::Entry,
-        HashMap,
-    },
-    env::args,
-    mem::take,
 };
 
 #[cfg(feature = "profiler")]
@@ -93,7 +86,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
         if cfg!(feature = "tcp-migration") { "EN" } else { "DIS" }
     );
 
-    let mig_after: i32 = env::var("MIG_AFTER").as_deref().unwrap_or("10").parse().unwrap();
+    // let mig_after: i32 = env::var("MIG_AFTER").as_deref().unwrap_or("10").parse().unwrap();
     ctrlc::set_handler(move || {
         eprintln!("Received Ctrl-C signal.");
         // LibOS::dpdk_print_eth_stats();
@@ -117,8 +110,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     qts.push(libos.accept(sockqd).expect("accept"));
 
-    #[cfg(feature = "manual-tcp-migration")]
-    let mut requests_remaining: HashMap<QDesc, i32> = HashMap::new();
+    // #[cfg(feature = "manual-tcp-migration")]
+    // let mut requests_remaining: HashMap<QDesc, i32> = HashMap::new();
 
     // Create qrs filled with garbage.
     let mut qrs: Vec<(QDesc, OperationResult)> = Vec::with_capacity(2000);
@@ -144,11 +137,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                     // user_connection_entry(&libos, new_qd, |entry| entry.or_default());
                     // server_log!("{:?}", user_connection_peer.borrow().connections);
-                    #[cfg(feature = "manual-tcp-migration")]
-                    {
-                        let replaced = requests_remaining.insert(new_qd, mig_after);
-                        assert!(replaced.is_none());
-                    }
+                    // #[cfg(feature = "manual-tcp-migration")]
+                    // {
+                    //     let replaced = requests_remaining.insert(new_qd, mig_after);
+                    //     assert!(replaced.is_none());
+                    // }
                     qts.push(libos.pop(new_qd).unwrap());
                     // Re-arm accept
                     qts.push(libos.accept(qd).expect("accept qtoken"));
@@ -170,21 +163,22 @@ fn server(local: SocketAddrV4) -> Result<()> {
                         qts.push(qt)
                     }
                     server_log!("Issued {count} PUSHes");
-                    #[cfg(feature = "manual-tcp-migration")]
-                    if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {
-                        let remaining = entry.get_mut();
-                        *remaining -= 1;
-                        if *remaining > 0 {
-                            // queue next pop
-                            qts.push(libos.pop(qd).expect("pop qt"));
-                            server_log!("Migrating after {} more requests, Issued POP", remaining);
-                        } else {
-                            server_log!("Should be migrated (no POP issued)");
-                            // server_log!("BUFFER DATA SIZE = {}", state.0.borrow().len());
-                            libos.initiate_migration(qd).unwrap();
-                            entry.remove();
-                        }
-                    }
+                    // #[cfg(feature = "manual-tcp-migration")]
+                    // if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {
+                    //     let remaining = entry.get_mut();
+                    //     *remaining -= 1;
+                    //     if *remaining > 0 {
+                    //         // queue next pop
+                    //         qts.push(libos.pop(qd).expect("pop qt"));
+                    //         server_log!("Migrating after {} more requests, Issued POP", remaining);
+                    //     } else {
+                    //         server_log!("Should be migrated (no POP issued)");
+                    //         // server_log!("BUFFER DATA SIZE = {}", state.0.borrow().len());
+                    //         libos.initiate_migration(qd).unwrap();
+                    //         entry.remove();
+                    //     }
+                    // }
+                    qts.push(libos.pop(qd).expect("pop qt"));
                 },
 
                 OperationResult::Failed(e) => match e.errno {
