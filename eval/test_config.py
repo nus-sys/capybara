@@ -6,6 +6,7 @@ import numpy as np
 HOME = os.path.expanduser("~")
 LOCAL = HOME.replace("/homes", "/local")
 CAPYBARA_PATH = f'{HOME}/Capybara/capybara'
+CAPYBARA_CONFIG_PATH = f'{CAPYBARA_PATH}/scripts/config'
 CALADAN_PATH = f'{HOME}/Capybara/caladan'
 DATA_PATH = f'{HOME}/capybara-data'
 PCAP_PATH = f'{LOCAL}/capybara-pcap'
@@ -28,19 +29,19 @@ FEATURES = [
     # 'manual-tcp-migration',
     'capy-log',
     # 'capy-profile',
-    # 'capy-time-log',
+    'capy-time-log',
     # 'server-reply-analysis',
 ]
 
 ################## TEST CONFIG #####################
-NUM_BACKENDS = 1
-SERVER_APP = 'prism' # 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
+NUM_BACKENDS = 2
+SERVER_APP = 'http-server' # 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
 CLIENT_APP = 'wrk' # 'wrk', 'caladan'
 NUM_THREADS = [1] # for wrk load generator
 REPEAT_NUM = 1
 
 TCPDUMP = False
-EVAL_MIG_DELAY = False
+EVAL_MIG_DELAY = True
 EVAL_POLL_INTERVAL = False
 EVAL_LATENCY_TRACE = False
 EVAL_SERVER_REPLY = False

@@ -106,7 +106,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             NUM_CORES=4 \
             RUST_BACKTRACE=full \
             CORE_ID=1 \
-            CONFIG_PATH={CAPYBARA_PATH}/config/node8_config.yaml \
+            CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node8_config.yaml \
             LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
             PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
             numactl -m0 \
@@ -147,7 +147,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 NUM_CORES=4 \
                 RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
-                CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
+                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node9_config.yaml \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
                 PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
                 numactl -m0 \
@@ -173,7 +173,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             MTU=1500 \
             MSS=1500 \
             NUM_BACKENDS={NUM_BACKENDS} \
-            CONFIG_PATH={CAPYBARA_PATH}/config/node8_config.yaml \
+            CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node8_config.yaml \
             LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
             PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
             taskset --cpu-list 1 numactl -m0 \
@@ -243,7 +243,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 NUM_CORES=4 \
                 RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
-                {f"CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml" if SERVER_APP == "http-server" or SERVER_APP == "capybara-switch" else ""} \
+                {f"CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node9_config.yaml" if SERVER_APP == "http-server" or SERVER_APP == "capybara-switch" else ""} \
                 {f"CONF=redis{j}" if SERVER_APP == "redis-server" else ""} \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
                 PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
@@ -674,8 +674,17 @@ def run_eval():
                                     
                                     run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n)
 
-                                    #exit(0)
                                     host = pyrem.host.RemoteHost(CLIENT_NODE)
+                                    if EVAL_MIG_DELAY == True:
+                                        cmd = [f'curl 10.0.1.8:10000']
+                                        task = host.run(cmd, quiet=False)
+                                        pyrem.task.Parallel([task], aggregate=True).start(wait=True)
+                                        kill_procs()
+                                        time.sleep(3)
+                                        parse_mig_delay(experiment_id)
+                                        exit()
+                                    
+                                    
                                     if CLIENT_APP != 'wrk':
                                         cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
                                         task = host.run(cmd, quiet=True)
