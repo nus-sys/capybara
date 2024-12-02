@@ -249,8 +249,16 @@ impl TcpMigPeer {
                 self.rt.clone(),
                 self.local_ipv4_addr,
                 self.local_link_addr,
-                if self.local_ipv4_addr == FRONTEND_IP { BACKEND_IP } else { FRONTEND_IP },
-                if self.local_link_addr == FRONTEND_MAC { BACKEND_MAC } else { FRONTEND_MAC }, 
+                if self.local_ipv4_addr == FRONTEND_IP {
+                    BACKEND_IP
+                } else {
+                    FRONTEND_IP
+                },
+                if self.local_link_addr == FRONTEND_MAC {
+                    BACKEND_MAC
+                } else {
+                    FRONTEND_MAC
+                },
                 self.self_udp_port,
                 hdr.origin.port(),
                 hdr.origin,
@@ -356,8 +364,16 @@ impl TcpMigPeer {
             self.rt.clone(),
             self.local_ipv4_addr,
             self.local_link_addr,
-            if self.local_ipv4_addr == FRONTEND_IP { BACKEND_IP } else { FRONTEND_IP },
-            if self.local_link_addr == FRONTEND_MAC { BACKEND_MAC } else { FRONTEND_MAC }, 
+            if self.local_ipv4_addr == FRONTEND_IP {
+                BACKEND_IP
+            } else {
+                FRONTEND_IP
+            },
+            if self.local_link_addr == FRONTEND_MAC {
+                BACKEND_MAC
+            } else {
+                FRONTEND_MAC
+            },
             self.self_udp_port,
             10000,
             // if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
@@ -419,7 +435,7 @@ impl TcpMigPeer {
             .active_migrations
             .remove(&remote)
             .map(|mut active| active.take_buffered_packets())?;
-        self.user_connection.associate_qd(remote, qd);
+        self.user_connection.migration_complete(remote, qd);
         Some(migration)
     }
 
@@ -522,11 +538,11 @@ pub mod user_connection {
             }
         }
 
-        pub fn associate_qd(&mut self, remote: SocketAddrV4, qd: QDesc) {
+        pub fn migration_complete(&mut self, remote: SocketAddrV4, qd: QDesc) {
             match self {
                 Self::Nop => {},
                 Self::Buf(peer) => peer.migration_complete(remote, qd),
-                Self::Ffi(peer) => peer.associate_qd(remote, qd),
+                Self::Ffi(peer) => peer.migration_complete(remote, qd),
             }
         }
 
@@ -634,7 +650,7 @@ pub mod user_connection {
             assert!(replaced.is_none())
         }
 
-        fn associate_qd(&mut self, remote: SocketAddrV4, qd: QDesc) {
+        fn migration_complete(&mut self, remote: SocketAddrV4, qd: QDesc) {
             let data = self.migrating.remove(&remote).expect("exist migrating data");
             unsafe { (FFI.get().migrate_in)(qd.into(), data.as_ptr(), data.len()) }
         }
