@@ -265,7 +265,6 @@ use crate::inetstack::protocols::tcpmig::ApplicationState;
 
 #[cfg(feature = "tcp-migration")]
 impl LibOS {
-    #[cfg(feature = "manual-tcp-migration")]
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.initiate_migration(qd),
