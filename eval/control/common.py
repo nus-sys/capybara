@@ -18,7 +18,7 @@ def run_shell(cmd, cwd=None, extra_env=None, capture_stdout=False):
     return run(cmd, **options)
 
 
-CARGO_BUILD = "cargo build -r --no-default-features --features catnip-libos,catnap-libos,mlx5,tcp-migration,manual-tcp-migration,capy-log"
+CARGO_BUILD = "cargo build -r --no-default-features --features catnip-libos,catnap-libos,mlx5,tcp-migration,capy-log"
 
 
 def check_hostname(expected):
