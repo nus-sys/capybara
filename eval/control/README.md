@@ -32,6 +32,8 @@ On client server (node7), run `python3 run_demo_client.py tls`. The HTTP respons
 
 ### Steps for running TLS migration micro-benchmark
 
+In Capybara codebase, patch `poll_accept(..)` method.
+
 On building machine, run `python3 build_https_demo.py`. This will build `https` and copy built binary to this directory.
 
 On source server (node8), run `python3 run_tls_migrate_node8.py`.
