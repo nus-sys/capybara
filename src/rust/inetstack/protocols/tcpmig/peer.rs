@@ -499,6 +499,21 @@ pub fn log_print() {
         .for_each(|len| println!("{}", len));
 }
 
+pub trait UserConnectionPeer {
+    fn migrate_in(remote: SocketAddrV4, buffer: Buffer);
+
+    fn migration_complete(remote: SocketAddrV4, qd: QDesc);
+
+    type MigrateOut: UserConnectionMigrateOut;
+    fn migrate_out(qd: QDesc) -> Self::MigrateOut;
+}
+
+pub trait UserConnectionMigrateOut {
+    fn serialized_size(&self) -> usize;
+
+    fn serialize<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8];
+}
+
 pub mod user_connection {
     use std::{
         cell::Cell,
@@ -517,16 +532,20 @@ pub mod user_connection {
         QDesc,
     };
 
+    use super::UserConnectionMigrateOut;
+
     pub enum Peer {
         Nop,
         Buf(BufPeer),
         Ffi(FfiPeer),
+        Erased(ErasedPeer),
     }
 
     pub enum MigrateOut {
         Nop,
         Buf(Vec<u8>),
         Ffi(*const c_void),
+        Erased(ErasedMigrateOut),
     }
 
     impl Peer {
@@ -535,6 +554,7 @@ pub mod user_connection {
                 Self::Nop => {},
                 Self::Buf(peer) => peer.migrate_in(remote, data),
                 Self::Ffi(peer) => peer.migrate_in(remote, data),
+                Self::Erased(peer) => (peer.migrate_in)(remote, data),
             }
         }
 
@@ -543,6 +563,7 @@ pub mod user_connection {
                 Self::Nop => {},
                 Self::Buf(peer) => peer.migration_complete(remote, qd),
                 Self::Ffi(peer) => peer.migration_complete(remote, qd),
+                Self::Erased(peer) => (peer.migration_complete)(remote, qd),
             }
         }
 
@@ -551,6 +572,7 @@ pub mod user_connection {
                 Self::Nop => MigrateOut::Nop,
                 Self::Buf(peer) => peer.migrate_out(qd),
                 Self::Ffi(peer) => peer.migrate_out(qd),
+                Self::Erased(peer) => (peer.migrate_out)(qd),
             }
         }
     }
@@ -561,6 +583,7 @@ pub mod user_connection {
                 Self::Nop => 0,
                 Self::Buf(data) => data.len(),
                 Self::Ffi(data) => unsafe { (FFI.get().serialized_size)(*data) },
+                Self::Erased(data) => data.serialized_size,
             }
         }
 
@@ -576,6 +599,7 @@ pub mod user_connection {
                     let used_len = buf.len() - remaining_len;
                     &mut buf[used_len..]
                 },
+                Self::Erased(data) => (data.serialize)(buf),
             }
         }
     }
@@ -659,6 +683,41 @@ pub mod user_connection {
             MigrateOut::Ffi(unsafe { (FFI.get().migrate_out)(qd.into()) })
         }
     }
+
+    pub struct ErasedPeer {
+        migrate_in: fn(SocketAddrV4, Buffer),
+        migration_complete: fn(SocketAddrV4, QDesc),
+        migrate_out: fn(QDesc) -> MigrateOut,
+    }
+
+    pub struct ErasedMigrateOut {
+        serialized_size: usize,
+        serialize: Box<dyn Fn(&mut [u8]) -> &mut [u8]>,
+    }
+
+    impl ErasedPeer {
+        pub fn new<T: super::UserConnectionPeer>() -> Self
+        where
+            T::MigrateOut: 'static,
+        {
+            Self {
+                migrate_in: T::migrate_in,
+                migration_complete: T::migration_complete,
+                migrate_out: erased_migrate_out::<T>,
+            }
+        }
+    }
+
+    fn erased_migrate_out<T: super::UserConnectionPeer>(qd: QDesc) -> MigrateOut
+    where
+        T::MigrateOut: 'static,
+    {
+        let migrate_out = T::migrate_out(qd);
+        MigrateOut::Erased(ErasedMigrateOut {
+            serialized_size: migrate_out.serialized_size(),
+            serialize: Box::new(move |buf| migrate_out.serialize(buf)),
+        })
+    }
 }
 
 pub fn user_connection_entry<T>(libos: &crate::LibOS, qd: QDesc, f: impl FnOnce(Entry<'_, QDesc, Vec<u8>>) -> T) -> T {
@@ -703,4 +762,16 @@ pub unsafe fn set_user_connection_peer_ffi(
         .ipv4
         .tcp
         .with_mig_peer(|mig_peer| mig_peer.user_connection = user_connection::Peer::Ffi(Default::default()))
+}
+
+pub fn set_user_connection_peer<T: UserConnectionPeer>(libos: &crate::LibOS)
+where
+    T::MigrateOut: 'static,
+{
+    let crate::LibOS::NetworkLibOS(crate::demikernel::libos::network::NetworkLibOS::Catnip(libos)) = libos else {
+        unimplemented!()
+    };
+    libos.ipv4.tcp.with_mig_peer(|mig_peer| {
+        mig_peer.user_connection = user_connection::Peer::Erased(user_connection::ErasedPeer::new::<T>())
+    })
 }

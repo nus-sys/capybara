@@ -10,12 +10,15 @@ use std::{
 
 pub use peer::{
     log_print,
+    set_user_connection_peer,
     set_user_connection_peer_buf,
     set_user_connection_peer_ffi,
     user_connection_entry,
     MigratedApplicationState,
     TcpMigPeer,
     TcpmigReceiveStatus,
+    UserConnectionMigrateOut,
+    UserConnectionPeer,
 };
 
 use crate::QDesc;
