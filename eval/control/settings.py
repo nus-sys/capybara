@@ -1,5 +1,4 @@
 CAPYBARA_DIR = "/local/cowsay/capybara"
-CAPYBARA_HTTPS_DIR = "/local/cowsay/capybara-https"
 REDIS_DIR = "/local/cowsay/capybara-redis"
 REDIS_CLI_DIR = "/local/cowsay/capybara-redis-cli"
 REDIS_CWD = "/local/cowsay/"
