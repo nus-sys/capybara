@@ -39,6 +39,7 @@ def kill_procs():
             sudo pkill -INT -e phttp-bench ; \
             sudo pkill -INT -f tcpdump ; \
             sudo pkill -INT -f http-server ; \
+            sudo pkill -INT -f curl ; \
             sudo pkill -INT -e {SERVER_APP}']
     # print(cmd)
     if TCPDUMP:
@@ -678,7 +679,8 @@ def run_eval():
                                     if EVAL_MIG_DELAY == True:
                                         cmd = [f'curl 10.0.1.8:10000']
                                         task = host.run(cmd, quiet=False)
-                                        pyrem.task.Parallel([task], aggregate=True).start(wait=True)
+                                        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+                                        time.sleep(3)
                                         kill_procs()
                                         time.sleep(3)
                                         parse_mig_delay(experiment_id)

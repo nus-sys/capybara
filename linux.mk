@@ -179,8 +179,8 @@ export TIMEOUT ?= 30
 #=======================================================================================================================
 # Capybara Environment Variables
 #=======================================================================================================================
-export CONFIG_DIR = $(HOME)/Capybara/capybara/config
-export ELF_DIR ?= $(HOME)/Capybara/capybara/bin/examples/rust
+export CONFIG_DIR = $(CURDIR)/config
+export ELF_DIR ?= $(CURDIR)/bin/examples/rust
 
 # Runs system tests.
 test-system: test-system-rust

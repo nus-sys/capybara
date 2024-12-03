@@ -4,9 +4,10 @@ import numpy as np
 
 ################## PATHS #####################
 HOME = os.path.expanduser("~")
+CWD = os.getcwd()
 LOCAL = HOME.replace("/homes", "/local")
-CAPYBARA_PATH = f'{HOME}/Capybara/capybara'
-CAPYBARA_CONFIG_PATH = f'{CAPYBARA_PATH}/scripts/config'
+CAPYBARA_PATH = f'{CWD}/..'
+CAPYBARA_CONFIG_PATH = f'{CAPYBARA_PATH}/config'
 CALADAN_PATH = f'{HOME}/Capybara/caladan'
 DATA_PATH = f'{HOME}/capybara-data'
 PCAP_PATH = f'{LOCAL}/capybara-pcap'
@@ -27,7 +28,7 @@ LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
     'tcp-migration',
     # 'manual-tcp-migration',
-    'capy-log',
+    # 'capy-log',
     # 'capy-profile',
     'capy-time-log',
     # 'server-reply-analysis',
