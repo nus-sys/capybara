@@ -22,11 +22,7 @@ Run `python3 clean.py` to clean up all files that were copied to this directory.
 
 ### Steps for running migration-enabled HTTPS
 
-Clone `nus-sys/capybara-https` repository. In `settings.py`, set `CAPYBARA_HTTPS_DIR` to the cloning path.
-
-In `capybara-https`, edit `Cargo.toml` to use the `demikernel` dependency with `dev-cowsay` branch.
-
-On building machine, run `python3 build_https_demo.py`. This will build `capybara-https` and copy built binary to this directory.
+On building machine, run `python3 build_https_demo.py`. This will build `https` and copy built binary to this directory.
 
 On source server (node8), run `python3 run_https_demo_node8.py`.
 
@@ -36,11 +32,7 @@ On client server (node7), run `python3 run_demo_client.py tls`. The HTTP respons
 
 ### Steps for running TLS migration micro-benchmark
 
-Clone `nus-sys/capybara-https` repository. In `settings.py`, set `CAPYBARA_HTTPS_DIR` to the cloning path.
-
-In `capybara-https`, edit `Cargo.toml` to use the `demikernel` dependency with `poll-accept-patch` branch.
-
-On building machine, run `python3 build_https_demo.py`. This will build `capybara-https` and copy built binary to this directory.
+On building machine, run `python3 build_https_demo.py`. This will build `https` and copy built binary to this directory.
 
 On source server (node8), run `python3 run_tls_migrate_node8.py`.
 

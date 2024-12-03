@@ -54,6 +54,7 @@ lazy_static = "1.4"
 # Demikernel Organization
 liburing = { git = "https://github.com/demikernel/liburing-rs", rev = "780827ee3f805d94f9909bd47cd925ee8476a64b", optional = true}
 dpdk-rs = { git = "https://github.com/nus-sys/dpdk-rs", rev = "7d75ce6db61351d2a06fa3d84bd0af3ec017166d", optional = true }
+tlse = { git = "https://github.com/nus-sys/tlse", branch = "rust-bindings" }
 
 #=======================================================================================================================
 # Targets
@@ -167,6 +168,12 @@ required-features = ["tcp-migration"]
 [[example]]
 name = "proxy"
 path = "examples/rust/proxy.rs"
+
+[[example]]
+name = "https"
+path = "examples/rust/https.rs"
+required-features = ["tcp-migration"]
+
 
 #=======================================================================================================================
 # Features
