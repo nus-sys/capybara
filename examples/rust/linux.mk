@@ -22,13 +22,15 @@ all: all-examples
 #	cp -f $(BUILD_DIR)/examples/tcpmig-client $(BINDIR)/examples/rust/tcpmig-client.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/tcpmig-server-multi $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/tcpmig-server-single $(BINDIR)/examples/rust/tcpmig-server-single.$(EXEC_SUFFIX)
-	cp -f $(BUILD_DIR)/examples/dpdk-ctrl $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
-#	cp -f $(BUILD_DIR)/examples/http-server $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)
+#	cp -f $(BUILD_DIR)/examples/dpdk-ctrl $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
+	cp -f $(BUILD_DIR)/examples/http-server $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)
+#	cp -f $(BUILD_DIR)/examples/https $(BINDIR)/examples/rust/https.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/capybara-switch $(BINDIR)/examples/rust/capybara-switch.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/proxy-server-fe $(BINDIR)/examples/rust/proxy-server-fe.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/proxy-server-be $(BINDIR)/examples/rust/proxy-server-be.$(EXEC_SUFFIX)
 
-# export EXAMPLE_FEATURES ?= --features=capy-log
+export EXAMPLE_FEATURES ?= --features=tcp-migration
+#,capy-log
 #tcp-migration,
 all-examples:
 #	@echo "$(CARGO) build --examples $(CARGO_FEATURES) $(CARGO_FLAGS)"
@@ -44,10 +46,12 @@ all-examples:
 #	$(CARGO) build --example tcpmig-server-single $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration
 #	@echo "$(CARGO) build --example tcpmig-client $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example tcpmig-client $(CARGO_FEATURES) $(CARGO_FLAGS)
-	@echo "$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)"
-	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
-#	@echo "$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS)"
-#	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
+#	@echo "$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)"
+#	$(CARGO) build --example dpdk-ctrl $(CARGO_FEATURES) $(CARGO_FLAGS)
+	@echo "$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS)"
+	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
+#	@echo "$(CARGO) build --example https $(CARGO_FEATURES) $(CARGO_FLAGS)"
+#	$(CARGO) build --example https $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
 #	$(CARGO) build --example capybara-switch $(CARGO_FEATURES) $(CARGO_FLAGS) --features=capybara-switch
 #,capy-profile
 #	$(CARGO) build --example proxy-server-fe $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)

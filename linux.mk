@@ -63,7 +63,7 @@ export LIBS := $(BUILD_DIR)/$(DEMIKERNEL_LIB)
 #=======================================================================================================================
 
 export LIBOS ?= catnip
-export CARGO_FEATURES := --features=$(LIBOS)-libos,catnap-libos --no-default-features
+export CARGO_FEATURES += --features=$(LIBOS)-libos --no-default-features
 
 # Switch for DPDK
 ifeq ($(LIBOS),catnip)
@@ -595,7 +595,7 @@ clean-redis-data:
 # REDIS + TLS #
 
 redis-server-node8:
-	cd ../cr/src && \
+	cd ../capybara-redis-tlse/src && \
 	sudo -E \
 	$(ENV) \
 	CORE_ID=1 \
@@ -606,20 +606,22 @@ redis-server-node8:
 
 
 redis-server-node9-10000:
-	cd ../cr/src && \
+	cd ../capybara-redis-tlse/src && \
 	sudo -E \
 	$(ENV) \
 	CORE_ID=1 \
+	MIG_AFTER=15 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
-	./redis-server ../config/node9.conf
+	./redis-server ../config/node9_10000.conf
 
 redis-server-node9-10001:
-	cd ../cr/src && \
+	cd ../capybara-redis-tlse/src && \
 	sudo -E \
 	$(ENV) \
 	CORE_ID=2 \
+	MIG_AFTER=15 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
@@ -660,3 +662,24 @@ run-proxy-node9:
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 1 numactl -m0 \
 	$(ELF_DIR)/proxy.elf 10.0.1.9:10000 10.0.1.9:10001
+
+
+https-server-be0:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	numactl -m0 taskset --cpu-list 1 \
+	$(ELF_DIR)/https.elf 10.0.1.9:10000 migrate
+
+https-server-be1:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=2 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	numactl -m0 taskset --cpu-list 2 \
+	$(ELF_DIR)/https.elf 10.0.1.9:10001

@@ -355,7 +355,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     }).expect("Error setting Ctrl-C handler");
     // unsafe { START_TIME = Some(Instant::now()); }
 
-    let session_data_size: usize = std::env::var("SESSION_DATA_SIZE").map_or(1024, |v| v.parse().unwrap());
+    let session_data_size: usize = std::env::var("SESSION_DATA_SIZE").map_or(0, |v| v.parse().unwrap());
 
     let libos_name: LibOSName = LibOSName::from_env().unwrap().into();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
@@ -448,14 +448,10 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     qts.push(libos.accept(qd).expect("accept qtoken"));
 
                     /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
-                    // #[cfg(feature = "manual-tcp-migration")]
-                    // {
-                    //     static mut NUM_MIG: u32 = 0;
-                    //     unsafe{ NUM_MIG += 1; }
-                    //     if unsafe{ NUM_MIG } < 11000 {
-                    //         libos.initiate_migration(new_qd).unwrap();
-                    //     }
-                    //     // }
+                    // static mut NUM_MIG: u32 = 0;
+                    // unsafe{ NUM_MIG += 1; }
+                    // if unsafe{ NUM_MIG } < 11000 {
+                    //     libos.initiate_migration(new_qd).unwrap();
                     // }
                     /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
                 },
@@ -473,7 +469,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                     //server_log!("Issued PUSH => {} pushes pending", state.pushing);
                     server_log!("Issued {sent} PUSHes");
-                    
+
                     
                     #[cfg(feature = "manual-tcp-migration")]
                     if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {

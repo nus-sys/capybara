@@ -473,7 +473,7 @@ int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event)
 
 int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout)
 {
-    // fprintf(stderr, "interpose.c::epoll_wait (epfd: %d, events: %p, maxevents: %d, timeout: %d)\n", epfd, events, maxevents, timeout);
+    // printf("interpose.c::epoll_wait (epfd: %d, events: %p, maxevents: %d, timeout: %d)\n", epfd, events, maxevents, timeout);
     init_libc();
 
     if (UNLIKELY(in_init) || UNLIKELY(is_reentrant_demi_call()))
