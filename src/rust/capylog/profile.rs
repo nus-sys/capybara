@@ -1,4 +1,4 @@
-use std::{time::{Duration, Instant}, collections::HashMap};
+use std::{time::{Duration, Instant}, collections::HashMap, cell::Cell};
 
 //==============================================================================
 // Data
@@ -92,10 +92,20 @@ impl Drop for __MergeDroppedObject {
 #[allow(unused)]
 impl Drop for __TotalDroppedObject {
     fn drop(&mut self) {
-        let time = self.begin.elapsed();
-        let entry = total_data().entry(self.name).or_insert((0, Duration::default()));
-        entry.0 += 1; // Increment total duration
-        entry.1 += time;    // Increment count
+        thread_local! {
+            // Counter for the number of calls to `drop`
+            static CALL_COUNT: Cell<u32> = Cell::new(0);
+        }
+        let count = CALL_COUNT.get();
+        if count == 4000 {
+            let time = self.begin.elapsed();
+            let entry = total_data().entry(self.name).or_insert((0, Duration::default()));
+            entry.0 += 1; // Increment count
+            entry.1 += time;    // Increment total duration
+        } else {
+            // Increment the counter
+            CALL_COUNT.set(count + 1);
+        }
     }
 }
 
@@ -150,7 +160,7 @@ pub(crate) fn __write_profiler_data<W: std::io::Write>(w: &mut W) -> std::io::Re
         write!(w, "{},{}\n", name, datum.as_nanos())?;
     }
 
-    eprintln!("\n[CAPYLOG] dumping total profiler data");
+    eprintln!("\n[CAPYLOG] dumping total profiler data (name, count, total_duration)");
     let data: &HashMap<&str, (u64, Duration)> = total_data();
     for (name, (count, duration)) in data {
         write!(w, "{},{},{}\n", name, count, duration.as_nanos())?;  // Also print the count
