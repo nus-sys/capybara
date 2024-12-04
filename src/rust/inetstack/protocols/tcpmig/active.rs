@@ -84,6 +84,8 @@ pub struct ActiveMigration {
     recv_queue: Vec<(TcpHeader, Buffer)>,
 
     defragmenter: TcpMigDefragmenter,
+
+    configured_state_size: usize,
 }
 
 //======================================================================================================================
@@ -117,6 +119,10 @@ impl ActiveMigration {
             qd,
             recv_queue: Vec::new(),
             defragmenter: TcpMigDefragmenter::new(),
+            configured_state_size: std::env::var("CONFIGURED_STATE_SIZE")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(0), // Use 0 as the default value if parsing or fetching fails
         }
     }
 
@@ -209,6 +215,7 @@ impl ActiveMigration {
                             },
                         };
                         capy_time_log!("RECV_STATE,({})", self.client);
+                        buf.trim(self.configured_state_size);
 
                         // let mut state = TcpState::deserialize(buf);
                         let mut state = TcpState::deserialize_from(&mut buf);
@@ -276,7 +283,8 @@ impl ActiveMigration {
             0,
             MigrationStage::PrepareMigration,
             self.self_udp_port,
-            10000, // if self.self_udp_port == 10001 { 10000 } else { 10001 }
+            if self.self_udp_port == 10001 { 10000 } else { 10001 }, 
+            // 10000, 
         );
         self.last_sent_stage = MigrationStage::PrepareMigration;
         capy_log_mig!(
@@ -303,7 +311,7 @@ impl ActiveMigration {
         capy_log_mig!("Length of recv_queue: {}", state.recv_queue_len());
 
         // let buf = state.serialize();
-        let buf_size = state.serialized_size() + user_data.serialized_size();
+        let buf_size = state.serialized_size() + user_data.serialized_size() + self.configured_state_size;
         let mut buf = Buffer::Heap(DataBuffer::new(buf_size).expect("can allocate buffer"));
         let remaining_buf = state.serialize_into(&mut buf);
         user_data.serialize(remaining_buf);
