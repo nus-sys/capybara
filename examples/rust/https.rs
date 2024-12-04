@@ -1,14 +1,16 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
+use ::anyhow::Result;
 use std::{
     cell::RefCell, collections::HashMap, env::args, fs::read, mem::take, net::SocketAddrV4,
     ptr::null_mut, slice,
+    rc::Rc,
 };
 
 use ctrlc;
 use demikernel::{
     inetstack::protocols::tcpmig::{
+        ApplicationState,
         set_user_connection_peer, UserConnectionMigrateOut, UserConnectionPeer,
     },
     runtime::memory::Buffer,
@@ -96,7 +98,15 @@ impl UserConnectionPeer for PeerData {
         let buf = PEER
             .with_borrow_mut(|peer| peer.incoming.remove(&remote))
             .expect("exists incoming connection data");
+        // let start = std::time::Instant::now(); // Start the timer
         let context = unsafe { tlse::tls_import_context(buf.as_ptr(), buf.len() as _) };
+        // let duration = start.elapsed(); // Calculate the elapsed time
+        // println!("Execution time: {} microseconds", duration.as_micros());
+
+        // tls_import_context:
+        // 1. allocate tls context
+        // 2. init tls context with buf
+        
         assert!(!context.is_null());
         let replaced = PEER.with_borrow_mut(|peer| peer.contexts.insert(qd, context));
         assert!(replaced.is_none())
@@ -131,12 +141,148 @@ impl Drop for MigrateOut {
     }
 }
 
+const BUFSZ: usize = 4096;
+struct AppBuffer {
+    buf: Vec<u8>,
+    head: usize,
+    tail: usize,
+}
+
+impl AppBuffer {
+    pub fn new() -> AppBuffer {
+        AppBuffer {
+            buf: vec![0; BUFSZ],
+            head: 0,
+            tail: 0,
+        }
+    }
+
+    pub fn data_size(&self) -> usize {
+        self.head - self.tail
+    }
+
+    pub fn get_data(&self) -> &[u8] {
+        &self.buf[self.tail..self.head]
+    }
+
+    pub fn push_data(&mut self, size: usize) {
+        self.head += size;
+        assert!(self.head <= self.buf.len());
+    }
+
+    pub fn pull_data(&mut self, size: usize) {
+        assert!(size <= self.data_size());
+        self.tail += size;
+    }
+
+    pub fn get_empty_buf(&mut self) -> &mut [u8] {
+        &mut self.buf[self.head..]
+    }
+
+    pub fn try_shrink(&mut self) -> Result<()> {
+        if self.data_size() == 0 {
+            self.head = 0;
+            self.tail = 0;
+            return Ok(());
+        }
+
+        if self.head < self.buf.len() {
+            return Ok(());
+        }
+
+        if self.data_size() == self.buf.len() {
+            panic!("Need larger buffer for HTTP messages");
+        }
+
+        self.buf.copy_within(self.tail..self.head, 0);
+        self.head = self.data_size();
+        self.tail = 0;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "tcp-migration")]
+impl ApplicationState for AppBuffer {
+    fn serialized_size(&self) -> usize {
+        4 + self.data_size()
+    }
+
+    fn serialize(&self, buf: &mut [u8]) {
+        buf[0..4].copy_from_slice(&(self.data_size() as u32).to_be_bytes());
+        buf[4..4 + self.data_size()].copy_from_slice(self.get_data());
+    }
+
+    fn deserialize(buf: &[u8]) -> Self where Self: Sized {
+        let mut buffer = AppBuffer::new();
+        let data_size = u32::from_be_bytes(buf[0..4].try_into().unwrap()) as usize;
+        buffer.get_empty_buf()[0..data_size].copy_from_slice(&buf[4..4 + data_size]);
+        buffer.push_data(data_size);
+        buffer
+    }
+}
+
+struct SessionData {
+    data: Vec<u8>,
+}
+
+impl SessionData {
+    fn new(size: usize) -> Self {
+        Self { data: vec![5; size] }
+    }
+}
+
+struct ConnectionState {
+    buffer: AppBuffer,
+    session_data: SessionData,
+}
+
+#[cfg(feature = "tcp-migration")]
+impl ApplicationState for SessionData {
+    fn serialized_size(&self) -> usize {
+        4 + self.data.len()
+    }
+
+    fn serialize(&self, buf: &mut [u8]) {
+        buf[0..4].copy_from_slice(&(self.data.len() as u32).to_be_bytes());
+        buf[4..4 + self.data.len()].copy_from_slice(&self.data);
+    }
+
+    fn deserialize(buf: &[u8]) -> Self where Self: Sized {
+        let size = u32::from_be_bytes(buf[0..4].try_into().unwrap()) as usize;
+        let mut data = Vec::with_capacity(size);
+        data.extend_from_slice(&buf[4..4 + size]);
+        Self { data }
+    }
+}
+
+#[cfg(feature = "tcp-migration")]
+impl ApplicationState for ConnectionState {
+    fn serialized_size(&self) -> usize {
+        self.buffer.serialized_size() + self.session_data.serialized_size()
+    }
+
+    fn serialize(&self, buf: &mut [u8]) {
+        self.buffer.serialize(&mut buf[0..self.buffer.serialized_size()]);
+        self.session_data.serialize(&mut buf[self.buffer.serialized_size()..])
+    }
+
+    fn deserialize(buf: &[u8]) -> Self where Self: Sized {
+        let buffer = AppBuffer::deserialize(buf);
+        let session_data = SessionData::deserialize(&buf[buffer.serialized_size()..]);
+        Self { buffer, session_data }
+    }
+}
+
+
 fn server(local: SocketAddrV4, migrate: bool) {
     ctrlc::set_handler(move || {
         eprintln!("Received Ctrl-C signal.");
         std::process::exit(0);
     })
     .expect("Error setting Ctrl-C handler");
+
+    let session_data_size: usize = std::env::var("SESSION_DATA_SIZE").map_or(0, |v| v.parse().unwrap());
+
 
     let libos_name: LibOSName = LibOSName::from_env().unwrap();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
@@ -180,13 +326,40 @@ fn server(local: SocketAddrV4, migrate: bool) {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
 
+                    // #[cfg(feature = "tcp-migration")]
+                    // let state = if let Some(data) = libos.get_migrated_application_state::<ConnectionState>(new_qd) {
+                    //     server_log!("Connection State LOG: Received migrated app data ({} bytes)", data.borrow().serialized_size());
+                    //     data
+                    // } else {
+                    //     server_log!("Connection State LOG: No migrated app data, creating new ConnectionState");
+                    //     let state = Rc::new(RefCell::new(ConnectionState {
+                    //         buffer: AppBuffer::new(),
+                    //         session_data: SessionData::new(session_data_size),
+                    //     }));
+                    //     libos.register_application_state(new_qd, state.clone());
+                    //     state
+                    // }; 
+                    // Inho: it's not working. Need to be debugged. 
+
                     PEER.with_borrow_mut(|peer| {
-                        peer.contexts.entry(new_qd).or_insert_with(|| {
-                            server_log!("creating connection context: qd={new_qd:?}");
-                            let context = unsafe { tlse::tls_accept(server_context) };
-                            unsafe { tlse::tls_make_exportable(context, 1) }
-                            context
-                        });
+                        if peer.contexts.contains_key(&new_qd) {
+                            // If the context already exists, it means this conneciton is migrated in (i.e., migraiton_complete inserted the new_qd before)
+                            /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
+                            static mut NUM_MIG: u32 = 0;
+                            unsafe{ NUM_MIG += 1; }
+                            if unsafe{ NUM_MIG } < 11000 {
+                                libos.initiate_migration(new_qd).unwrap();
+                            }
+                            /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
+                        } else {
+                            // Otherwise, create the connection context as before
+                            peer.contexts.entry(new_qd).or_insert_with(|| {
+                                server_log!("creating connection context: qd={new_qd:?}");
+                                let context = unsafe { tlse::tls_accept(server_context) };
+                                unsafe { tlse::tls_make_exportable(context, 1) };
+                                context
+                            });
+                        }
                     });
 
                     qts.push(libos.pop(new_qd).unwrap());
