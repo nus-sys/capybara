@@ -39,7 +39,8 @@ def kill_procs():
             sudo pkill -INT -e phttp-bench ; \
             sudo pkill -INT -f tcpdump ; \
             sudo pkill -INT -f http-server ; \
-            sudo pkill -INT -e {SERVER_APP}']
+            sudo pkill -INT -f curl ; \
+            sudo pkill -INT -f {SERVER_APP}']
     # print(cmd)
     if TCPDUMP:
         cmd[0] += ' ; sudo pkill -INT -f -e tcpdump'
@@ -97,7 +98,6 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             {f"MAX_REACTIVE_MIGS={max_reactive_migs}" if max_reactive_migs != "" else ""} \
             {f"MAX_PROACTIVE_MIGS={max_proactive_migs}" if max_proactive_migs != "" else ""} \
             MIG_PER_N={int(mig_per_n)} \
-            SESSION_DATA_SIZE={SESSION_DATA_SIZE} \
             MIN_THRESHOLD={MIN_THRESHOLD} \
             RPS_THRESHOLD={RPS_THRESHOLD} \
             THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
@@ -106,7 +106,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             NUM_CORES=4 \
             RUST_BACKTRACE=full \
             CORE_ID=1 \
-            CONFIG_PATH={CAPYBARA_PATH}/config/node8_config.yaml \
+            CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node8_config.yaml \
             LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
             PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
             numactl -m0 \
@@ -138,7 +138,6 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 {f"MAX_REACTIVE_MIGS={max_reactive_migs}" if max_reactive_migs != "" else ""} \
                 {f"MAX_PROACTIVE_MIGS={max_proactive_migs}" if max_proactive_migs != "" else ""} \
                 MIG_PER_N={int(mig_per_n)} \
-                SESSION_DATA_SIZE={SESSION_DATA_SIZE} \
                 MIN_THRESHOLD={MIN_THRESHOLD} \
                 RPS_THRESHOLD={RPS_THRESHOLD} \
                 THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
@@ -147,7 +146,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 NUM_CORES=4 \
                 RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
-                CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml \
+                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node9_config.yaml \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
                 PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
                 numactl -m0 \
@@ -173,7 +172,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             MTU=1500 \
             MSS=1500 \
             NUM_BACKENDS={NUM_BACKENDS} \
-            CONFIG_PATH={CAPYBARA_PATH}/config/node8_config.yaml \
+            CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node8_config.yaml \
             LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
             PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
             taskset --cpu-list 1 numactl -m0 \
@@ -215,15 +214,15 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
         
 
     server_tasks = []
-    for j in range(NUM_BACKENDS): 
-        run_cmd = ''
-        if SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch':
+    for j in range(NUM_BACKENDS):
+        if SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'https':
             run_cmd = f'{CAPYBARA_PATH}/bin/examples/rust/http-server.elf 10.0.1.9:1000{j}'
-        elif SERVER_APP == 'redis-server':
-            run_cmd = f'make run-redis-server'
-        
-        
-        if SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'redis-server':
+            if SERVER_APP == 'https':
+                run_cmd = f'{CAPYBARA_PATH}/bin/examples/rust/https.elf 10.0.1.9:1000{j}'
+            
+            if EVAL_MIG_DELAY == True:
+                run_cmd = run_cmd + ' migrate'
+            
             cmd = [f'cd {CAPYBARA_PATH} && \
                 {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
                 sudo -E \
@@ -234,7 +233,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 {f"MAX_REACTIVE_MIGS={max_reactive_migs}" if max_reactive_migs != "" else ""} \
                 {f"MAX_PROACTIVE_MIGS={max_proactive_migs}" if max_proactive_migs != "" else ""} \
                 MIG_PER_N={int(mig_per_n)} \
-                SESSION_DATA_SIZE={SESSION_DATA_SIZE} \
+                CONFIGURED_STATE_SIZE={CONFIGURED_STATE_SIZE} \
                 MIN_THRESHOLD={MIN_THRESHOLD} \
                 RPS_THRESHOLD={RPS_THRESHOLD} \
                 THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
@@ -243,13 +242,27 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 NUM_CORES=4 \
                 RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
-                {f"CONFIG_PATH={CAPYBARA_PATH}/config/node9_config.yaml" if SERVER_APP == "http-server" or SERVER_APP == "capybara-switch" else ""} \
-                {f"CONF=redis{j}" if SERVER_APP == "redis-server" else ""} \
+                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node9_config.yaml \
                 LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
                 PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
                 numactl -m0 \
                 {run_cmd} \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
+        elif SERVER_APP == 'redis-server':
+            run_cmd = f'make redis-server-node9-1000{j}'
+            cmd = [f'cd {CAPYBARA_PATH} && \
+                {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
+                sudo -E \
+                CAPY_LOG={CAPY_LOG} \
+                LIBOS={LIBOS} \
+                NUM_CORES=4 \
+                RUST_BACKTRACE=full \
+                CORE_ID={j+1} \
+                MIG_AFTER=15 \
+                numactl -m0 \
+                {run_cmd} \
+                > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
+            
         elif SERVER_APP == 'prism':
             cmd = [f'taskset --cpu-list {j+1} \
                 sudo numactl -m0 phttp-bench-backend \
@@ -307,6 +320,7 @@ def parse_mig_delay(experiment_id):
             # Iterate through each line in the file
             start_printing = False
             for line in file:
+                # print(line)
                 # Check if the line contains the target string
                 if "[CAPYLOG] dumping time log data" in line:
                     # Set the flag to start printing lines
@@ -406,7 +420,7 @@ def parse_mig_delay(experiment_id):
 
     with open(f'{DATA_PATH}/{experiment_id}.mig_delay', 'w') as file:
         # Write the content to the file
-        file.write('\n'.join(final_result.split('\n')[-10001:]))
+        file.write('\n'.join(final_result.split('\n')[-2001:]))
         # file.write('\n'.join(final_result.split('\n')[:]))
 
     
@@ -674,9 +688,24 @@ def run_eval():
                                     
                                     run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n)
 
-                                    #exit(0)
+                                    
                                     host = pyrem.host.RemoteHost(CLIENT_NODE)
-                                    if CLIENT_APP != 'wrk':
+                                    
+                                    if EVAL_MIG_DELAY == True:
+                                        cmd = [f'curl 10.0.1.8:10000']
+                                        if SERVER_APP == 'https':
+                                            cmd = [f'cd {CAPYBARA_PATH}/eval/control && python3 run_tls_migrate_client.py']
+                                            
+                                        task = host.run(cmd, quiet=False)
+                                        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+                                        time.sleep(5)
+                                        kill_procs()
+                                        time.sleep(3)
+                                        parse_mig_delay(experiment_id)
+                                        exit()
+                                    
+                                    
+                                    if CLIENT_APP == 'caladan':
                                         cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
                                         task = host.run(cmd, quiet=True)
                                         pyrem.task.Parallel([task], aggregate=True).start(wait=False)
@@ -712,24 +741,33 @@ def run_eval():
                                                 --exptid={DATA_PATH}/{experiment_id} \
                                                 > {DATA_PATH}/{experiment_id}.client']
                                     elif SERVER_APP == 'redis-server':
-                                        cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
-                                                10.0.1.8:10000 \
-                                                --config {CALADAN_PATH}/client.config \
-                                                --mode runtime-client \
-                                                --protocol=resp \
-                                                --redis-string=1000000 \
-                                                --transport=tcp \
-                                                --samples=1 \
-                                                --pps={pps} \
-                                                --threads={conn} \
-                                                --runtime={RUNTIME} \
-                                                --discard_pct=10 \
-                                                --output=trace \
-                                                --rampup=0 \
-                                                {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
-                                                {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
-                                                {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
-                                                --exptid={DATA_PATH}/{experiment_id} \
+                                        if CLIENT_APP == 'caladan':
+                                            cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
+                                                    10.0.1.8:10000 \
+                                                    --config {CALADAN_PATH}/client.config \
+                                                    --mode runtime-client \
+                                                    --protocol=resp \
+                                                    --redis-string=1000000 \
+                                                    --transport=tcp \
+                                                    --samples=1 \
+                                                    --pps={pps} \
+                                                    --threads={conn} \
+                                                    --runtime={RUNTIME} \
+                                                    --discard_pct=10 \
+                                                    --output=trace \
+                                                    --rampup=0 \
+                                                    {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
+                                                    {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
+                                                    {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
+                                                    --exptid={DATA_PATH}/{experiment_id} \
+                                                    > {DATA_PATH}/{experiment_id}.client']
+                                        else: # redis-benchmark
+                                            tls_cmd = f'--tls --cert /usr/local/tls/svr.crt --key /usr/local/tls/svr.key --cacert /usr/local/tls/CA.pem'
+                                            cmd = [f'sudo numactl -m0 \
+                                                {CAPYBARA_HOME}/capybara-redis/src/redis-benchmark \
+                                                {tls_cmd} \
+                                                -h 10.0.1.8 -p 10000 \
+                                                -t PING_INLINE -n 1 -c 1 --threads 1 \
                                                 > {DATA_PATH}/{experiment_id}.client']
                                     else:
                                         print(f'Invalid server app: {SERVER_APP}')
@@ -846,9 +884,11 @@ def run_compile():
     # if SERVER_APP == 'http-server':
     
     if SERVER_APP == 'redis-server':
-        os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-libs")
-        clean = 'make clean-redis &&' if len(sys.argv) > 2 and sys.argv[2] == 'clean' else ''
-        return os.system(f'cd {CAPYBARA_PATH} && {clean} EXAMPLE_FEATURES={features} REDIS_LOG={REDIS_LOG} make redis-server{mig}')
+        return os.system(f"cd {CAPYBARA_PATH} && CARGO_FEATURES={features} make LIBOS={LIBOS} all-libs")
+        clean = 'make distclean &&' if len(sys.argv) > 2 and sys.argv[2] == 'clean' else ''
+        # os.system(f'cd {CAPYBARA_HOME}/capybara-redis && {clean} make -j BUILD_TLS=yes')
+        # return os.system(f'cd {CAPYBARA_HOME}/capybara-redis-tlse && {clean} make -j BUILD_TLS=no redis-server')
+        
     else :
         return os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-examples-rust")
     
