@@ -206,6 +206,7 @@ impl TcpMigPeer {
         };
         let count = COUNT.get();
         COUNT.set(count + 1);
+        // eprintln!("count: {}", count);
         count == migrate_after
     }
 
@@ -249,16 +250,18 @@ impl TcpMigPeer {
                 self.rt.clone(),
                 self.local_ipv4_addr,
                 self.local_link_addr,
-                if self.local_ipv4_addr == FRONTEND_IP {
-                    BACKEND_IP
-                } else {
-                    FRONTEND_IP
-                },
-                if self.local_link_addr == FRONTEND_MAC {
-                    BACKEND_MAC
-                } else {
-                    FRONTEND_MAC
-                },
+                // if self.local_ipv4_addr == FRONTEND_IP {
+                //     BACKEND_IP
+                // } else {
+                //     FRONTEND_IP
+                // },
+                // if self.local_link_addr == FRONTEND_MAC {
+                //     BACKEND_MAC
+                // } else {
+                //     FRONTEND_MAC
+                // },
+                FRONTEND_IP,
+                FRONTEND_MAC,
                 self.self_udp_port,
                 hdr.origin.port(),
                 hdr.origin,
@@ -346,13 +349,13 @@ impl TcpMigPeer {
     }
 
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4), qd: QDesc) {
-        {
-            // capy_profile!("additional_delay");
-            for _ in 0..self.additional_mig_delay {
-                thread::yield_now();
-            }
-        }
-
+        // {
+        //     // capy_profile!("additional_delay");
+        //     for _ in 0..self.additional_mig_delay {
+        //         thread::yield_now();
+        //     }
+        // }
+        capy_time_log!("INIT_MIG,({})", conn.1);
         let (local, remote) = conn;
 
         // eprintln!("initiate migration for connection {} <-> {}", origin, client);
@@ -364,19 +367,21 @@ impl TcpMigPeer {
             self.rt.clone(),
             self.local_ipv4_addr,
             self.local_link_addr,
-            if self.local_ipv4_addr == FRONTEND_IP {
-                BACKEND_IP
-            } else {
-                FRONTEND_IP
-            },
-            if self.local_link_addr == FRONTEND_MAC {
-                BACKEND_MAC
-            } else {
-                FRONTEND_MAC
-            },
+            // if self.local_ipv4_addr == FRONTEND_IP {
+            //     BACKEND_IP
+            // } else {
+            //     FRONTEND_IP
+            // },
+            // if self.local_link_addr == FRONTEND_MAC {
+            //     BACKEND_MAC
+            // } else {
+            //     FRONTEND_MAC
+            // },
+            FRONTEND_IP,
+            FRONTEND_MAC,
             self.self_udp_port,
-            10000,
-            // if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
+            // 10000,
+            if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
             local,
             remote,
             Some(qd),
@@ -530,6 +535,8 @@ pub mod user_connection {
     use crate::{
         runtime::memory::Buffer,
         QDesc,
+        capy_profile,
+        capy_profile_total,
     };
 
     use super::UserConnectionMigrateOut;
@@ -559,6 +566,7 @@ pub mod user_connection {
         }
 
         pub fn migration_complete(&mut self, remote: SocketAddrV4, qd: QDesc) {
+            capy_profile_total!("PROF_IMPORT_TLS");
             match self {
                 Self::Nop => {},
                 Self::Buf(peer) => peer.migration_complete(remote, qd),
@@ -568,6 +576,7 @@ pub mod user_connection {
         }
 
         pub fn migrate_out(&mut self, qd: QDesc) -> MigrateOut {
+            capy_profile_total!("PROF_EXPORT_TLS");
             match self {
                 Self::Nop => MigrateOut::Nop,
                 Self::Buf(peer) => peer.migrate_out(qd),

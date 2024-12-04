@@ -402,7 +402,7 @@ impl TcpPeer {
     pub fn poll_accept(&self, qd: QDesc, new_qd: QDesc, ctx: &mut Context) -> Poll<Result<QDesc, Fail>> {
         let mut inner_: RefMut<Inner> = self.inner.borrow_mut();
         let inner: &mut Inner = &mut *inner_;
-
+        
         let local: SocketAddrV4 = match inner.sockets.get(&qd) {
             Some(Socket::Listening { local }) => *local,
             Some(..) => return Poll::Ready(Err(Fail::new(EOPNOTSUPP, "socket not listening"))),
@@ -416,7 +416,6 @@ impl TcpPeer {
             Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
         };
         let remote = cb.get_remote();
-
         // Enable stats tracking.
         #[cfg(feature = "tcp-migration")]
         {
@@ -824,10 +823,10 @@ impl Inner {
             } */
             /* activate this for recv_queue_len vs mig_lat eval */
 
-            #[cfg(feature = "tcp-migration")]
-            if self.tcpmig.should_migrate() {
-                self.initiate_migration_by_addr((local, remote));
-            }
+            // #[cfg(feature = "tcp-migration")]
+            // if self.tcpmig.should_migrate() {
+            //     self.initiate_migration_by_addr((local, remote));
+            // }
 
             return Ok(());
         }
@@ -1197,6 +1196,7 @@ impl Inner {
             },
             TcpmigReceiveStatus::StateReceived(state, ..) => {
                 self.migrate_in_connection(state)?;
+                //HERE: just 0.6us
             },
             TcpmigReceiveStatus::HeartbeatResponse(global_queue_len_sum) => {
                 self.recv_queue_stats.update_threshold(global_queue_len_sum);
@@ -1215,7 +1215,6 @@ impl Inner {
     /// 2) Check if this connection is established one.
     /// 3) Remove socket from Established hashmap.
     fn migrate_out_connection(&mut self, qd: QDesc) -> Result<TcpState, Fail> {
-        capy_profile!("PROF_EXPORT");
         // Mark socket as migrated out.
         let conn = match self.sockets.get_mut(&qd) {
             None => panic!("invalid QD for migrating out"),
@@ -1237,27 +1236,29 @@ impl Inner {
             Entry::Occupied(entry) => entry,
             Entry::Vacant(_) => panic!("inconsistency between `sockets` and `established`"),
         };
+        {
+            capy_profile_total!("PROF_EXPORT_TCP");
+            // 3) Remove connection from Established hashmap.
+            let cb = entry.remove().cb;
 
-        // 3) Remove connection from Established hashmap.
-        let cb = entry.remove().cb;
+            // Wake the scheduler task for this connection, if any.
+            // The scheduler doesn't poll every qt every call,
+            // only once at the start and then doesn't poll it
+            // until it gets a notification from the CB that a packet has arrived.
+            // But consider this case: polls qt -> no packet yet -> scheduler
+            // won't poll that qt until new packet arrives -> connection is migrated.
+            // Since we depend on the connection being polled to tell the application
+            // that it was migrated, it's a deadlock that leads to that connection
+            // never returning ETCPMIG error and never getting removed from Redis.
+            // Fixed it by waking the scheduler task right before migrating the connection.
+            cb.wake_scheduler_task();
 
-        // Wake the scheduler task for this connection, if any.
-        // The scheduler doesn't poll every qt every call,
-        // only once at the start and then doesn't poll it
-        // until it gets a notification from the CB that a packet has arrived.
-        // But consider this case: polls qt -> no packet yet -> scheduler
-        // won't poll that qt until new packet arrives -> connection is migrated.
-        // Since we depend on the connection being polled to tell the application
-        // that it was migrated, it's a deadlock that leads to that connection
-        // never returning ETCPMIG error and never getting removed from Redis.
-        // Fixed it by waking the scheduler task right before migrating the connection.
-        cb.wake_scheduler_task();
-
-        Ok(TcpState::new(cb.as_ref().into()))
+            Ok(TcpState::new(cb.as_ref().into()))
+        }
     }
 
     fn migrate_in_connection(&mut self, state: TcpState) -> Result<(), Fail> {
-        capy_profile!("PROF_IMPORT");
+        capy_profile_total!("PROF_IMPORT_TCP");
         // TODO: Handle user data from the state.
 
         // Convert state to control block.
@@ -1288,8 +1289,6 @@ impl Inner {
 
     pub fn initiate_migration_by_addr(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
         // capy_profile!("prepare");
-        capy_time_log!("INIT_MIG,({})", conn.1);
-
         let qd = *self.qds.get(&conn).expect("no QD found for connection");
 
         // Disable stats for this connection.
@@ -1315,7 +1314,6 @@ impl Inner {
                 return Err(Fail::new(EBADF, "unsupported socket variant for migrating out"));
             },
         };
-        capy_time_log!("INIT_MIG,({})", conn.1);
 
         // Disable stats for this connection.
         self.established

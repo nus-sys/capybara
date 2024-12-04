@@ -655,7 +655,7 @@ impl InetStack {
     ) -> Result<usize, Fail> {
         let begin = Instant::now();
         // capy_log!("qts: {:?}", qts);
-
+        // eprintln!("wait_any2");
         loop {
             // Poll first, so as to give pending operations a chance to complete.
             self.poll_bg_work();
@@ -700,7 +700,7 @@ impl InetStack {
 
             if let Some(timeout) = timeout {
                 if timeout <= begin.elapsed() {
-                    // capy_log!("return with timeout ({:?})", timeout);
+                    capy_log!("return with timeout ({:?})", timeout);
                     return Ok(0);
                 }
             }
