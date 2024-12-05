@@ -789,7 +789,18 @@ pub unsafe fn demi_set_user_connection_peer_ffi(
     })
     .expect("syscall success")
 }
-
+#[cfg(not(all(feature = "tcp-migration")))]
+#[no_mangle]
+pub unsafe fn demi_set_user_connection_peer_ffi(
+    migrate_in: unsafe extern "C" fn(c_int, *const u8, usize),
+    migrate_out: unsafe extern "C" fn(c_int) -> *const c_void,
+    serialized_size: unsafe extern "C" fn(*const c_void) -> usize,
+    serialize: unsafe extern "C" fn(*const c_void, *mut u8, usize) -> usize,
+) {
+    println!(
+        "tcp-migration is off, so do nothing"
+    );
+}
 //======================================================================================================================
 // Standalone Functions
 //======================================================================================================================
