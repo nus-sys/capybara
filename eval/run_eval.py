@@ -255,10 +255,12 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 sudo -E \
                 CAPY_LOG={CAPY_LOG} \
                 LIBOS={LIBOS} \
-                NUM_CORES=4 \
+                MIN_THRESHOLD={MIN_THRESHOLD} \
+                RPS_THRESHOLD={RPS_THRESHOLD} \
+                THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
+                {f"MAX_REACTIVE_MIGS={max_reactive_migs}" if max_reactive_migs != "" else ""} \
+                {f"MAX_PROACTIVE_MIGS={max_proactive_migs}" if max_proactive_migs != "" else ""} \
                 RUST_BACKTRACE=full \
-                CORE_ID={j+1} \
-                MIG_AFTER=15 \
                 numactl -m0 \
                 {run_cmd} \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
@@ -767,7 +769,7 @@ def run_eval():
                                                 {CAPYBARA_HOME}/capybara-redis/src/redis-benchmark \
                                                 {tls_cmd} \
                                                 -h 10.0.1.8 -p 10000 \
-                                                -t PING_INLINE -n 1 -c 1 --threads 1 \
+                                                -t get -n 3000000 -c {conn} --threads {conn} \
                                                 > {DATA_PATH}/{experiment_id}.client']
                                     else:
                                         print(f'Invalid server app: {SERVER_APP}')

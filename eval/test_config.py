@@ -35,14 +35,14 @@ FEATURES = [
 ]
 
 ################## TEST CONFIG #####################
-NUM_BACKENDS = 2
-SERVER_APP = 'https' # 'https', 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
+NUM_BACKENDS = 4
+SERVER_APP = 'redis-server' # 'https', 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
 CLIENT_APP = 'redis-bench' # 'wrk', 'caladan', 'redis-bench'
 NUM_THREADS = [1] # for wrk load generator
 REPEAT_NUM = 1
 
 TCPDUMP = False
-EVAL_MIG_DELAY = True
+EVAL_MIG_DELAY = False
 EVAL_POLL_INTERVAL = False
 EVAL_LATENCY_TRACE = False
 EVAL_SERVER_REPLY = False
@@ -71,9 +71,9 @@ MAX_PROACTIVE_MIGS = [0] # set element to '' if you don't want to set this env v
 MAX_REACTIVE_MIGS = [0] # set element to '' if you don't want to set this env var
 MIG_PER_N = [0]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
 CONFIGURED_STATE_SIZE = 1024 * 0 # bytes
-MIN_THRESHOLD = 50 # K rps
-RPS_THRESHOLD = 0.35
-THRESHOLD_EPSILON = 0.1 
+MIN_THRESHOLD = 190 # K rps
+RPS_THRESHOLD = 0.3 
+THRESHOLD_EPSILON = 0.1
 
 CAPY_LOG = 'all' # 'all', 'mig'
 REDIS_LOG = 1 # 1, 0
@@ -87,7 +87,7 @@ LOADSHIFTS = workload_spec_generator.main()
 LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
 ZIPF_ALPHA = '' # 0.9, 1.2
 ONOFF = '0' # '0', '1'
-NUM_CONNECTIONS = [100]
+NUM_CONNECTIONS = [128]
 RUNTIME = 10
 
 #####################
