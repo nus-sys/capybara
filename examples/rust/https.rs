@@ -98,10 +98,10 @@ impl UserConnectionPeer for PeerData {
         let buf = PEER
             .with_borrow_mut(|peer| peer.incoming.remove(&remote))
             .expect("exists incoming connection data");
-        // let start = std::time::Instant::now(); // Start the timer
+        // let start = std::time::Instant::now(); 
         let context = unsafe { tlse::tls_import_context(buf.as_ptr(), buf.len() as _) };
-        // let duration = start.elapsed(); // Calculate the elapsed time
-        // println!("Execution time: {} microseconds", duration.as_micros());
+        // let duration = start.elapsed(); 
+        // println!("tls_import_context time: {} microseconds", duration.as_nanos());
 
         // tls_import_context:
         // 1. allocate tls context
@@ -125,12 +125,20 @@ struct MigrateOut(*mut tlse::TLSContext);
 
 impl UserConnectionMigrateOut for MigrateOut {
     fn serialized_size(&self) -> usize {
+        // let start = std::time::Instant::now(); // Start the timer
         let size = unsafe { tlse::tls_export_context(self.0, null_mut(), 0, 1) };
+        // let duration = start.elapsed(); // Calculate the elapsed time
+        // println!("tls_export_context1 time: {} microseconds", duration.as_nanos());
+
         size as _
     }
 
     fn serialize<'buf>(&self, buf: &'buf mut [u8]) -> &'buf mut [u8] {
+        // let start = std::time::Instant::now(); // Start the timer
         let size = unsafe { tlse::tls_export_context(self.0, buf.as_mut_ptr(), buf.len() as _, 1) };
+        // let duration = start.elapsed(); // Calculate the elapsed time
+        // println!("tls_export_context2 time: {} microseconds", duration.as_nanos());
+
         &mut buf[size as usize..]
     }
 }
@@ -349,6 +357,9 @@ fn server(local: SocketAddrV4, migrate: bool) {
                             unsafe{ NUM_MIG += 1; }
                             if unsafe{ NUM_MIG } < 11000 {
                                 libos.initiate_migration(new_qd).unwrap();
+                            }
+                            else {
+                                eprintln!("{} migrations are done", unsafe{ NUM_MIG });
                             }
                             /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
                         } else {

@@ -755,9 +755,9 @@ impl Inner {
         debug!("TCP received {:?}", tcp_hdr);
         let local = SocketAddrV4::new(ip_hdr.get_dest_addr(), tcp_hdr.dst_port);
         let remote = SocketAddrV4::new(ip_hdr.get_src_addr(), tcp_hdr.src_port);
-        capy_log!("{:?} => {:?}", remote, local);
+        capy_log!("TCP {:?} => {:?}", remote, local);
         capy_log!(
-            "SERVER RECEIVE TCP seq_num: {}, data length: {}",
+            "seq_num: {}, data length: {}",
             tcp_hdr.seq_num,
             data.len()
         );
@@ -1055,9 +1055,12 @@ impl TcpPeer {
 
             let threshold = (sum as f64 * inner.rps_threshold) as usize;
             let threshold_epsilon = (sum as f64 * (inner.rps_threshold + inner.threshold_epsilon)) as usize;
-
+            // eprintln!("Threshold: {}, individual: {}", threshold, individual);
             #[cfg(not(feature = "manual-tcp-migration"))]
-            if sum > inner.min_threshold && individual > threshold_epsilon {
+            // if sum > inner.min_threshold && individual > threshold_epsilon {
+            if individual > inner.min_threshold && individual > threshold_epsilon {
+            // inho: set min_threshold to be capacity of an individual server 
+            // meaning that this server is migrating connections only when it reaches the saturation point. 
                 inner.rps_stats.set_threshold(threshold);
                 inner.reactive_migration_enabled = true;
                 if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
@@ -1196,7 +1199,6 @@ impl Inner {
             },
             TcpmigReceiveStatus::StateReceived(state, ..) => {
                 self.migrate_in_connection(state)?;
-                //HERE: just 0.6us
             },
             TcpmigReceiveStatus::HeartbeatResponse(global_queue_len_sum) => {
                 self.recv_queue_stats.update_threshold(global_queue_len_sum);

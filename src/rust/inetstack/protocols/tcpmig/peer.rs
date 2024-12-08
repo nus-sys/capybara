@@ -15,10 +15,7 @@ use super::{
     ApplicationState,
 };
 use crate::{
-    capy_profile,
-    capy_profile_merge_previous,
-    capy_time_log,
-    inetstack::protocols::{
+    capy_log, capy_profile, capy_profile_merge_previous, capy_time_log, inetstack::protocols::{
         ethernet2::{
             EtherType2,
             Ethernet2Header,
@@ -37,8 +34,7 @@ use crate::{
             UdpDatagram,
             UdpHeader,
         },
-    },
-    runtime::{
+    }, runtime::{
         fail::Fail,
         memory::{
             Buffer,
@@ -48,8 +44,7 @@ use crate::{
             types::MacAddress,
             NetworkRuntime,
         },
-    },
-    QDesc,
+    }, QDesc
 };
 
 use ::std::{
@@ -207,7 +202,11 @@ impl TcpMigPeer {
         let count = COUNT.get();
         COUNT.set(count + 1);
         // eprintln!("count: {}", count);
-        count == migrate_after
+        count >= migrate_after
+        
+        // return count >= migrate_after && count % 50 == 0; // for maintenance eval
+        
+
     }
 
     pub fn set_port(&mut self, port: u16) {
@@ -588,6 +587,7 @@ pub mod user_connection {
 
     impl MigrateOut {
         pub fn serialized_size(&self) -> usize {
+            capy_profile_total!("PROF_SER_SIZE_TLS");
             match self {
                 Self::Nop => 0,
                 Self::Buf(data) => data.len(),
@@ -597,6 +597,7 @@ pub mod user_connection {
         }
 
         pub fn serialize<'buf>(&self, mut buf: &'buf mut [u8]) -> &'buf mut [u8] {
+            capy_profile_total!("PROF_SER_TLS");
             match self {
                 Self::Nop => buf,
                 Self::Buf(data) => {
