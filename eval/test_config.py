@@ -29,25 +29,27 @@ FEATURES = [
     'tcp-migration',
     # 'manual-tcp-migration',
     # 'capy-log',
-    # 'capy-profile',
-    'capy-time-log',
+    'capy-profile',
+    # 'capy-time-log',
     # 'server-reply-analysis',
 ]
 
 ################## TEST CONFIG #####################
 NUM_BACKENDS = 4
-SERVER_APP = 'redis-server' # 'https', 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
-CLIENT_APP = 'redis-bench' # 'wrk', 'caladan', 'redis-bench'
+SERVER_APP = 'http-server' # 'https', 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
+TLS = 0
+CLIENT_APP = 'caladan' # 'wrk', 'caladan', 'redis-bench'
 NUM_THREADS = [1] # for wrk load generator
 REPEAT_NUM = 1
 
 TCPDUMP = False
-EVAL_MIG_DELAY = False
+EVAL_MIG_DELAY = True
 EVAL_POLL_INTERVAL = False
 EVAL_LATENCY_TRACE = False
 EVAL_SERVER_REPLY = False
 EVAL_RPS_SIGNAL = False
 EVAL_MIG_CPU_OVHD = False
+EVAL_MAINTENANCE = False
 
 ################## WORKLOAD GENERATOR CONFIG #####################
 # All time intervals are in ms, RPS are in KRPS.
@@ -71,7 +73,7 @@ MAX_PROACTIVE_MIGS = [0] # set element to '' if you don't want to set this env v
 MAX_REACTIVE_MIGS = [0] # set element to '' if you don't want to set this env var
 MIG_PER_N = [0]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
 CONFIGURED_STATE_SIZE = 1024 * 0 # bytes
-MIN_THRESHOLD = 190 # K rps
+MIN_THRESHOLD = 0 # K rps
 RPS_THRESHOLD = 0.3 
 THRESHOLD_EPSILON = 0.1
 
@@ -80,14 +82,14 @@ REDIS_LOG = 1 # 1, 0
 
 
 ### CALADAN ###
-CLIENT_PPS = [0] #[i for i in range(10000, 250000 + 1, 30000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [567000*4]#[i for i in range(100000, 1_300_001, 100000)]
 import workload_spec_generator
 LOADSHIFTS = workload_spec_generator.main()
 # LOADSHIFTS = '90000:10000,270000:10000,450000:10000,630000:10000,810000:10000/90000:50000/90000:50000/90000:50000'
 LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
 ZIPF_ALPHA = '' # 0.9, 1.2
 ONOFF = '0' # '0', '1'
-NUM_CONNECTIONS = [128]
+NUM_CONNECTIONS = [128] #128
 RUNTIME = 10
 
 #####################

@@ -62,22 +62,33 @@ def kill_procs():
 
 def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     global experiment_id
-    if SERVER_APP != "capybara-switch":
-        print('SETUP SWITCH')
-        cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
-            /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
-        if SERVER_APP == 'prism' or SERVER_APP == 'proxy-server':
+    print('SETUP SWITCH')
+    cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
+        /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
+    if EVAL_MAINTENANCE == True:
+        if 'tcp-migration' in FEATURES:
             cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
-            /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/prism/prism_setup.py"']
-
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=True,
-        ).stdout.decode()
-        # print(result + '\n\n')
+            /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/capybara_msr/capybara_nsl_setup.py"'] 
+        else:
+            cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
+            /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/port_forward/port_forward.py"'] 
+    
+    if SERVER_APP == 'prism' or SERVER_APP == 'proxy-server':
+        cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
+        /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/prism/prism_setup.py"']
+    if SERVER_APP == "capybara-switch":
+        cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
+        /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/endhost_switch/endhost_switch.py"']
+        
+        
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=True,
+    ).stdout.decode()
+    # print(result + '\n\n')
 
     if SERVER_APP == 'proxy-server':
         print('RUNNING FRONTEND')
@@ -190,9 +201,32 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     if SERVER_APP != 'prism' and LIBOS == 'catnip': 
         cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl'] 
         task = host.run(cmd, quiet=True)
-        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
-        time.sleep(3)
+        pyrem.task.Parallel([task], aggregate=True).start(wait=False)    
+        if EVAL_MAINTENANCE == True:
+            cmd = [f'cd {CAPYBARA_PATH} && make fe-dpdk-ctrl'] 
+            node8 = pyrem.host.RemoteHost(FRONTEND_NODE)
+            task = node8.run(cmd, quiet=True)
+            pyrem.task.Parallel([task], aggregate=True).start(wait=False)    
+            print('fe-dpdk-ctrl is running')
         print('be-dpdk-ctrl is running')
+        time.sleep(3)
+        
+        if EVAL_MAINTENANCE == True:
+            run_cmd = f'make redis-server-node8'
+            cmd = [f'cd {CAPYBARA_PATH} && \
+                sudo -E \
+                CAPY_LOG={CAPY_LOG} \
+                LIBOS={LIBOS} \
+                RUST_BACKTRACE=full \
+                MIG_AFTER=900000 \
+                numactl -m0 \
+                {run_cmd} \
+                > {DATA_PATH}/{experiment_id}.origin 2>&1']
+            node8 = pyrem.host.RemoteHost(FRONTEND_NODE)
+            task = node8.run(cmd, quiet=True)
+            pyrem.task.Parallel([task], aggregate=True).start(wait=False)    
+            print('origin server is running')
+            
     elif SERVER_APP == 'prism': # run FE
         fe_host = pyrem.host.RemoteHost(FRONTEND_NODE)
         BE_ADDRs = f'{NODE9_IP}:10000'
@@ -261,6 +295,9 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 {f"MAX_REACTIVE_MIGS={max_reactive_migs}" if max_reactive_migs != "" else ""} \
                 {f"MAX_PROACTIVE_MIGS={max_proactive_migs}" if max_proactive_migs != "" else ""} \
                 RUST_BACKTRACE=full \
+                {f"REDIS_CONFIG=../config/node9_1000{j}.conf" if TLS == 1 else f"REDIS_CONFIG=../config/node9_1000{j}_tcp.conf"} \
+                {f"REDIS_SERVER_PATH=capybara-redis-tlse" if TLS == 1 else "REDIS_SERVER_PATH=capybara-redis"} \
+                {f"MIG_AFTER=10000000" if EVAL_MAINTENANCE == True else ""} \
                 numactl -m0 \
                 {run_cmd} \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
@@ -692,6 +729,9 @@ def run_eval():
 
                                     
                                     host = pyrem.host.RemoteHost(CLIENT_NODE)
+                                    cmd = [f'sudo arp -f {CAPYBARA_HOME}/arp_table']
+                                    task = host.run(cmd, quiet=True)
+                                    pyrem.task.Parallel([task], aggregate=True).start(wait=True)
                                     
                                     if EVAL_MIG_DELAY == True:
                                         cmd = [f'curl 10.0.1.8:10000']
@@ -704,6 +744,32 @@ def run_eval():
                                         kill_procs()
                                         time.sleep(3)
                                         parse_mig_delay(experiment_id)
+                                        exit()
+                                    
+                                    if EVAL_MAINTENANCE == True:
+                                        client = pyrem.host.RemoteHost(CLIENT_NODE)
+                                        tls_cmd = f'--tls --cert /usr/local/tls/svr.crt --key /usr/local/tls/svr.key --cacert /usr/local/tls/CA.pem'
+                                        cmd = [f'sudo numactl -m0 \
+                                            {CAPYBARA_HOME}/capybara-redis/src/redis-benchmark \
+                                            {f"{tls_cmd}" if TLS == 1 else ""} \
+                                            -h 10.0.1.8 -p 10000 \
+                                            -t get -n 3000000 -c {conn} --threads {conn} \
+                                            --backup-host 10.0.1.9 --backup-port 10000 \
+                                            > {DATA_PATH}/{experiment_id}.client']
+                                        
+                                        task = client.run(cmd, quiet=False)
+                                        
+                                        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+                                        time.sleep(5)
+                                    
+                                        node8 = pyrem.host.RemoteHost(FRONTEND_NODE)
+                                        cmd = [f'sudo pkill -INT -e dpdk-ctrl.elf ; \
+                                                sudo pkill -INT -f {SERVER_APP}']
+                                        task = node8.run(cmd, quiet=False)
+                                        pyrem.task.Parallel([task], aggregate=True).start(wait=True)
+                                        time.sleep(10)
+                                        
+                                        kill_procs()
                                         exit()
                                     
                                     
@@ -767,7 +833,7 @@ def run_eval():
                                             tls_cmd = f'--tls --cert /usr/local/tls/svr.crt --key /usr/local/tls/svr.key --cacert /usr/local/tls/CA.pem'
                                             cmd = [f'sudo numactl -m0 \
                                                 {CAPYBARA_HOME}/capybara-redis/src/redis-benchmark \
-                                                {tls_cmd} \
+                                                {f"{tls_cmd}" if TLS == 1 else ""} \
                                                 -h 10.0.1.8 -p 10000 \
                                                 -t get -n 3000000 -c {conn} --threads {conn} \
                                                 > {DATA_PATH}/{experiment_id}.client']
@@ -859,7 +925,7 @@ def run_eval():
 def exiting():
     global final_result
     print('EXITING')
-    result_header = "ID, #BE, #CONN, MIG_DELAY, TOTAL_#_MIG, MIG_PER_N, Distribution, RPS, Target, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, Start, StartTsc"
+    result_header = "ID, #BE, #CONN, MIG_DELAY, TOTAL_#_MIG, MIG_PER_N, RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th"
     if CLIENT_APP == 'wrk':
         result_header = "ID, #BE, #CONN, #THREAD, AVG, p50, p75, p90, p99"
         
@@ -890,6 +956,7 @@ def run_compile():
         clean = 'make distclean &&' if len(sys.argv) > 2 and sys.argv[2] == 'clean' else ''
         # os.system(f'cd {CAPYBARA_HOME}/capybara-redis && {clean} make -j BUILD_TLS=yes')
         # return os.system(f'cd {CAPYBARA_HOME}/capybara-redis-tlse && {clean} make -j BUILD_TLS=no redis-server')
+        # capybara-redis-tlse is implemented to use tlse library, and it should be compiled with "BUILD_TLS=no" always 
         
     else :
         return os.system(f"cd {CAPYBARA_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-examples-rust")
