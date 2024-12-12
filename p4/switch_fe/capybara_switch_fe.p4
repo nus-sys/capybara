@@ -824,7 +824,7 @@ control Egress(
         void apply(inout bit<16> val, out bit<16> rv) {
             rv = val+10000;
             if(val == NUM_BACKENDS-1){
-                val = 0;
+                val = 1; // val=1 for redis load-balancing case (migrations from be0 to others)
             }else{
                 val = val + 1;    
             }
@@ -898,7 +898,7 @@ control Egress(
                 exec_add_reg_individual_rps_1();
             }
         }else if(hdr.tcpmig.isValid() && meta.flag == 0b00100000) { // PREPARE_MIG
-            exec_read_reg_min_rps_server_port();
+            // exec_read_reg_min_rps_server_port(); 
             // exec_read_round_robin_server_port();
             // counter_update.execute(0);
         }

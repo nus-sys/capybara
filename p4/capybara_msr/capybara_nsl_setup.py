@@ -259,19 +259,21 @@ sl2 = capybara_nsl(default_ttl=10000)
 sl2.setup()
 set_bcast([24, 32, 36])
 
+# for i in range(65536):
+#     p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = i % num_backends) 
+# no need in counter-based SYN distribution 
+
 for i in range(65536):
-    p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = 0)
+    p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
+    p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xe805)
+    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.8'))
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000)
 
-# for i in range(num_backends):
-p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=0, f1=0x08c0ebb6)
-p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=0, f1=0xe805)
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.8'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=0, f1=10000)
-
-# p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=1, f1=0x08c0ebb6)
-# p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=1, f1=0xc5ad)
-# p4.Ingress.backend_ip.mod(REGISTER_INDEX=1, f1=IPAddress('10.0.1.9'))
-# p4.Ingress.backend_port.mod(REGISTER_INDEX=1, f1=10009)
+# for i in range(65536):
+#     p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
+#     p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xc5ad)
+#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.9'))
+#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000)
 
 
 

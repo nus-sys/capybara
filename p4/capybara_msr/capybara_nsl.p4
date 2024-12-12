@@ -344,6 +344,13 @@ control Ingress(
         size = 4;
     }
 
+    Register<index_t, _> (1) counter;
+    RegisterAction<index_t, _, index_t>(counter) counter_update = {
+        void apply(inout index_t val, out index_t rv) {
+            rv = val;
+            val = val + 1;
+        }
+    };
 
     apply {
          
@@ -371,7 +378,9 @@ control Ingress(
                     meta.client_ip = hdr.ipv4.src_ip;
                     meta.client_port = hdr.tcp.src_port;
 
-                    meta.backend_idx = get_be_idx.execute(meta.client_port);
+                    // meta.backend_idx = get_be_idx.execute(meta.client_port); // counter => address
+                    meta.backend_idx = counter_update.execute(0);
+                    
                     exec_read_backend_mac_hi32();
                     exec_read_backend_mac_lo16();
                     exec_read_backend_ip();

@@ -252,7 +252,7 @@ def set_bcast(ports):
 
 
 p4 = bfrt.capybara_switch_fe.pipe
-num_backends = 4
+num_backends = 1
 
 ### Setup L2 learning
 sl2 = capybara_switch_fe(default_ttl=10000)
@@ -282,16 +282,17 @@ bfrt.pre.mgid.entry(MGID=2, MULTICAST_NODE_ID=mcast_node_ids,
 
 for i in range(65536):
     p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = i % num_backends)
-
+    # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = (i/2) % 4) // for redis-benchmark distribution
+    
 for i in range(num_backends):
     p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
     p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xc5ad)
     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.9'))
-    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + (i % 4))
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + i)
 
 
 p4.Egress.reg_min_rps_server_port.mod(REGISTER_INDEX=0, f1=0)
-# p4.Egress.reg_round_robin_server_port.mod(REGISTER_INDEX=0, f1=0)
+# p4.Egress.reg_round_robin_server_port.mod(REGISTER_INDEX=0, f1=1) // f1=1 for redis load-balancing case (migrations from be0 to others)
 
 port_mirror_setup_file="/home/singtel/inho/Capybara/capybara/p4/includes/setup_port_mirror.py" # <== To Modify and Add
 exec(open(port_mirror_setup_file).read()) # <== To Add
