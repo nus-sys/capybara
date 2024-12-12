@@ -734,10 +734,10 @@ def run_eval():
                                     pyrem.task.Parallel([task], aggregate=True).start(wait=True)
                                     
                                     if EVAL_MIG_DELAY == True:
-                                        cmd = [f'curl 10.0.1.8:10000']
+                                        cmd = [f'cd {CAPYBARA_PATH}/eval/control && python3 run_tcp_migrate_client.py']
                                         if SERVER_APP == 'https':
                                             cmd = [f'cd {CAPYBARA_PATH}/eval/control && python3 run_tls_migrate_client.py']
-                                            
+                                        
                                         task = host.run(cmd, quiet=False)
                                         pyrem.task.Parallel([task], aggregate=True).start(wait=False)
                                         time.sleep(5)
@@ -952,10 +952,10 @@ def run_compile():
     # if SERVER_APP == 'http-server':
     
     if SERVER_APP == 'redis-server':
-        return os.system(f"cd {CAPYBARA_PATH} && CARGO_FEATURES={features} make LIBOS={LIBOS} all-libs")
+        os.system(f"cd {CAPYBARA_PATH} && CARGO_FEATURES={features} make LIBOS={LIBOS} all-libs")
         clean = 'make distclean &&' if len(sys.argv) > 2 and sys.argv[2] == 'clean' else ''
-        # os.system(f'cd {CAPYBARA_HOME}/capybara-redis && {clean} make -j BUILD_TLS=yes')
-        # return os.system(f'cd {CAPYBARA_HOME}/capybara-redis-tlse && {clean} make -j BUILD_TLS=no redis-server')
+        os.system(f'cd {CAPYBARA_HOME}/capybara-redis && {clean} make -j BUILD_TLS=yes')
+        return os.system(f'cd {CAPYBARA_HOME}/capybara-redis-tlse && {clean} make -j BUILD_TLS=no redis-server')
         # capybara-redis-tlse is implemented to use tlse library, and it should be compiled with "BUILD_TLS=no" always 
         
     else :

@@ -529,9 +529,9 @@ impl InetStack {
 
         loop {
             // Poll first, so as to give pending operations a chance to complete.
-            // capy_log!("START6");
+            capy_log!("START6");
             self.scheduler.poll();
-            self.poll_bg_work();
+            // self.poll_bg_work(); // comment for Redis eval, uncomment for FE-proxy (or other native applications) eval
 
             // The operation has completed, so extract the result and return.
             if handle.has_completed() {

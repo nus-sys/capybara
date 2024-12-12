@@ -6,7 +6,7 @@ from settings import *
 
 def build():
     build_shim.build()
-    build_dpdk_ctrl.build()
+    # build_dpdk_ctrl.build()
     run_shell("make -j BUILD_TLS=no redis-server", cwd=REDIS_DIR)
     run_shell("make -j BUILD_TLS=yes redis-cli", cwd=REDIS_CLI_DIR)
 

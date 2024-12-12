@@ -21,7 +21,7 @@ ENVVARS = dict(
     MSS="9000",
 )
 
-PRELOAD_ENVVARS = dict(LD_PRELOAD=f"{CWD}/lib/libshim.so", C_LOG="info")
+PRELOAD_ENVVARS = dict(LD_PRELOAD=f"{CWD}/lib/libshim.so")
 # PRELOAD_ENVVARS = dict(LD_PRELOAD=f"{CWD}/lib/libshim.so", C_LOG="trace")
 
 NODE8_ENVVARS = dict(CONFIG_PATH=f"{CWD}/config/node8_config.yaml")

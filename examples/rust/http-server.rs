@@ -408,7 +408,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Accept(new_qd) => {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
-
+                    
+                    /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
                     #[cfg(feature = "tcp-migration")]
                     let state = if let Some(data) = libos.get_migrated_application_state::<ConnectionState>(new_qd) {
                         server_log!("Connection State LOG: Received migrated app data ({} bytes)", data.borrow().serialized_size() - 8);
@@ -431,7 +432,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     // capy_time_log!("APP_STATE_REGISTERED,(n/a)");
                     
                     // Pop from new_qd
-                    /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
                     match libos.pop(new_qd) {
                         Ok(pop_qt) => {
                             qts.push(pop_qt)
@@ -440,12 +440,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     }
                     #[cfg(feature = "manual-tcp-migration")]
                     assert!(requests_remaining.insert(new_qd, migration_per_n).is_none());
+                    connstate.insert(new_qd, state);
                     /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
 
-                    connstate.insert(new_qd, state);
-
-                    // Re-arm accept
-                    qts.push(libos.accept(qd).expect("accept qtoken"));
 
                     /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
                     // static mut NUM_MIG: u32 = 0;
@@ -453,7 +450,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     // if unsafe{ NUM_MIG } < 11000 {
                     //     libos.initiate_migration(new_qd).unwrap();
                     // }
+                    // qts.push(libos.pop(new_qd).unwrap());
                     /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
+                    
+                    // Re-arm accept
+                    qts.push(libos.accept(qd).expect("accept qtoken"));
                 },
 
                 OperationResult::Push => {

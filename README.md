@@ -1,3 +1,8 @@
+# Eval setup for OSDI '25 submission
+- This repo:  ~/Capybara/capybara
+- capybara branch of capybara-redis: ~/Capybara/capybara-redis
+- dev-cowsay branch of capybara-redis:  ~/Capybara/capybara-redis/tlse
+
 # redis-maintenance-bench.cpp
 - ./eval/redis-bench$ `git clone https://github.com/chriskohlhoff/asio.git`
 - ./eval/redis-bench$ `g++ -std=c++11 -I ./asio/asio/include -o redis-bench redis-bench.cpp -L/usr/lib/x86_64-linux-gnu -lpthread -lboost_system -lssl -lcrypto`

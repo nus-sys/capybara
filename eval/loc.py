@@ -34,7 +34,9 @@ walk("../src/rust/")
 
 # wo comments
 # old 18187
-# new 21808 (3621)
+# SOSP'24 21808 (3621)
+# OSDI'25 22614 (4427)
+
 
 # prism 18187 (1812)
 # prism app 958

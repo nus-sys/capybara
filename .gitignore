@@ -34,3 +34,5 @@ p4/includes/p4include/*
 compile_commands.json
 # clangd
 .cache
+
+*.pyc

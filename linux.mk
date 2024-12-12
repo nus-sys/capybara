@@ -604,48 +604,45 @@ redis-server-node8:
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
 	./redis-server ../config/node8.conf
 
-
 redis-server-node9-10000:
-	cd ../capybara-redis-tlse/src && \
+	cd ../$(if $(REDIS_SERVER_PATH),$(REDIS_SERVER_PATH),capybara-redis-tlse)/src && \
 	sudo -E \
 	$(ENV) \
 	CORE_ID=1 \
-	MIG_AFTER=15 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
-	./redis-server ../config/node9_10000.conf
+	./redis-server $(if $(REDIS_CONFIG),$(REDIS_CONFIG),../config/node9_10000.conf)
 
 redis-server-node9-10001:
-	cd ../capybara-redis-tlse/src && \
+	cd ../$(if $(REDIS_SERVER_PATH),$(REDIS_SERVER_PATH),capybara-redis-tlse)/src && \
 	sudo -E \
 	$(ENV) \
 	CORE_ID=2 \
-	MIG_AFTER=15 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
-	./redis-server ../config/node9_10001.conf
+	./redis-server $(if $(REDIS_CONFIG),$(REDIS_CONFIG),../config/node9_10001.conf)
 
 redis-server-node9-10002:
-	cd ../cr/src && \
+	cd ../$(if $(REDIS_SERVER_PATH),$(REDIS_SERVER_PATH),capybara-redis-tlse)/src && \
 	sudo -E \
 	$(ENV) \
 	CORE_ID=3 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
-	./redis-server ../config/node9_10002.conf
+	./redis-server $(if $(REDIS_CONFIG),$(REDIS_CONFIG),../config/node9_10002.conf)
 
 redis-server-node9-10003:
-	cd ../cr/src && \
+	cd ../$(if $(REDIS_SERVER_PATH),$(REDIS_SERVER_PATH),capybara-redis-tlse)/src && \
 	sudo -E \
 	$(ENV) \
 	CORE_ID=4 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	LD_PRELOAD=$(LIBDIR)/libshim.so \
-	./redis-server ../config/node9_10003.conf
+	./redis-server $(if $(REDIS_CONFIG),$(REDIS_CONFIG),../config/node9_10003.conf)
 
 run-proxy-node8:
 	sudo -E \
