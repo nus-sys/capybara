@@ -32,3 +32,6 @@ Cargo.lock
 # eval
 eval/__pycache__/
 p4/includes/p4include/*
+
+*.pyc
+*.conf

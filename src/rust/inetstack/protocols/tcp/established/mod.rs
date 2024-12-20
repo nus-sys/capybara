@@ -104,4 +104,8 @@ impl EstablishedSocket {
     pub fn endpoints(&self) -> (SocketAddrV4, SocketAddrV4) {
         (self.cb.get_local(), self.cb.get_remote())
     }
+
+    pub fn is_closed(&self) -> bool {
+        self.cb.is_closed()
+    }
 }

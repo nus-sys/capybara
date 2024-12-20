@@ -12,7 +12,7 @@ use super::{
     passive_open::PassiveSocket,
 };
 use crate::{
-    inetstack::protocols::{
+    capy_time_log, capylog, inetstack::protocols::{
         arp::ArpPeer,
         ethernet2::{
             EtherType2,
@@ -37,8 +37,7 @@ use crate::{
             },
             SeqNumber,
         },
-    },
-    runtime::{
+    }, runtime::{
         fail::Fail,
         memory::Buffer,
         network::{
@@ -48,9 +47,7 @@ use crate::{
         },
         timer::TimerRc,
         QDesc,
-    },
-    scheduler::scheduler::Scheduler,
-    capy_time_log,
+    }, scheduler::scheduler::Scheduler
 };
 
 use ::futures::channel::mpsc;
@@ -767,7 +764,12 @@ impl Inner {
 
             debug!("Routing to established connection: {:?}", key);
             s.receive(&mut tcp_hdr,data);
-
+            if s.is_closed() {
+                self.established.remove(&key);
+                
+                let qd = self.qds.remove(&(local, remote)).unwrap();
+                self.sockets.remove(&qd).unwrap();
+            }
             /* activate this for recv_queue_len vs mig_lat eval */
             /* if !is_data_empty {
                 let mig_key = (

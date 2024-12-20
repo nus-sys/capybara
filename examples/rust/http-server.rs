@@ -15,12 +15,17 @@ use ::demikernel::{
 };
 use num_traits::ToBytes;
 
-use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map::Entry}, rc::Rc, time::Instant};
+use std::{
+    cell::RefCell, collections::{HashMap, HashSet, hash_map::Entry}, rc::Rc, time::Instant,
+    sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
+};
 use ::std::{
     env,
     net::SocketAddrV4,
     panic,
     str::FromStr,
+    time::Duration,
 };
 use ctrlc;
 
@@ -182,10 +187,10 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
             };
             static ref RESPONSE: String = {
                 let file_path = match *N {
-                    256 => "/var/www/demo/index_256b.html",
-                    1024 => "/var/www/demo/index_1024b.html",
-                    8192 => "/var/www/demo/index_8192b.html",
-                    _ => "/var/www/demo/index.html", // Default file
+                    256 => format!("{}/{}", ROOT, "index_256b.html"),
+                    1024 => format!("{}/{}", ROOT, "index_1024b.html"),
+                    8192 => format!("{}/{}", ROOT, "index_8192b.html"),
+                    _ => format!("{}/{}", ROOT, "index.html"), // Default file
                 };
                 match std::fs::read_to_string(file_path) {
                     Ok(contents) => {
@@ -354,6 +359,16 @@ fn server(local: SocketAddrV4) -> Result<()> {
     #[cfg(not(feature = "tcp-migration"))]{
         eprintln!("TCP MIGRATION DISABLED");
     }
+
+    // Atomic flag to control the loop
+    let running = Arc::new(AtomicBool::new(true));
+
+    // Set up Ctrl+C handler
+    let r = running.clone();
+    ctrlc::set_handler(move || {
+        eprintln!("Ctrl+C detected! Exiting gracefully...");
+        r.store(false, Ordering::SeqCst);
+    })?;
     
     unsafe{ SERVER_PORT = local.port() };
     let mut request_count = 0;
@@ -362,12 +377,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
             .unwrap_or(String::from("10")) // Default value is 10 if MIG_PER_N is not set
             .parse()
             .expect("MIG_PER_N must be a i32");
-    ctrlc::set_handler(move || {
-        eprintln!("Received Ctrl-C signal.");
-        // LibOS::dpdk_print_eth_stats();
-        // LibOS::capylog_dump(&mut std::io::stderr().lock());
-        std::process::exit(0);
-    }).expect("Error setting Ctrl-C handler");
     // unsafe { START_TIME = Some(Instant::now()); }
 
     let session_data_size: usize = std::env::var("SESSION_DATA_SIZE").map_or(1024, |v| v.parse().unwrap());
@@ -393,8 +402,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
     let mut indices: Vec<usize> = Vec::with_capacity(2000);
     indices.resize(2000, 0);
     
-    loop {
-        let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, None).expect("result");
+    while running.load(Ordering::SeqCst) {
+        let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, Some(Duration::from_secs(1))).expect("result");
 
         /* let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
             matches!(result, OperationResult::Pop(_, _))
@@ -576,6 +585,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
 
+    std::process::exit(0);
     // TODO: close socket when we get close working properly in catnip.
     Ok(())
 }

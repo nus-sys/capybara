@@ -168,6 +168,37 @@ impl Receiver {
         let buf_len: u32 = buf.len() as u32;
         let mut recv_queue = self.recv_queue.borrow_mut();
         
+        /* TO MEASURE RECV_QUEUE RESIZING LATENCY */
+        /* 
+        let sizes = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192];
+        for &n in &sizes {
+            let mut resize_latencies = Vec::new();
+            for _ in 0..10000 {
+                let mut recv_queue = VecDeque::with_capacity(n);
+                // Push data until a resize is triggered
+                while recv_queue.len() < n {
+                    recv_queue.push_back(buf.clone());
+                }
+
+                // Start measuring latency
+                let start = Instant::now();
+                recv_queue.push_back(buf.clone());
+                // Measure elapsed time for resize
+                let duration = start.elapsed().as_nanos();
+                resize_latencies.push(duration);
+
+                // Reset VecDeque for the next iteration
+                // self.recv_queue = VecDeque::with_capacity(max_capacity / 2);
+            }
+
+            // Calculate average latency
+            let total_latency: u128 = resize_latencies.iter().sum();
+            let average_latency = total_latency / (resize_latencies.len() as u128);
+
+            println!("{},{}", n*2, average_latency);
+        }
+        panic!("Done");
+        */
         /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
         recv_queue.push_back(buf);
         /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
@@ -315,6 +346,10 @@ impl ControlBlock {
             retransmit_deadline: WatchedValue::new(None),
             rto_calculator: RefCell::new(RtoCalculator::new()),
         }
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.state.get() == State::Closed
     }
 
     pub fn get_local(&self) -> SocketAddrV4 {
@@ -1217,6 +1252,29 @@ impl ControlBlock {
         false
     }
 }
+
+/* TO CONFIRM IF CONTROL BLOCK IS DROPPED */
+// impl Drop for ControlBlock {
+//     fn drop(&mut self) {
+//         println!("ControlBlock for connection {} -> {} is dropped.", self.local, self.remote);
+//     }
+// }
+// impl Drop for Receiver {
+//     fn drop(&mut self) {
+//         println!("Receiver for connection is dropped. Clearing recv_queue...");
+//         // Log the size of the queue before dropping
+//         println!("recv_queue size before drop: {}", self.recv_queue.borrow().len());
+//         // Explicitly clear the queue
+//         self.recv_queue.borrow_mut().clear();
+//         println!("recv_queue is cleared.");
+//     }
+// }
+// impl Drop for Sender {
+//     fn drop(&mut self) {
+//         println!("Sender for connection is dropped.");
+//     }
+// }
+
 
 //==============================================================================
 // TCP Migration
