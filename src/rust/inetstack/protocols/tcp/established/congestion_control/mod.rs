@@ -34,7 +34,7 @@ pub trait SlowStartCongestionAvoidance {
     // Called immediately before the cwnd check is performed before data is sent.
     fn on_cwnd_check_before_send(&self) {}
 
-    fn on_ack_received(&self, _rto: Duration, _send_unacked: SeqNumber, _send_next: SeqNumber, _ack_seq_no: SeqNumber) {
+    fn on_ack_received(&self, _rto: Duration, _send_unacked: SeqNumber, _send_next: SeqNumber, _ack_seq_no: SeqNumber, seg_len: u32) {
     }
 
     // Called immediately before retransmit after RTO.

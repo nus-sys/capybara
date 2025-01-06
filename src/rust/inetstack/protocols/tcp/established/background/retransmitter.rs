@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 use super::ControlBlock;
-use crate::runtime::fail::Fail;
+use crate::{capy_time_log, runtime::fail::Fail};
 use ::futures::{
     future::{
         self,
@@ -39,6 +39,7 @@ pub async fn retransmitter(cb: Rc<ControlBlock>) -> Result<!, Fail> {
             cb.congestion_control_on_fast_retransmit();
 
             // Retransmit earliest unacknowledged segment.
+            capy_time_log!("FAST RETRANSMIT");
             cb.retransmit();
             continue;
         }
@@ -49,6 +50,7 @@ pub async fn retransmitter(cb: Rc<ControlBlock>) -> Result<!, Fail> {
             _ = rtx_fast_retransmit_changed => continue,
             _ = rtx_future => {
                 trace!("Retransmission Timer Expired");
+                capy_log!("Retransmission Timer Expired");
                 // Notify congestion control about RTO.
                 // ToDo: Is this the best place for this?
                 // ToDo: Why call into ControlBlock to get SND.UNA when congestion_control_on_rto() has access to it?
@@ -64,6 +66,7 @@ pub async fn retransmitter(cb: Rc<ControlBlock>) -> Result<!, Fail> {
                 // RFC 6298 Section 5.6: Restart the retransmission timer with the new RTO.
                 let rto: Duration = cb.rto();
                 let deadline: Instant = cb.clock.now() + rto;
+                capy_log!("[retransmitter] RT deadline: {:?} (now: {:?}, RTO: {:?})", deadline, cb.clock.now(), rto);
                 cb.set_retransmit_deadline(Some(deadline));
             },
         }

@@ -3,18 +3,17 @@
 
 use super::ControlBlock;
 use crate::{
-    inetstack::protocols::tcp::{
+    capy_time_log, inetstack::protocols::tcp::{
         segment::TcpHeader,
         SeqNumber,
-    },
-    runtime::{
+    }, runtime::{
         fail::Fail,
         memory::Buffer,
         watched::{
             WatchFuture,
             WatchedValue,
         },
-    },
+    }
 };
 use ::libc::{
     EBUSY,
@@ -255,6 +254,7 @@ impl Sender {
                     // Start the retransmission timer if it isn't already running.
                     if cb.get_retransmit_deadline().is_none() {
                         let rto: Duration = cb.rto();
+                        capy_log!("[sender] Setting retransmit deadline to {:?} (now: {:?}, rto: {:?})", cb.clock.now() + rto, cb.clock.now(), rto);
                         cb.set_retransmit_deadline(Some(cb.clock.now() + rto));
                     }
 
@@ -310,6 +310,7 @@ impl Sender {
                 }else{
                     header.psh = true;
                 }
+                capy_time_log!("RETRANSMIT seq_num {}", header.seq_num); 
                 cb.emit(header, Some(data), first_hop_link_addr);
             }
         } else {
@@ -331,6 +332,7 @@ impl Sender {
                 // Note that in the case of repacketization, an ack for the first byte is enough for the time sample.
                 // ToDo: TCP timestamp support.
                 if let Some(initial_tx) = segment.initial_tx {
+                    capy_log!("RTO add sample: {:?}", now - initial_tx);
                     cb.rto_add_sample(now - initial_tx);
                 }
 

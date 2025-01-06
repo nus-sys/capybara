@@ -580,8 +580,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
     #[cfg(feature = "tcp-migration")]
     demi_print_queue_length_log();
 
-    LibOS::capylog_dump(&mut std::io::stderr().lock());
-
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
 

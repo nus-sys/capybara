@@ -7,8 +7,7 @@
 
 use super::DPDKRuntime;
 use crate::{
-    inetstack::protocols::ethernet2::MIN_PAYLOAD_SIZE,
-    runtime::{
+    capy_time_log, inetstack::protocols::ethernet2::MIN_PAYLOAD_SIZE, runtime::{
         libdpdk::{
             rte_eth_rx_burst,
             rte_eth_tx_burst,
@@ -43,6 +42,7 @@ use crate::autokernel::parameters::{get_param, AK_MAX_RECEIVE_BATCH_SIZE};
 /// Network Runtime Trait Implementation for DPDK Runtime
 impl NetworkRuntime for DPDKRuntime {
     fn transmit(&self, buf: Box<dyn PacketBuf>) {
+        capy_log!("[TRANSMIT START]"); 
         // Alloc header mbuf, check header size.
         // Serialize header.
         // Decide if we can inline the data --
@@ -60,13 +60,14 @@ impl NetworkRuntime for DPDKRuntime {
             Err(e) => panic!("failed to allocate header mbuf: {:?}", e.cause),
         };
         let header_size = buf.header_size();
+        capy_log!("header_mbuf size: {}, header_size: {}", header_mbuf.len(), header_size);
         assert!(header_size <= header_mbuf.len());
         buf.write_header(unsafe { &mut header_mbuf.slice_mut()[..header_size] });
 
         if let Some(body) = buf.take_body() {
             // Next, see how much space we have remaining and inline the body if we have room.
             let inline_space = header_mbuf.len() - header_size;
-
+            capy_log!("inline_space: {}, body.len(): {}", inline_space, body.len());
             // Chain a buffer
             if body.len() > inline_space {
                 assert!(header_size + body.len() >= MIN_PAYLOAD_SIZE);
@@ -75,7 +76,10 @@ impl NetworkRuntime for DPDKRuntime {
                 header_mbuf.trim(header_mbuf.len() - header_size);
 
                 let body_mbuf = match body {
-                    Buffer::DPDK(mbuf) => mbuf.clone(),
+                    Buffer::DPDK(mbuf) => {
+                        capy_log!("DPDKBuffer len: {:?}", mbuf.len());
+                        mbuf.clone()
+                    },
                     Buffer::Heap(bytes) => {
                         let mut mbuf = match self.mm.alloc_body_mbuf() {
                             Ok(mbuf) => mbuf,
@@ -97,6 +101,7 @@ impl NetworkRuntime for DPDKRuntime {
             }
             // Otherwise, write in the inline space.
             else {
+                capy_log!("Write body into the inline space");
                 let body_buf = unsafe { &mut header_mbuf.slice_mut()[header_size..(header_size + body.len())] };
                 body_buf.copy_from_slice(&body[..]);
 
@@ -119,6 +124,7 @@ impl NetworkRuntime for DPDKRuntime {
         }
         // No body on our packet, just send the headers.
         else {
+            capy_log!("No body on our packet, just send the headers.");
             if header_size < MIN_PAYLOAD_SIZE {
                 let padding_bytes = MIN_PAYLOAD_SIZE - header_size;
                 let padding_buf = unsafe { &mut header_mbuf.slice_mut()[header_size..][..padding_bytes] };
@@ -132,6 +138,7 @@ impl NetworkRuntime for DPDKRuntime {
             let num_sent = unsafe { rte_eth_tx_burst(self.port_id, self.queue_id, &mut header_mbuf_ptr, 1) };
             assert_eq!(num_sent, 1);
         }
+        capy_log!("[TRANSMIT FINISH]"); 
     }
 
     #[cfg(not(feature = "autokernel"))]

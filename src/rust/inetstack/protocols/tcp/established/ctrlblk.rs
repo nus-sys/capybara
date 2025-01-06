@@ -13,7 +13,7 @@ use super::{
     },
 };
 use crate::{
-    capy_log_mig, inetstack::protocols::{
+    capy_time_log, capy_log_mig, capy_log, inetstack::protocols::{
         arp::ArpPeer,
         ethernet2::{
             EtherType2,
@@ -66,7 +66,8 @@ use ::std::{
     },
 };
 
-use crate::capy_log;
+use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 
 #[cfg(feature = "tcp-migration")]
 use crate::inetstack::protocols::tcp::stats::StatsHandle;
@@ -285,6 +286,10 @@ pub struct ControlBlock {
 
     // Retransmission Timeout (RTO) calculator.
     rto_calculator: RefCell<RtoCalculator>,
+
+    pub ooo_simulation_queue: RefCell<VecDeque<TcpSegment>>,
+    ooo_rate: f64,
+    drop_rate: f64,
 }
 
 //==============================================================================
@@ -345,6 +350,9 @@ impl ControlBlock {
             cc: cc_constructor(sender_mss, sender_seq_no, congestion_control_options),
             retransmit_deadline: WatchedValue::new(None),
             rto_calculator: RefCell::new(RtoCalculator::new()),
+            ooo_simulation_queue: RefCell::new(VecDeque::new()),
+            ooo_rate: std::env::var("OOO_RATE").unwrap_or("0.0".to_string()).parse::<f64>().unwrap(),
+            drop_rate: std::env::var("DROP_RATE").unwrap_or("0.0".to_string()).parse::<f64>().unwrap(),
         }
     }
 
@@ -370,6 +378,7 @@ impl ControlBlock {
     }
 
     pub fn retransmit(&self) {
+        capy_log!("cb.retransmit()");
         self.sender.retransmit(self)
     }
 
@@ -476,7 +485,7 @@ impl ControlBlock {
     // This is the main TCP receive routine.
     //
     pub fn receive(&self, mut header: &mut TcpHeader, mut data: Buffer) {
-        capy_log!("CTRLBLK RECEIVE seq_num: {}", header.seq_num);
+        capy_log!("CTRLBLK RECEIVE seq_num: {}, ack_num: {}", header.seq_num, header.ack_num);
         debug!(
             "{:?} Connection Receiving {} bytes + {:?}",
             self.state.get(),
@@ -708,11 +717,14 @@ impl ControlBlock {
         // ToDo: Restructure this call into congestion control to either integrate it directly or make it more fine-
         // grained.  It currently duplicates the new/duplicate ack check itself internally, which is inefficient.
         // We should either make separate calls for each case or integrate those cases directly.
+        capy_log!("[CC] on_ack_received");
+        capy_log!("send_unacknowledged: {}, send_next: {}", send_unacknowledged, send_next);
         self.cc.on_ack_received(
             self.rto_calculator.borrow().rto(),
             send_unacknowledged,
             send_next,
             header.ack_num,
+            seg_len,
         );
 
         if send_unacknowledged < header.ack_num {
@@ -721,6 +733,7 @@ impl ControlBlock {
                 let bytes_acknowledged: u32 = (header.ack_num - send_unacknowledged).into();
 
                 // Remove the now acknowledged data from the unacknowledged queue.
+                capy_log!("new {} bytes acked, remove this from sender", bytes_acknowledged);
                 self.sender.remove_acknowledged_data(self, bytes_acknowledged, now);
 
                 // Update SND.UNA to SEG.ACK.
@@ -978,8 +991,8 @@ impl ControlBlock {
             } else {
                 0
             };
-            capy_log!("[TX] {} => {}: // {} bytes", 
-                                        self.local, self.remote, len);
+            capy_log!("[TX] {} => {}: // {} bytes, seq_num: {}, ack_num: {}", 
+                                        self.local, self.remote, len, header.seq_num, header.ack_num);
         }
         let segment = TcpSegment {
             ethernet2_hdr: Ethernet2Header::new(remote_link_addr, self.local_link_addr, EtherType2::Ipv4),
@@ -989,8 +1002,52 @@ impl ControlBlock {
             tx_checksum_offload: self.tcp_config.get_tx_checksum_offload(),
         };
 
+        /* ACTIVATE THIS TO SIMULATE PACKET OOO AND DROPS */
+        /* static mut RNG: Option<StdRng> = None;
+        static mut PACKET_COUNT: u32 = 0;
+        static DROP_RATE: f64 = 0.0;
+        static OOO_RATE: f64 = 0.0;
+        unsafe {
+            // Initialize the RNG with a fixed seed if it hasn't been initialized yet
+            if RNG.is_none() {
+                RNG = Some(StdRng::seed_from_u64(1735553127));
+            }
+            if PACKET_COUNT >= 2 { 
+                // why PACKET_COUNT >= 2? 
+                // In case empty ACK is sent, this reordered packet should be delayed until at least one 
+                // subsequent packet with payload is sent. So, we need to wait for at least 2 packets to be sent. 
+                while let Some(queued_segment) = self.ooo_simulation_queue.borrow_mut().pop_front() {
+                    capy_log!("Transmitting reordered pkt (seq_num: {}, ack_num: {})", queued_segment.tcp_hdr.seq_num, queued_segment.tcp_hdr.ack_num);
+                    self.rt.transmit(Box::new(queued_segment));
+                }
+            }
+
+            // Generate a random number using the seeded RNG
+            let rng = RNG.as_mut().unwrap();
+            let rnd_chance: f64 = rng.gen(); // Generates a random float in [0.0, 1.0)
+            if rnd_chance < self.ooo_rate {
+                capy_log!("Reordering packet");
+                capy_time_log!("OOO!");
+                self.ooo_simulation_queue.borrow_mut().push_back(segment);
+                PACKET_COUNT = 0;
+            }else{
+                let rnd_chance: f64 = rng.gen(); // Generates a random float in [0.0, 1.0)
+                if rnd_chance < self.drop_rate {
+                    capy_log!("Dropping packet");
+                    capy_time_log!("DROP!");
+                } else {
+                    capy_log!("Transmitting pkt (seq_num: {}, ack_num: {})", segment.tcp_hdr.seq_num, segment.tcp_hdr.ack_num);
+                    self.rt.transmit(Box::new(segment));
+                    PACKET_COUNT += 1;
+                }
+            }
+        } */
+        /* ACTIVATE THIS TO SIMULATE PACKET OOO AND DROPS */
+
+        /* COMMENT OUT THIS TO SIMULATE PACKET OOO AND DROPS */
         // Call the runtime to send the segment.
         self.rt.transmit(Box::new(segment));
+        /* COMMENT OUT THIS TO SIMULATE PACKET OOO AND DROPS */
 
         // Post-send operations follow.
         // Review: We perform these after the send, in order to keep send latency as low as possible.

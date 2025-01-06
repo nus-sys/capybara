@@ -167,6 +167,7 @@ pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
         let retransmit_deadline = cb.get_retransmit_deadline();
         if retransmit_deadline.is_none() {
             let rto: Duration = cb.rto();
+            capy_log!("[bg_sender] Setting retransmit deadline to {:?} (now: {:?}, rto: {:?})", cb.clock.now() + rto, cb.clock.now(), rto);
             cb.set_retransmit_deadline(Some(cb.clock.now() + rto));
         }
     }

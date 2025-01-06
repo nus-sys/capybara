@@ -79,9 +79,12 @@ def run_server(test_values, data_size):
     host = pyrem.host.RemoteHost(SERVER_NODE)
     
     # print(test_values)
-    ENV = ''
-    for param_name, value in test_values.items():
-        ENV += f"{param_name}={value} "
+    AK_ENV = ''
+    if 'autokernel' in FEATURES:
+        for param_name, value in test_values.items():
+            AK_ENV += f"{param_name}={value} "
+    else:
+        AK_ENV = 'BASELINE=1 '
     # print(ENV)
     
     print('RUNNING SERVER')
@@ -100,11 +103,16 @@ def run_server(test_values, data_size):
                 make tcp-echo-server9 \
                 > {DATA_PATH}/{experiment_id}.server 2>&1']
     elif SERVER_APP == 'http-server':
-        ENV += f"DATA_SIZE={data_size} "
+        AK_ENV += f' DATA_SIZE={data_size} '
+        output_file = f'{DATA_PATH}/{experiment_id}.server'
         cmd = [f'cd {AUTOKERNEL_PATH} && \
+                sudo -E \
                 {ENV} \
-                make http-server-be0 \
-                > {DATA_PATH}/{experiment_id}.server 2>&1']
+                {AK_ENV} \
+                numactl -m0 \
+                {AUTOKERNEL_PATH}/bin/examples/rust/http-server.elf {NODE9_IP}:10000 \
+                >> {output_file} 2>&1']
+        cmd[0] = cmd[0] + f' && echo "cmd: {cmd[0]}" >> {output_file}'
     else:
         print(f'Check SERVER_APP: {SERVER_APP}\n')
         exit(1)
@@ -295,8 +303,8 @@ def exiting():
     print(final_result)
     
     experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
-    print(f'Writing results to result_{experiment_id}.txt')
-    with open(f'{DATA_PATH}/result_{experiment_id}.txt', "w") as file:
+    print(f'Writing results to {experiment_id}.result')
+    with open(f'{DATA_PATH}/{experiment_id}.result', "w") as file:
         file.write(f'{result_header}\n')
         file.write(final_result)
     kill_procs()

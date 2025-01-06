@@ -291,34 +291,6 @@ ENV += LIBOS=catnip
 ENV += USE_JUMBO=1
 
 
-tcp-echo:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/be0_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-echo.elf \
-	--peer server --local 10.0.1.9:10000 --bufsize 1024
-
-tcpmig-single-origin:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-single.elf \
-	10.0.1.8:22222
-tcpmig-single-target:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s2_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcpmig-server-single.elf \
-	10.0.1.9:22222
-
-tcpmig-client:
-	sudo -E \
-	LIBOS=catnap \
-	CONFIG_PATH=$(CONFIG_DIR)/node7_config.yaml \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	taskset --cpu-list 0 \
-	$(ELF_DIR)/tcpmig-client.elf 10.0.1.8:10000
-
 http-server-fe:
 	sudo -E \
 	IS_FRONTEND=1 \
@@ -329,23 +301,12 @@ http-server-fe:
 	taskset --cpu-list 0 \
 	$(ELF_DIR)/http-server.elf 10.0.1.8:10000
 
-capybara-switch:
-	sudo -E \
-	NUM_CORES=1 \
-	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	$(ENV) \
-	numactl -m0 taskset --cpu-list 1 \
-	$(ELF_DIR)/capybara-switch.elf 10.0.1.8:10000 10.0.1.8:10001
-
 http-server-be0:
 	sudo -E \
-	NUM_CORES=4 \
-	CORE_ID=1 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
-	numactl -m0 taskset --cpu-list 1 \
+	numactl -m0 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
 
 
@@ -384,44 +345,6 @@ http-server-be3:
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 3 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10003
-
-tcpmig-multi-origin:
-	sudo -E \
-	IS_FRONTEND=1 \
-	CONFIG_PATH=$(CONFIG_DIR)/fe_config.yaml \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	taskset --cpu-list 0 \
-	$(ELF_DIR)/tcpmig-server-multi.elf 10.0.1.8:10000
-
-tcpmig-multi-target0:
-	sudo -E CAPYBARA_LOG="tcpmig" \
-	MIG_THRESHOLD=10000 \
-	CORE_ID=1 \
-	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	$(ELF_DIR)/tcpmig-server-multi.elf 10.0.1.9:10000
-
-tcpmig-multi-target1:
-	sudo -E CAPYBARA_LOG="tcpmig" \
-	MIG_THRESHOLD=10000 \
-	CORE_ID=2 \
-	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	$(ELF_DIR)/tcpmig-server-multi.elf 10.0.1.9:10001
-
-tcpmig-multi-target2:
-	sudo -E \
-	CONFIG_PATH=$(CONFIG_DIR)/be2_config.yaml \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	taskset --cpu-list 2 \
-	$(ELF_DIR)/tcpmig-server-multi.elf 10.0.1.9:10002
-
-tcpmig-multi-target3:
-	sudo -E \
-	CONFIG_PATH=$(CONFIG_DIR)/be3_config.yaml \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	taskset --cpu-list 3 \
-	$(ELF_DIR)/tcpmig-server-multi.elf 10.0.1.9:10003
 
 client-dpdk-ctrl:
 	sudo -E RUST_LOG="debug" \
@@ -465,70 +388,6 @@ udp-echo1:
 	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
 	/homes/inho/Capybara/capybara/bin/examples/rust/udp-echo.elf \
 	--local 10.0.1.9:10001
-
-tcp-migration-client:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/c1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration.elf \
-	--client 10.0.1.8:22222
-tcp-migration-origin:
-	# sudo -E echo $(PKG_CONFIG_PATH)
-	# sudo -E echo $(LD_LIBRARY_PATH)
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration.elf \
-	--server 10.0.1.8:22222 10.0.1.8:22223 10.0.1.9:22222
-tcp-migration-dest:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s2_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration.elf \
-	--dest 10.0.1.9:22222
-
-# to enable debug logging: RUST_LOG="debug" 
-tcp-migration-ping-pong-client:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/c1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration-ping-pong.elf \
-	--client 10.0.1.8:22222
-tcp-migration-ping-pong-origin:
-#	sudo -E echo $(PKG_CONFIG_PATH)
-#	sudo -E echo $(LD_LIBRARY_PATH)
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration-ping-pong.elf \
-	--server 10.0.1.8:22222 10.0.1.8:22223 10.0.1.9:22222
-tcp-migration-ping-pong-dest:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s2_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-migration-ping-pong.elf \
-	--dest 10.0.1.9:22222
-
-tcp-ping-pong-server:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	/homes/inho/Capybara/capybara/bin/examples/rust/tcp-ping-pong.elf \
-	--server 10.0.1.8:22222
-
-tcp-ping-pong-client:
-	sudo -E RUST_BACKTRACE=1 LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/c1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	timeout 10 /homes/inho/Capybara/capybara/bin/examples/rust/tcp-ping-pong.elf \
-	--client 10.0.1.8:22222
-
-tcp-pushpop:
-	sudo -E LIBOS=catnip CONFIG_PATH=$(CONFIG_DIR)/s1_config.yaml \
-	PKG_CONFIG_PATH=/homes/inho/lib/x86_64-linux-gnu/pkgconfig \
-	LD_LIBRARY_PATH=/homes/inho/lib:/homes/inho/lib/x86_64-linux-gnu \
-	timeout 10 /homes/inho/Capybara/capybara/bin/examples/rust/tcp-push-pop.elf \
-	--server 10.0.1.8:22222
 
 state-time-test:
 	$(CARGO) test measure_state_time $(CARGO_FEATURES) $(CARGO_FLAGS) --features=tcp-migration,capy-profile,capy-log,capy-time-log -- --nocapture

@@ -11,6 +11,9 @@ CALADAN_PATH = f'{HOME}/Capybara/caladan'
 DATA_PATH = f'{HOME}/autokernel-data'
 TCP_GENERATOR_PATH = f'{HOME}/Autokernel/tcp_generator'
 
+CONFIG_PATH = f'{AUTOKERNEL_PATH}/scripts/config/node9_config.yaml'
+LD_LIBRARY_PATH = f'{AUTOKERNEL_PATH}/lib:{HOME}/lib/x86_64-linux-gnu'
+    
 ################## CLUSTER CONFIG #####################
 ALL_NODES = ['node7', 'node9']
 CLIENT_NODE = 'node7'
@@ -21,15 +24,19 @@ NODE9_MAC = '08:c0:eb:b6:c5:ad'
 ################## BUILD CONFIG #####################
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
-    'autokernel',
+    # 'autokernel',
     # 'tcp-migration',
     # 'manual-tcp-migration',
     # 'capy-log',
     # 'capy-profile',
-    # 'capy-time-log',
+    'capy-time-log',
     # 'server-reply-analysis',
+    # 'profiler',
 ]
-
+ENV = f'MTU=9000 MSS=9000  RUST_BACKTRACE=full USE_JUMBO=1 CAPY_LOG=all LIBOS={LIBOS} \
+        CONFIG_PATH={CONFIG_PATH} \
+        LD_LIBRARY_PATH={LD_LIBRARY_PATH} \
+        DUP_ACK_THRESHOLD=1 OOO_RATE=0.1 DROP_RATE=0.0'
 ################## TEST CONFIG #####################
 SERVER_APP = 'http-server' # 'tcp-echo', 'http-server' 
 CLIENT_APP = 'caladan' # 'tcp_generator', 'caladan', 
@@ -38,13 +45,12 @@ REPEAT_NUM = 1
 
 ################## VARS #####################
 ### CLIENT ###
-CLIENT_PPS = [i for i in range(520000, 600000 + 1, 30000)]#, 550000, 600000, 650000, 700000]#[i for i in range(300000, 650000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
-DATA_SIZE = [256] #256, 1024, 8192
-NUM_CONNECTIONS = [128] #[1, 32, 64, 128]
-RUNTIME = 10
+CLIENT_PPS = [i for i in range(100000, 100000 + 1, 200)]#, 550000, 600000, 650000, 700000]#[i for i in range(300000, 650000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
+DATA_SIZE = [0] #0(index.html), 256, 1024, 8192
+NUM_CONNECTIONS = [1] #[1, 32, 64, 128, 512, 1024]
+RUNTIME = 5
 
 ### SERVER ###
-# CAPY_LOG = 'all' # 'all', 'mig'
 TIMER_RESOLUTION = [64] # Default: 64
 MAX_RECV_ITERS = [2] # 2
 MAX_OUT_OF_ORDER = [2048, 256, 2048 * 4] # 2048
