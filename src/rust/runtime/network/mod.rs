@@ -46,6 +46,10 @@ pub trait NetworkRuntime {
     /// Receives a batch of [PacketBuf].
     #[cfg(not(feature = "autokernel"))]
     fn receive(&self) -> ArrayVec<Buffer, RECEIVE_BATCH_SIZE>;
+    fn receive_4(&self) -> ArrayVec<Buffer, 4>;
+    fn receive_16(&self) -> ArrayVec<Buffer, 16>;
+    fn receive_64(&self) -> ArrayVec<Buffer, 64>;
+    fn receive_128(&self) -> ArrayVec<Buffer, 128>;
     #[cfg(feature = "autokernel")]
     fn receive(&self) -> ArrayVec<Buffer, AK_MAX_RECEIVE_BATCH_SIZE>;
 

@@ -17,11 +17,10 @@ use super::{
     SlowStartCongestionAvoidance,
 };
 use crate::{
-    inetstack::protocols::tcp::SeqNumber,
-    runtime::watched::{
+    capy_log, inetstack::protocols::tcp::SeqNumber, runtime::watched::{
         WatchFuture,
         WatchedValue,
-    },
+    }
 };
 use ::std::{
     cell::Cell,
@@ -63,6 +62,8 @@ pub struct Cubic {
     pub recover: Cell<SeqNumber>, // If we receive dup ACKs with sequence numbers greater than this we'll attempt fast recovery.
 
     pub limited_transmit_cwnd_increase: WatchedValue<u32>, // The amount by which cwnd should be increased due to the limited transit algorithm.
+    
+    dup_ack_threshold: u32,
 }
 
 impl CongestionControl for Cubic {
@@ -99,6 +100,10 @@ impl CongestionControl for Cubic {
             duplicate_ack_count: Cell::new(0),
 
             limited_transmit_cwnd_increase: WatchedValue::new(0),
+            dup_ack_threshold: std::env::var("DUP_ACK_THRESHOLD")
+                .unwrap_or_else(|_| String::from("3"))
+                .parse::<u32>()
+                .expect("Invalid DUP_ACK_THRESHOLD value"),
         })
     }
 }
@@ -130,7 +135,7 @@ impl Cubic {
         let duplicate_ack_count: u32 = self.duplicate_ack_count.get() + 1;
         self.duplicate_ack_count.set(duplicate_ack_count);
         #[cfg(not(feature = "autokernel"))]
-        if duplicate_ack_count < Self::DUP_ACK_THRESHOLD {
+        if duplicate_ack_count < self.dup_ack_threshold {
             self.limited_transmit_cwnd_increase.modify(|ltci| ltci + self.mss);
         }
         #[cfg(feature = "autokernel")]
@@ -143,7 +148,8 @@ impl Cubic {
     fn on_dup_ack_received(&self, send_next: SeqNumber, ack_seq_no: SeqNumber) {
         // Get and increment the duplicate ACK count, and store the updated value.
         let duplicate_ack_count: u32 = self.increment_dup_ack_count();
-
+        capy_log!("Cubic::on_dup_ack_received => dup_ack_count: {}", duplicate_ack_count);
+        
         let prev_ack_seq_no: SeqNumber = self.prev_ack_seq_no.get();
         let ack_seq_no_diff: u32 = (ack_seq_no - prev_ack_seq_no).into();
         let cwnd: u32 = self.cwnd.get();
@@ -152,14 +158,14 @@ impl Cubic {
 
         let dup_ack_threshold: u32 = {
             #[cfg(not(feature = "autokernel"))]{
-                Self::DUP_ACK_THRESHOLD
+                self.dup_ack_threshold
             }
             #[cfg(feature = "autokernel")]{
                 get_param(|p| p.dup_ack_threshold)
             }
         };
 
-        if duplicate_ack_count == dup_ack_threshold
+        if duplicate_ack_count >= dup_ack_threshold
             && (ack_covers_recover || retransmitted_packet_dropped_heuristic)
         {
             // Check against recover specified in RFC6582.
@@ -181,7 +187,9 @@ impl Cubic {
             }
             self.ssthresh.set(max(reduced_cwnd, 2 * self.mss));
             self.cwnd.set(reduced_cwnd);
+            capy_log!("Cubic::fast_retransmit_now true");
             self.fast_retransmit_now.set(true);
+            self.duplicate_ack_count.set(0);
             // We don't reset ca_start here even though cwnd has been shrunk because we aren't going
             // straight back into congestion avoidance.
         } else if duplicate_ack_count > dup_ack_threshold || self.in_fast_recovery.get() {
@@ -355,9 +363,17 @@ impl SlowStartCongestionAvoidance for Cubic {
             .set_without_notify(self.limited_transmit_cwnd_increase.get().saturating_sub(num_bytes_sent));
     }
 
-    fn on_ack_received(&self, rto: Duration, send_unacked: SeqNumber, send_next: SeqNumber, ack_seq_no: SeqNumber) {
+    fn on_ack_received(&self, rto: Duration, send_unacked: SeqNumber, send_next: SeqNumber, ack_seq_no: SeqNumber, seg_len: u32) {
+        capy_log!("Cubic::on_ack_received");
         let bytes_acknowledged: u32 = (ack_seq_no - send_unacked).into();
-        if bytes_acknowledged == 0 {
+        /*
+        * Fast retransmit -> detect a duplicate ACK if:
+        * 1. The ACK number is the same as the largest seen.
+        * 2. There is unacknowledged data pending.
+        * 3. There is no data payload included with the ACK.
+        * 4. There is no window update. (ToDo: currently Demikernel doesn't update window size, check it later)
+        */
+        if bytes_acknowledged == 0 && send_unacked != send_next && seg_len == 0 {
             // ACK is a duplicate
             self.on_dup_ack_received(send_next, ack_seq_no);
             // We attempt to keep track of the number of retransmitted packets in flight because we do not alter
@@ -365,7 +381,16 @@ impl SlowStartCongestionAvoidance for Cubic {
             self.retransmitted_packets_in_flight
                 .set(self.retransmitted_packets_in_flight.get().saturating_sub(1));
         } else {
-            self.duplicate_ack_count.set(0);
+            if bytes_acknowledged != 0 {
+                // inho: In Caladan, duplicate_ack_count is set to 0 when bytes_acknowledged == 0
+                // because that's a starting signal of DUPACKs.
+                // But here, since the client keeps sending new data acking the same sequence number (which is dropped),
+                // that's not a starting signal of DUPACKs, but an additional DUPACK.
+                // Therefore, we reset duplicate_ack_count only when bytes_acknowledged != 0, 
+                // meaning the client received some new data.
+                capy_log!("not dup_ack, duplicate_ack_count = 0");
+                self.duplicate_ack_count.set(0);
+            }
 
             if self.in_fast_recovery.get() {
                 // Fast Recovery response to new data.
@@ -391,14 +416,17 @@ impl FastRetransmitRecovery for Cubic {
     }
 
     fn get_retransmit_now_flag(&self) -> bool {
+        capy_log!("Cubic::get_retransmit_now_flag => {:?}", self.fast_retransmit_now.get());
         self.fast_retransmit_now.get()
     }
 
     fn watch_retransmit_now_flag(&self) -> (bool, WatchFuture<'_, bool>) {
+        capy_log!("Cubic::watch_retransmit_now_flag => {:?}", self.fast_retransmit_now.get());
         self.fast_retransmit_now.watch()
     }
 
     fn on_fast_retransmit(&self) {
+        capy_log!("Cubic::on_fast_retransmit");
         // NOTE: Could we potentially miss FastRetransmit requests with just a flag?
         // I suspect it doesn't matter because we only retransmit on the 3rd repeat ACK precisely...
         // I should really use some other mechanism here just because it would be nicer...

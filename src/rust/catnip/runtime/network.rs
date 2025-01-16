@@ -166,6 +166,75 @@ impl NetworkRuntime for DPDKRuntime {
 
         out
     }
+
+    fn receive_4(&self) -> ArrayVec<Buffer, 4> {
+        let mut out = ArrayVec::new();
+        let mut packets: [*mut rte_mbuf; 4] = unsafe { mem::zeroed() };
+        let nb_rx = unsafe {
+            rte_eth_rx_burst(self.port_id, self.queue_id*2, packets.as_mut_ptr(), 4 as u16)
+        };
+        assert!(nb_rx as usize <= 4);
+
+        {
+            for &packet in &packets[..nb_rx as usize] {
+                let mbuf: DPDKBuffer = DPDKBuffer::new(packet);
+                let buf: Buffer = Buffer::DPDK(mbuf);
+                out.push(buf);
+            }
+        }
+        out
+    }
+    fn receive_16(&self) -> ArrayVec<Buffer, 16> {
+        let mut out = ArrayVec::new();
+        let mut packets: [*mut rte_mbuf; 16] = unsafe { mem::zeroed() };
+        let nb_rx = unsafe {
+            rte_eth_rx_burst(self.port_id, self.queue_id*2, packets.as_mut_ptr(), 16 as u16)
+        };
+        assert!(nb_rx as usize <= 16);
+
+        {
+            for &packet in &packets[..nb_rx as usize] {
+                let mbuf: DPDKBuffer = DPDKBuffer::new(packet);
+                let buf: Buffer = Buffer::DPDK(mbuf);
+                out.push(buf);
+            }
+        }
+        out
+    }
+    fn receive_64(&self) -> ArrayVec<Buffer, 64> {
+        let mut out = ArrayVec::new();
+        let mut packets: [*mut rte_mbuf; 64] = unsafe { mem::zeroed() };
+        let nb_rx = unsafe {
+            rte_eth_rx_burst(self.port_id, self.queue_id*2, packets.as_mut_ptr(), 64 as u16)
+        };
+        assert!(nb_rx as usize <= 64);
+
+        {
+            for &packet in &packets[..nb_rx as usize] {
+                let mbuf: DPDKBuffer = DPDKBuffer::new(packet);
+                let buf: Buffer = Buffer::DPDK(mbuf);
+                out.push(buf);
+            }
+        }
+        out
+    }
+    fn receive_128(&self) -> ArrayVec<Buffer, 128> {
+        let mut out = ArrayVec::new();
+        let mut packets: [*mut rte_mbuf; 128] = unsafe { mem::zeroed() };
+        let nb_rx = unsafe {
+            rte_eth_rx_burst(self.port_id, self.queue_id*2, packets.as_mut_ptr(), 128 as u16)
+        };
+        assert!(nb_rx as usize <= 128);
+
+        {
+            for &packet in &packets[..nb_rx as usize] {
+                let mbuf: DPDKBuffer = DPDKBuffer::new(packet);
+                let buf: Buffer = Buffer::DPDK(mbuf);
+                out.push(buf);
+            }
+        }
+        out
+    }
     
     #[cfg(feature = "autokernel")]
     fn receive(&self) -> ArrayVec<Buffer, AK_MAX_RECEIVE_BATCH_SIZE> {

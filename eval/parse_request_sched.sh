@@ -5,7 +5,7 @@ if [ $# -ne 1 ];then
 	exit 1
 fi
 
-exptid=/homes/inho/capybara-data/$1
+exptid=/homes/inho/autokernel-data/$1
 
 cat $exptid.request_sched | sort -t, -k1,1n |  awk -F, '
 BEGIN { first_val = 0; }

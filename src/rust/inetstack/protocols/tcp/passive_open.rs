@@ -247,7 +247,7 @@ impl PassiveSocket {
                 remote_window_size,
                 remote_window_scale,
                 mss,
-                congestion_control::Cubic::new,
+                congestion_control::None::new,
                 None,
             );
             self.ready.borrow_mut().push_ok(cb);

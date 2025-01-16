@@ -62,6 +62,30 @@ def kill_procs():
     print('KILLED AUTOKERNEL PROCESSES')
 
 
+def parse_latency_trace(experiment_id):
+    print(f'PARSING {experiment_id} latency_trace') 
+    
+    cmd = f"cd {AUTOKERNEL_PATH}/eval\
+            && sh parse_request_sched.sh {experiment_id}\
+            && sh ms_avg_99p_lat.sh {experiment_id}\
+            && sh ms_total_even_odd_numreq.sh {experiment_id}\
+            && sh latency_cdf.sh {experiment_id}"
+    print("Executing command:", cmd)  # For debugging
+
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=True,
+    ).stdout.decode()
+    if result != '':
+        print("ERROR: " + result + '\n\n')
+    else:
+        print("DONE")
+
+
+
 def run_server(test_values, data_size):
     global experiment_id
     print('SETUP SWITCH')
@@ -249,6 +273,9 @@ def run_eval():
                                 --discard_pct=10 \
                                 --output=trace \
                                 --rampup=0 \
+                                {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
+                                {f"--partial_uniform={PARTIAL_UNIFORM}" if PARTIAL_UNIFORM != "" else ""} \
+                                {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
                                 --exptid={DATA_PATH}/{experiment_id} \
                                 > {DATA_PATH}/{experiment_id}.client']
                         task = host.run(cmd, quiet=False)
@@ -291,6 +318,11 @@ def run_eval():
                     except Exception as e:
                         # Handle any other unexpected exceptions
                         print("EXPERIMENT FAILED\n\n")
+                    
+                    kill_procs()
+                    time.sleep(7)
+                    if EVAL_LATENCY_TRACE == True:
+                        parse_latency_trace(experiment_id)
                                     
 def exiting():
     

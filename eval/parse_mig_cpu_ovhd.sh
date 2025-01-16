@@ -5,7 +5,7 @@ if [ $# -ne 1 ];then
 	exit 1
 fi
 
-exptid=/homes/inho/capybara-data/$1
+exptid=/homes/inho/autokernel-data/$1
 
 cat $exptid.be0 | grep PROF | tail -200000 | awk -F, 'NR%2{val=$2; next} {sum=val+$2; print val "," $2 "," sum}' | awk -v exptid="$exptid" -F, '
 {

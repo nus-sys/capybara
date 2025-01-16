@@ -5,7 +5,7 @@ if [ $# -ne 1 ];then
 	exit 1
 fi
 
-exptid=/homes/inho/capybara-data/$1
+exptid=/homes/inho/autokernel-data/$1
 
 cat $exptid.latency_trace | awk -F, '                                              
 {
