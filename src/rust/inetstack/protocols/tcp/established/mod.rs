@@ -77,8 +77,14 @@ impl EstablishedSocket {
         }
     }
 
-    pub fn receive(&self, header: &mut TcpHeader, data: Buffer) {
-        self.cb.receive(header, data)
+    pub fn receive(&self, header: &mut TcpHeader, data: Buffer,
+        #[cfg(feature = "autokernel")] total_bytes_acknowledged: &mut usize,
+    ){
+        self.cb.receive(header, 
+                        data,
+                        #[cfg(feature = "autokernel")]
+                        total_bytes_acknowledged,
+                    )
     }
 
     pub fn send(&self, buf: Buffer) -> Result<(), Fail> {

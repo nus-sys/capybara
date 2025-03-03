@@ -199,6 +199,14 @@ impl NetworkLibOS {
         }
     }
 
+    pub fn get_remote_port(&mut self, fd: QDesc) -> u16 {
+        match self {
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.get_remote_port(fd),
+            _ => panic!("get_remote_port is only supported on Catnip"),
+        }
+    }
+
     /// Initiates a connection with a remote TCP pper.
     pub fn connect(&mut self, fd: QDesc, remote: SocketAddrV4) -> Result<QToken, Fail> {
         match self {

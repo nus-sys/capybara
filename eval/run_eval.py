@@ -112,13 +112,14 @@ def run_server(test_values, data_size):
     # print(ENV)
     
     print('RUNNING SERVER')
-    tasks = []
-    host = pyrem.host.RemoteHost(SERVER_NODE) 
-    cmd = [f'cd {AUTOKERNEL_PATH} && make be-dpdk-ctrl-node9'] 
-    task = host.run(cmd, quiet=True)
-    pyrem.task.Parallel([task], aggregate=True).start(wait=False)
-    time.sleep(3)
-    print('Backend dpdk-ctrl is running')
+    
+    # tasks = []
+    # host = pyrem.host.RemoteHost(SERVER_NODE) 
+    # cmd = [f'cd {AUTOKERNEL_PATH} && make be-dpdk-ctrl'] 
+    # task = host.run(cmd, quiet=True)
+    # pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+    # time.sleep(3)
+    # print('Backend dpdk-ctrl is running')
     
     server_tasks = []
     if SERVER_APP == 'tcp-echo':
@@ -172,6 +173,7 @@ def run_eval():
         # "WAKER_BIT_LENGTH_SHIFT": WAKER_BIT_LENGTH_SHIFT,
         # "FALLBACK_MSS": FALLBACK_MSS,
         "RECEIVE_BATCH_SIZE": RECEIVE_BATCH_SIZE,   
+        "POP_SIZE": POP_SIZE,
     }
 
     # Define the default values (the first element from each array)
@@ -196,10 +198,10 @@ def run_eval():
                     parameters["TIMER_RESOLUTION"],
                     parameters["MAX_RECV_ITERS"],
                     parameters["RECEIVE_BATCH_SIZE"],
+                    parameters["POP_SIZE"],
                 )
                 is_done = 0
                 for combination in combinations:
-                    
                     test_values = dict(zip(parameters.keys(), combination))
                     # print(pps, conn, data_size, test_values)
                     # continue

@@ -1,6 +1,7 @@
 use std::{cell::RefCell, env};
 
 pub const AK_MAX_RECEIVE_BATCH_SIZE: usize = 128;
+pub const POP_SIZE: usize = 9216;
 
 pub struct AutokernelParameters {
     pub timer_resolution: usize,
@@ -20,6 +21,7 @@ pub struct AutokernelParameters {
     pub waker_bit_length_shift: usize,
     pub fallback_mss: usize,
     pub receive_batch_size: usize,
+    pub pop_size: usize,
 }
 
 // Thread-local storage for AutokernelParameters
@@ -105,6 +107,11 @@ thread_local! {
             .ok()
             .and_then(|val| val.parse().ok())
             .unwrap_or(100);
+
+        let pop_size = env::var("POP_SIZE")
+            .ok()
+            .and_then(|val| val.parse().ok())
+            .unwrap_or(POP_SIZE);
      
 
 
@@ -125,6 +132,7 @@ thread_local! {
         eprintln!("WAKER_BIT_LENGTH_SHIFT: {}", waker_bit_length_shift);
         eprintln!("FALLBACK_MSS: {}", fallback_mss);
         eprintln!("RECEIVE_BATCH_SIZE: {}", receive_batch_size);
+        eprintln!("POP_SIZE: {}", pop_size);
         
 
         AutokernelParameters {
@@ -145,6 +153,7 @@ thread_local! {
             waker_bit_length_shift,
             fallback_mss,
             receive_batch_size,
+            pop_size,
         }
     });
 }

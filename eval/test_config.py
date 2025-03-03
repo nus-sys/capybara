@@ -24,12 +24,12 @@ NODE9_MAC = '08:c0:eb:b6:c5:ad'
 ################## BUILD CONFIG #####################
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
-    # 'autokernel',
+    'autokernel',
     # 'tcp-migration',
     # 'manual-tcp-migration',
     # 'capy-log',
     # 'capy-profile',
-    'capy-time-log',
+    # 'capy-time-log',
     # 'server-reply-analysis',
     # 'profiler',
 ]
@@ -46,13 +46,14 @@ EVAL_LATENCY_TRACE = True
 
 ################## VARS #####################
 ### CLIENT ###
-CLIENT_PPS = [i for i in range(700000, 700000 + 1, 30000)]#, 550000, 600000, 650000, 700000]#[i for i in range(300000, 650000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(5500, 5500+1, 100000)]#, 550000, 600000, 650000, 700000]#[i for i in range(300000, 650000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
 LOADSHIFTS = '' #'90000:10000,270000:10000,450000:10000,630000:10000,810000:10000/90000:50000/90000:50000/90000:50000'
-PARTIAL_UNIFORM = ''#'5:500000,10:200000,20:200000,40:200000,60:200000,80:200000,100:200000,120:200000,140:200000,160:200000,180:200000,200:200000'
+PARTIAL_UNIFORM = '1:5000000'#'5:500000,10:200000,20:200000,40:200000,60:200000,80:200000,100:200000,120:200000,140:200000,160:200000,180:200000,200:200000'
+# partial uniform: choose a partial number of connections and uniformly distribute the workload only to those connections (other connections are silent)
 ZIPF_ALPHA = '' # 0.9, 1.2
 DATA_SIZE = [0] #0(index.html), 256, 1024, 8192
-NUM_CONNECTIONS = [200] #[1, 32, 64, 128, 512, 1024]
-RUNTIME = 5
+NUM_CONNECTIONS = [1024] #[1, 32, 64, 128, 512, 1024]
+RUNTIME = 10
 
 ### SERVER ###
 TIMER_RESOLUTION = [64] # Default: 64
@@ -72,6 +73,7 @@ FIRST_SLOT_SIZE = [16, 4, 64] # 16
 WAKER_BIT_LENGTH_SHIFT = [6, 4, 8]
 FALLBACK_MSS = [536, 128, 2048] # 536
 RECEIVE_BATCH_SIZE = [4] # 4
+POP_SIZE = [58, 58*64] # 58*2, 58*4, 58*8, 58*16, 58*32,
 
 
 

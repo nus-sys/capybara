@@ -355,6 +355,10 @@ impl InetStack {
         }
     }
 
+    pub fn get_remote_port(&mut self, fd: QDesc) -> u16 {
+        self.ipv4.tcp.get_remote_port(fd)
+    }
+
     ///
     /// **Brief**
     ///
@@ -846,6 +850,9 @@ impl InetStack {
             //     capy_profile!("self.scheduler.poll()");
             //     self.pkt_received = false;
             // }
+            // if self.is_poll_ok() {
+            //     self.scheduler.poll();
+            // }
             self.scheduler.poll();
         }
         // }
@@ -928,13 +935,17 @@ impl InetStack {
         // Simple decision tree logic (trained or manually encoded)
         if batch_len <= 3 {
             4
-        } else if batch_len <= 10 {
+        } else if batch_len <= 15 {
             16
-        } else if batch_len <= 53 {
+        } else if batch_len <= 63 {
             64
         } else {
             128
         }
+    }
+    fn is_poll_ok(&mut self) -> bool {
+        // self.poll_cnt % self.tune_granularity == 0
+        self.ipv4.tcp.is_poll_ok()
     }
     /// Exactly the same as `poll_runtime()` but does not poll the scheduler after every packet.
     fn poll_runtime_no_scheduler_poll(&mut self) {
@@ -950,39 +961,42 @@ impl InetStack {
         };
 
 
-        // for _ in 0..recv_iters {
-        //     let batch = {
-        //         #[cfg(feature = "profiler")]
-        //         timer!("inetstack::poll_bg_work::for::receive");
-        //         self.rt.receive()
-        //     };
-        //     // let batch: Vec<_> = match self.batch_size {
-        //     //     4 => self.rt.receive_4().into_iter().collect(),
-        //     //     16 => self.rt.receive_16().into_iter().collect(),
-        //     //     64 => self.rt.receive_64().into_iter().collect(),
-        //     //     128 => self.rt.receive_128().into_iter().collect(),
-        //     //     _ => {
-        //     //         #[cfg(feature = "profiler")]
-        //     //         timer!("inetstack::poll_bg_work::for::receive_default");
-        //     //         self.rt.receive().into_iter().collect()
-        //     //     },
-        //     // };
-        //     if batch.is_empty() {
-        //         break;
-        //     }
+        /* for _ in 0..recv_iters {
+            let batch = {
+                #[cfg(feature = "profiler")]
+                timer!("inetstack::poll_bg_work::for::receive");
+                self.rt.receive()
+            };
+            // let batch: Vec<_> = match self.batch_size {
+            //     4 => self.rt.receive_4().into_iter().collect(),
+            //     16 => self.rt.receive_16().into_iter().collect(),
+            //     64 => self.rt.receive_64().into_iter().collect(),
+            //     128 => self.rt.receive_128().into_iter().collect(),
+            //     _ => {
+            //         #[cfg(feature = "profiler")]
+            //         timer!("inetstack::poll_bg_work::for::receive_default");
+            //         self.rt.receive().into_iter().collect()
+            //     },
+            // };
+            if batch.is_empty() {
+                break;
+            }
             
-        //     capy_time_log!("{}", batch.len());
-        //     // Use ML-inspired prediction for batch size
-        //     // self.batch_size = self.predict_batch_size(batch.len());
+            // Use ML-inspired prediction for batch size
+            // self.batch_size = self.predict_batch_size(batch.len());
 
-        //     for pkt in batch {
-        //         capy_log!("[RX] pkt");
-        //         // self.pkt_received = true;
-        //         if let Err(e) = self.do_receive(pkt) {
-        //             warn!("Dropped packet: {:?}", e);
-        //         }
-        //     }
-        // }
+            for pkt in batch {
+                capy_log!("[RX] pkt");
+                // self.pkt_received = true;
+                if let Err(e) = self.do_receive(pkt) {
+                    warn!("Dropped packet: {:?}", e);
+                }
+            }
+            // capy_time_log!("{}", batch.len());
+            // #[cfg(feature = "autokernel")]
+            // self.ipv4.obs_bytes_acked();
+            
+        } */
 
         for _ in 0..recv_iters {
             match self.batch_size {
@@ -999,7 +1013,7 @@ impl InetStack {
                     }
                     self.poll_cnt += 1;
         
-                    capy_time_log!("{}", batch.len());
+                    // capy_time_log!("{}", batch.len());
                     for pkt in batch {
                         capy_log!("[RX] pkt");
                         if let Err(e) = self.do_receive(pkt) {
@@ -1020,7 +1034,7 @@ impl InetStack {
                     }
 
                     self.poll_cnt += 1;
-                    capy_time_log!("{}", batch.len());
+                    // capy_time_log!("{}", batch.len());
                     for pkt in batch {
                         capy_log!("[RX] pkt");
                         if let Err(e) = self.do_receive(pkt) {
@@ -1061,7 +1075,7 @@ impl InetStack {
                         break;
                     }
                     self.poll_cnt += 1;
-                    capy_time_log!("{}", batch.len());
+                    // capy_time_log!("{}", batch.len());
                     for pkt in batch {
                         capy_log!("[RX] pkt");
                         if let Err(e) = self.do_receive(pkt) {

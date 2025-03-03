@@ -73,7 +73,7 @@ use rand::rngs::StdRng;
 use crate::inetstack::protocols::tcp::stats::StatsHandle;
 
 #[cfg(feature = "autokernel")]
-use crate::autokernel::parameters::get_param;
+use crate::autokernel::parameters::{get_param, POP_SIZE};
 
 // ToDo: Review this value (and its purpose).  It (2048 segments) of 8 KB jumbo packets would limit the unread data to
 // just 16 MB.  If we don't want to lie, that is also about the max window size we should ever advertise.  Whereas TCP
@@ -155,7 +155,7 @@ impl Receiver {
         let buf: Buffer = recv_queue.pop_front()?;
 
         capy_log!("Ready, take the segment ==> len(recv_queue): {}", recv_queue.len());
-
+        // capy_time_log!("Pop 1 msg ==> len(recv_queue): {}", recv_queue.len());
         #[cfg(feature = "tcp-migration")]
         self.recv_queue_stats.set(recv_queue.len());
 
@@ -164,6 +164,55 @@ impl Receiver {
 
         Some(buf)
     }
+
+    #[cfg(feature = "autokernel")]
+    pub fn pop_bytes(&self) -> Option<Buffer> {
+        let pop_size: usize = get_param(|p| p.pop_size);
+        let mut recv_queue = self.recv_queue.borrow_mut();
+    
+        // Allocate a buffer to hold up to POP_SIZE bytes
+        let mut bytes = Vec::with_capacity(pop_size);
+        
+        while let Some(buf) = recv_queue.front() {
+            let buf_len = buf.len();
+    
+            // If adding this buffer exceeds POP_SIZE, break
+            if bytes.len() + buf_len > pop_size {
+                break;
+            }
+    
+            // Remove buffer from queue
+            let buf = recv_queue.pop_front().unwrap();
+            
+            // Append data to the bytes buffer
+            bytes.extend_from_slice(&buf);
+    
+            // Update reader_next
+            self.reader_next
+                .set(self.reader_next.get() + SeqNumber::from(buf_len as u32));
+    
+            // Stop if we have exactly POP_SIZE bytes
+            if bytes.len() >= pop_size {
+                break;
+            }
+        }
+    
+        // If no data was accumulated, return None
+        if bytes.is_empty() {
+            return None;
+        }
+    
+        // Create a new Buffer from the accumulated bytes
+        let merged_buf = Buffer::Heap(DataBuffer::from_slice(&bytes));
+    
+        capy_log!("Ready, take the segment ==> len(recv_queue): {}", recv_queue.len());
+    
+        #[cfg(feature = "tcp-migration")]
+        self.recv_queue_stats.set(recv_queue.len());
+    
+        Some(merged_buf)
+    }
+    
 
     pub fn push(&self, buf: Buffer) {
         let buf_len: u32 = buf.len() as u32;
@@ -484,7 +533,8 @@ impl ControlBlock {
 
     // This is the main TCP receive routine.
     //
-    pub fn receive(&self, mut header: &mut TcpHeader, mut data: Buffer) {
+    pub fn receive(&self, mut header: &mut TcpHeader, mut data: Buffer,
+        #[cfg(feature = "autokernel")]  total_bytes_acknowledged: &mut usize) {
         capy_log!("CTRLBLK RECEIVE seq_num: {}, ack_num: {}", header.seq_num, header.ack_num);
         debug!(
             "{:?} Connection Receiving {} bytes + {:?}",
@@ -731,7 +781,9 @@ impl ControlBlock {
             if header.ack_num <= send_next {
                 // This segment acknowledges new data (possibly and/or FIN).
                 let bytes_acknowledged: u32 = (header.ack_num - send_unacknowledged).into();
-
+                #[cfg(feature = "autokernel")]{
+                    *total_bytes_acknowledged += bytes_acknowledged as usize;
+                }
                 // Remove the now acknowledged data from the unacknowledged queue.
                 capy_log!("new {} bytes acked, remove this from sender", bytes_acknowledged);
                 self.sender.remove_acknowledged_data(self, bytes_acknowledged, now);
@@ -1115,6 +1167,13 @@ impl ControlBlock {
             return Poll::Pending;
         }
 
+        #[cfg(feature = "autokernel")]
+        let segment: Buffer = self
+            .receiver
+            .pop_bytes()
+            .expect("poll_recv failed to pop data from receive queue");
+
+        #[cfg(not(feature = "autokernel"))]
         let segment: Buffer = self
             .receiver
             .pop()

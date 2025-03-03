@@ -68,6 +68,7 @@ use ::rand::{
     SeedableRng,
 };
 
+use std::time::Instant;
 use ::std::{
     cell::{
         RefCell,
@@ -180,6 +181,13 @@ pub struct Inner {
     migration_directory: HashMap<SocketAddrV4, SocketAddrV4>,
     #[cfg(feature = "capybara-switch")]
     num_backends: usize,
+    
+    #[cfg(feature = "autokernel")]
+    pub total_bytes_acknowledged: usize,
+    #[cfg(feature = "autokernel")]
+    pub start_time: Instant,
+
+    pub pkt_cnt: usize,
 }
 
 pub struct TcpPeer {
@@ -228,6 +236,11 @@ impl TcpPeer {
             rx,
         )));
         Ok(Self { inner })
+    }
+
+    pub fn is_poll_ok(&self) -> bool {
+        let mut inner: RefMut<Inner> = self.inner.borrow_mut();
+        inner.established.len() < 3 || inner.pkt_cnt > 10
     }
 
     /// Opens a TCP socket.
@@ -324,6 +337,11 @@ impl TcpPeer {
             #[cfg(feature = "capybara-switch")]
             eth_hdr,
         )
+    }
+
+    #[cfg(feature = "autokernel")]
+    pub fn obs_bytes_acked(&self) {
+        self.inner.borrow_mut().obs_bytes_acked();
     }
 
     // Marks the target socket as passive.
@@ -447,6 +465,15 @@ impl TcpPeer {
         }
         
         Poll::Ready(Ok(new_qd))
+    }
+
+    pub fn get_remote_port(&mut self, fd: QDesc) -> u16 {
+        let inner = self.inner.borrow();
+        let key = match inner.sockets.get(&fd) {
+            Some(Socket::Established { local, remote }) => (*local, *remote),
+            _ => panic!("socket not established"),
+        };
+        key.1.port()
     }
 
     pub fn connect(&self, qd: QDesc, remote: SocketAddrV4) -> Result<ConnectFuture, Fail> {
@@ -718,6 +745,13 @@ impl Inner {
                 .unwrap_or_else(|_| String::from("1"))
                 .parse::<usize>()
                 .expect("Invalid NUM_BACKENDS value"),
+            
+            #[cfg(feature = "autokernel")]
+            total_bytes_acknowledged: 0,
+            #[cfg(feature = "autokernel")]
+            start_time: Instant::now(),
+
+            pkt_cnt: 0,
         }
     }
 
@@ -731,6 +765,9 @@ impl Inner {
         let remote = SocketAddrV4::new(ip_hdr.get_src_addr(), tcp_hdr.src_port);
         capy_log!("{:?} => {:?}", remote, local);
         capy_log!("SERVER RECEIVE TCP seq_num: {}, data length: {}", tcp_hdr.seq_num, data.len());
+        // if data.len() > 0 {
+        //     self.pkt_cnt += 1;
+        // }
 
         if remote.ip().is_broadcast() || remote.ip().is_multicast() || remote.ip().is_unspecified() {
             return Err(Fail::new(EINVAL, "invalid address type"));
@@ -763,7 +800,12 @@ impl Inner {
             }
 
             debug!("Routing to established connection: {:?}", key);
-            s.receive(&mut tcp_hdr,data);
+            s.receive(&mut tcp_hdr,
+                            data,
+                            #[cfg(feature = "autokernel")]
+                            &mut self.total_bytes_acknowledged,
+                        );
+            capy_log!("self.total_bytes_acknowledged: {}", self.total_bytes_acknowledged);
             if s.is_closed() {
                 self.established.remove(&key);
                 
@@ -923,6 +965,20 @@ impl Inner {
         }
         
         Ok(())
+    }
+
+    #[cfg(feature = "autokernel")]
+    pub fn obs_bytes_acked(&mut self) {
+        // inho: we want to monitor the system efficiency in real time to keep it high and stable.
+        // option 1. the percentage of time spent in the app layer out of the total time of the corresponding poll round.
+        // not clear yet, revisit later. 
+        if Instant::now().duration_since(self.start_time).as_nanos() > 100_000 { // 10us
+            capy_time_log!("self.total_bytes_acknowledged: {} byte/sec ( {} bytes / {} ns)", 
+            ((self.total_bytes_acknowledged as f64 / Instant::now().duration_since(self.start_time).as_nanos() as f64) * 1_000_000_000.0) as u32,
+            self.total_bytes_acknowledged, Instant::now().duration_since(self.start_time).as_nanos() as usize);
+            self.total_bytes_acknowledged = 0;
+            self.start_time = Instant::now();
+        }
     }
 
     fn send_rst(&mut self, local: &SocketAddrV4, remote: &SocketAddrV4) -> Result<(), Fail> {

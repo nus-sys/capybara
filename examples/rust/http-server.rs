@@ -6,6 +6,7 @@
 //======================================================================================================================
 
 use ::anyhow::Result;
+use demikernel::capy_log;
 use ::demikernel::{
     LibOS,
     LibOSName,
@@ -60,7 +61,7 @@ macro_rules! server_log {
 //=====================================================================================
 
 const ROOT: &str = "/var/www/demo";
-const BUFSZ: usize = 4096;
+const BUFSZ: usize = 8192 * 2;
 
 static mut START_TIME: Option<Instant> = None;
 static mut SERVER_PORT: u16 = 0;
@@ -112,9 +113,9 @@ impl Buffer {
             return Ok(());
         }
 
-        if self.head < self.buf.len() {
-            return Ok(());
-        }
+        // if self.head < self.buf.len() {
+        //     return Ok(());
+        // }
 
         if self.data_size() == self.buf.len() {
             panic!("Need larger buffer for HTTP messages");
@@ -206,6 +207,12 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
             };
         }
         
+        // Inho: this is to simulate request processing delay for some clients
+        /* if libos.get_remote_port(qd) == 1124 {
+            // eprintln!("qd: {:?}", qd);
+            std::thread::sleep(std::time::Duration::from_micros(20));
+        } */
+
         server_log!("PUSH: {}", RESPONSE.lines().next().unwrap_or(""));
         libos.push2(qd, RESPONSE.as_bytes()).expect("push success")
     }
@@ -260,17 +267,6 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[u8], qts: &mut Vec<QToken>) -> usize {
     
-    server_log!("buffer.data_size() {}", buffer.data_size());
-    // fast path: no previous data in the stream and this request contains exactly one HTTP request
-    if buffer.data_size() == 0 {
-        if find_subsequence(data, b"\r\n\r\n").unwrap_or(data.len()) == data.len() - 4 {
-            server_log!("responding 1");
-            let resp_qt = respond_to_request(libos, qd, data);
-            qts.push(resp_qt);
-            return 1;
-        }
-    }
-    // println!("* CHECK *\n");
     // Copy new data into buffer
     buffer.get_empty_buf()[..data.len()].copy_from_slice(data);
     buffer.push_data(data.len());
@@ -281,14 +277,14 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
         let dbuf = buffer.get_data();
         match find_subsequence(dbuf, b"\r\n\r\n") {
             Some(idx) => {
-                server_log!("responding 2");
+                server_log!("Processing {} request", sent+1);
                 let resp_qt = respond_to_request(libos, qd, &dbuf[..idx + 4]);
                 qts.push(resp_qt);
                 buffer.pull_data(idx + 4);
-                buffer.try_shrink().unwrap();
                 sent += 1;
             }
             None => {
+                buffer.try_shrink().unwrap();
                 return sent;
             }
         }
@@ -424,6 +420,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
         for (index, (qd, result)) in indices.iter().zip(results.iter()).rev() {
             let (index, qd) = (*index, *qd);
             qts.swap_remove(index);
+            server_log!("index: {}, qts.len(): {}", index, qts.len());
 
             #[cfg(feature = "manual-tcp-migration")]
             let mut should_migrate_this_qd = false;
@@ -492,6 +489,12 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     server_log!("POP complete");
 
                     let mut state = connstate.get_mut(&qd).unwrap().borrow_mut();
+                    
+                    // To print out the request payload
+                    // match std::str::from_utf8(recvbuf) {
+                    //     Ok(human_readable) => eprintln!("POP: {:?}", human_readable),
+                    //     Err(e) => eprintln!("POP: invalid UTF-8 sequence: {:?}", e),
+                    // }
                     
                     let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
 

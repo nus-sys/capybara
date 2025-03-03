@@ -143,6 +143,11 @@ impl Peer {
         }
     }
 
+    #[cfg(feature = "autokernel")]
+    pub fn obs_bytes_acked(&mut self) {
+        self.tcp.obs_bytes_acked();
+    }
+
     pub fn ping(
         &mut self,
         dest_ipv4_addr: Ipv4Addr,

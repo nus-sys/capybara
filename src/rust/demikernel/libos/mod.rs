@@ -168,6 +168,12 @@ impl LibOS {
         }
     }
 
+    pub fn get_remote_port(&mut self, fd: QDesc) -> u16 {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.get_remote_port(fd),
+        }
+    }
+
     /// Initiates a connection with a remote TCP pper.
     pub fn connect(&mut self, fd: QDesc, remote: SocketAddrV4) -> Result<QToken, Fail> {
         match self {
