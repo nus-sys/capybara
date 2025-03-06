@@ -179,3 +179,35 @@ where
         f(&mut params);
     });
 }
+
+
+use std::os::unix::net::UnixStream;
+use std::io::{Read, Write};
+use std::thread;
+use std::time::Duration;
+
+const SOCKET_PATH: &str = "/tmp/controller_socket";
+
+pub fn controller_test() {
+    println!("controller_test(): Attempting to connect to controller...");
+    
+    match UnixStream::connect(SOCKET_PATH) {
+        Ok(mut stream) => {
+            println!("test.rs: Connected to controller.");
+            
+            let message = "Hello from server";
+            stream.write_all(message.as_bytes()).expect("Failed to send message");
+            println!("server sent message: {}", message);
+            
+            let mut buffer = [0; 256];
+            let bytes_read = stream.read(&mut buffer).expect("Failed to read response");
+            let response = String::from_utf8_lossy(&buffer[..bytes_read]);
+            println!("server recv response: {}", response);
+        }
+        Err(err) => {
+            eprintln!("test.rs: Failed to connect: {}", err);
+        }
+    }
+    
+    thread::sleep(Duration::from_secs(1));
+}

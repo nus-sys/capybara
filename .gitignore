@@ -35,3 +35,5 @@ p4/includes/p4include/*
 
 *.pyc
 *.conf
+
+controller
