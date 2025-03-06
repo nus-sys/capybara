@@ -111,16 +111,17 @@ int main() {
     }
     printf("Controller: Sent eventfd to test.rs\n");
 
-    // Wait before notifying Rust
-    sleep(3);
-
-    // Notify Rust
-    uint64_t event_val = 1;
-    if (write(efd, &event_val, sizeof(event_val)) == -1) {
-        perror("write to eventfd");
-        return 1;
+    while(1){
+        // Notify Rust
+        uint64_t event_val = 1;
+        if (write(efd, &event_val, sizeof(event_val)) == -1) {
+            perror("write to eventfd");
+            return 1;
+        }
+        printf("Controller: Sent notification via eventfd\nsleep for 3 seconds...");
+        // Wait before notifying Rust
+        sleep(5);
     }
-    printf("Controller: Sent notification via eventfd\n");
 
     // Cleanup
     close(efd);

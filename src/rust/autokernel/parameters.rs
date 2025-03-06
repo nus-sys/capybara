@@ -191,8 +191,10 @@ use std::ptr;
 use std::thread;
 use std::time::Duration;
 
+use nix::fcntl::{fcntl, FcntlArg, OFlag};
+use std::io::Error;
+
 use libc::{eventfd_read, mmap, munmap, shm_open, MAP_SHARED, PROT_READ};
-use nix::fcntl::OFlag;
 use nix::sys::mman::{MapFlags, ProtFlags};
 use nix::sys::stat::Mode;
 use nix::unistd::ftruncate;
@@ -236,12 +238,23 @@ fn recv_fd(socket: &UnixStream) -> RawFd {
     }
 }
 
+fn set_nonblocking(fd: RawFd) -> Result<(), Error> {
+    let flags = fcntl(fd, FcntlArg::F_GETFL).map_err(|_| Error::last_os_error())?;
+    fcntl(fd, FcntlArg::F_SETFL(OFlag::from_bits_truncate(flags) | OFlag::O_NONBLOCK))
+        .map_err(|_| Error::last_os_error())?;
+    Ok(())
+}
+
+
 pub fn controller_test() {
     thread::sleep(Duration::from_secs(1));
     // Connect to Unix domain socket
     let sock = UnixStream::connect(SOCKET_PATH).expect("Failed to connect to controller");
     let efd = recv_fd(&sock);
     println!("Test: Received eventfd with fd={}", efd);
+    
+    // Make eventfd non-blocking
+    set_nonblocking(efd).expect("Failed to set non-blocking mode");
 
     // Open shared memory
     let shm_name = CString::new(SHM_NAME).expect("CString::new failed");
@@ -259,20 +272,26 @@ pub fn controller_test() {
         return;
     }
 
-    println!("Test: Waiting for event notification...");
+    while true {
+        let mut buf: u64 = 0;
+        let res = unsafe { eventfd_read(efd, &mut buf) };
 
-    thread::sleep(Duration::from_secs(2));
+        if res < 0 {
+            let err = Error::last_os_error();
+            if err.raw_os_error() == Some(libc::EAGAIN) {
+                // 🔄 No event yet, just continue looping
+                println!("No event yet, retrying...");
+                thread::sleep(Duration::from_millis(100));
+                continue;
+            } else {
+                eprintln!("Failed to read from eventfd: {}", err);
+                return;
+            }
+        }
 
-    let mut buf: u64 = 0;
-    let res = unsafe { eventfd_read(efd, &mut buf) };
-    if res < 0 {
-        let err = std::io::Error::last_os_error();
-        eprintln!("Failed to read from eventfd: {}", err);
-        return;
+        println!("Test: Received event notification!");
+        let var1 = unsafe { *(shm_ptr as *const usize) };
+        println!("Test: Read value from shared memory: {}\n sleep 2 seconds...", var1);
+        thread::sleep(Duration::from_secs(2));
     }
-
-    println!("Test: Received event notification!");
-
-    let var1 = unsafe { *(shm_ptr as *const usize) };
-    println!("Test: Read value from shared memory: {}", var1);
 }
