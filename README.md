@@ -7,6 +7,7 @@
 ## Setup
 #### 1. On node 7 (client)
 - On your $HOME directory
+- Run `mkdir Capybara && cd Capybara`
 - Run `git clone https://github.com/ihchoi12/caladan.git && cd caladan`
 - Run `make submodules && make -j`
 - Run `cd ksched; make ; cd ..`
@@ -26,14 +27,14 @@
 
 ## Run test
 #### On node 7 
-- Run `mkdir $HOME/capybara-data`
+- Run `mkdir $HOME/autokernel-data`
 - Open a virtual screen (e.g., tmux).
 - Run `cd ~/caladan; sudo scripts/setup_machine.sh; sudo ./iokerneld ias nicpci 0000:31:00.1` on a screen.
 - Edit `~/Capybara/capybara/eval/test_config.py` according to the test you want to run
 - Run (once) `pip3 install -r ~/Capybara/capybara/eval/requirements.txt`
 - Run `cd ~/Capybara/capybara/eval`
 - Run `python3 run_eval.py`
-- It will run tests as in the python script. For each test, it will print out a summary of result, and store some log files into the `~/capybara-data/` directory.
+- It will run tests as in the python script. For each test, it will print out a summary of result, and store some log files into the `~/autokernel-data/` directory.
 - log files: 
   * [test_id].be[x]: console output from the backend server be[x] running on node9
   * [test_id].client: console output from the client running on node 7

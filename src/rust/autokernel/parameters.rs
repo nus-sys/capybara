@@ -180,34 +180,99 @@ where
     });
 }
 
-
+use std::ffi::CString;
+use std::io::{Read};
+use std::mem;
 use std::os::unix::net::UnixStream;
-use std::io::{Read, Write};
+use std::os::fd::{FromRawFd, RawFd};
+use std::os::unix::io::AsRawFd;
+use std::os::unix::net::UnixStream as UnixStreamExt;
+use std::ptr;
 use std::thread;
 use std::time::Duration;
 
-const SOCKET_PATH: &str = "/tmp/controller_socket";
+use libc::{eventfd_read, mmap, munmap, shm_open, MAP_SHARED, PROT_READ};
+use nix::fcntl::OFlag;
+use nix::sys::mman::{MapFlags, ProtFlags};
+use nix::sys::stat::Mode;
+use nix::unistd::ftruncate;
+
+const SHM_NAME: &str = "/shm_example";
+const SHM_SIZE: usize = mem::size_of::<usize>();
+const SOCKET_PATH: &str = "/tmp/eventfd_socket";
+
+fn recv_fd(socket: &UnixStream) -> RawFd {
+    let mut buf = [0u8; 1];
+    let mut cmsg_buf = [0u8; 32];
+
+    let iov = [libc::iovec {
+        iov_base: buf.as_mut_ptr() as *mut _,
+        iov_len: buf.len(),
+    }];
+
+    let mut msg = libc::msghdr {
+        msg_name: std::ptr::null_mut(),
+        msg_namelen: 0,
+        msg_iov: iov.as_ptr() as *mut _,
+        msg_iovlen: iov.len(),
+        msg_control: cmsg_buf.as_mut_ptr() as *mut _,
+        msg_controllen: cmsg_buf.len(),
+        msg_flags: 0,
+    };
+
+    unsafe {
+        let ret = libc::recvmsg(socket.as_raw_fd(), &mut msg, 0);
+        if ret == -1 {
+            panic!("recvmsg failed");
+        }
+
+        let cmsg = libc::CMSG_FIRSTHDR(&msg);
+        if cmsg.is_null() {
+            panic!("No file descriptor received");
+        }
+
+        let fd = *(libc::CMSG_DATA(cmsg) as *const RawFd);
+        fd
+    }
+}
 
 pub fn controller_test() {
-    println!("controller_test(): Attempting to connect to controller...");
-    
-    match UnixStream::connect(SOCKET_PATH) {
-        Ok(mut stream) => {
-            println!("test.rs: Connected to controller.");
-            
-            let message = "Hello from server";
-            stream.write_all(message.as_bytes()).expect("Failed to send message");
-            println!("server sent message: {}", message);
-            
-            let mut buffer = [0; 256];
-            let bytes_read = stream.read(&mut buffer).expect("Failed to read response");
-            let response = String::from_utf8_lossy(&buffer[..bytes_read]);
-            println!("server recv response: {}", response);
-        }
-        Err(err) => {
-            eprintln!("test.rs: Failed to connect: {}", err);
-        }
-    }
-    
     thread::sleep(Duration::from_secs(1));
+    // Connect to Unix domain socket
+    let sock = UnixStream::connect(SOCKET_PATH).expect("Failed to connect to controller");
+    let efd = recv_fd(&sock);
+    println!("Test: Received eventfd with fd={}", efd);
+
+    // Open shared memory
+    let shm_name = CString::new(SHM_NAME).expect("CString::new failed");
+    let shm_fd = unsafe { shm_open(shm_name.as_ptr(), OFlag::O_RDWR.bits(), Mode::S_IRWXU.bits()) };
+    if shm_fd < 0 {
+        eprintln!("Failed to open shared memory");
+        return;
+    }
+
+    let shm_ptr = unsafe {
+        mmap(ptr::null_mut(), SHM_SIZE, PROT_READ, MAP_SHARED, shm_fd, 0)
+    };
+    if shm_ptr == libc::MAP_FAILED {
+        eprintln!("Failed to map shared memory");
+        return;
+    }
+
+    println!("Test: Waiting for event notification...");
+
+    thread::sleep(Duration::from_secs(2));
+
+    let mut buf: u64 = 0;
+    let res = unsafe { eventfd_read(efd, &mut buf) };
+    if res < 0 {
+        let err = std::io::Error::last_os_error();
+        eprintln!("Failed to read from eventfd: {}", err);
+        return;
+    }
+
+    println!("Test: Received event notification!");
+
+    let var1 = unsafe { *(shm_ptr as *const usize) };
+    println!("Test: Read value from shared memory: {}", var1);
 }
