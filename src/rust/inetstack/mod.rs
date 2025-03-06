@@ -73,7 +73,7 @@ use crate::capy_log;
 use chrono::NaiveTime;
 
 #[cfg(feature = "autokernel")]
-use crate::autokernel::parameters::get_param;
+use crate::autokernel::parameters::{get_param, controller_test};
 
 //==============================================================================
 // Exports
@@ -853,6 +853,7 @@ impl InetStack {
             // if self.is_poll_ok() {
             //     self.scheduler.poll();
             // }
+            controller_test();
             self.scheduler.poll();
         }
         // }
@@ -960,30 +961,16 @@ impl InetStack {
             }
         };
 
-
-        /* for _ in 0..recv_iters {
+        #[cfg(not(feature = "autokernel"))]
+        for _ in 0..recv_iters {
             let batch = {
                 #[cfg(feature = "profiler")]
                 timer!("inetstack::poll_bg_work::for::receive");
                 self.rt.receive()
             };
-            // let batch: Vec<_> = match self.batch_size {
-            //     4 => self.rt.receive_4().into_iter().collect(),
-            //     16 => self.rt.receive_16().into_iter().collect(),
-            //     64 => self.rt.receive_64().into_iter().collect(),
-            //     128 => self.rt.receive_128().into_iter().collect(),
-            //     _ => {
-            //         #[cfg(feature = "profiler")]
-            //         timer!("inetstack::poll_bg_work::for::receive_default");
-            //         self.rt.receive().into_iter().collect()
-            //     },
-            // };
             if batch.is_empty() {
                 break;
             }
-            
-            // Use ML-inspired prediction for batch size
-            // self.batch_size = self.predict_batch_size(batch.len());
 
             for pkt in batch {
                 capy_log!("[RX] pkt");
@@ -993,11 +980,9 @@ impl InetStack {
                 }
             }
             // capy_time_log!("{}", batch.len());
-            // #[cfg(feature = "autokernel")]
-            // self.ipv4.obs_bytes_acked();
-            
-        } */
+        }
 
+        #[cfg(feature = "autokernel")]
         for _ in 0..recv_iters {
             match self.batch_size {
                 4 => {
