@@ -15,6 +15,8 @@ use std::{
     slice,
     sync::Arc,
 };
+use std::mem::MaybeUninit;
+
 
 //==============================================================================
 // Structures
@@ -58,18 +60,29 @@ impl DataBuffer {
 
     // Creates a data buffer with a given capacity.
     pub fn new(capacity: usize) -> Result<Self, Fail> {
-        // Check if argument is valid.
         if capacity == 0 {
             return Err(Fail::new(libc::EINVAL, "zero-capacity buffer"));
         }
 
-        // Create buffer.
+        // Allocate an uninitialized vector
+        let mut vec = Vec::<MaybeUninit<u8>>::with_capacity(capacity);
+
+        // SAFETY: Set the length so we can safely assume it's initialized later
+        unsafe { vec.set_len(capacity) };
+
+        // Convert Vec<MaybeUninit<u8>> to Vec<u8> safely
+        let initialized_vec = unsafe { std::mem::transmute::<Vec<MaybeUninit<u8>>, Vec<u8>>(vec) };
+
+        // Wrap in Arc<[u8]> for efficient reference counting
+        let arc_slice = Arc::from(initialized_vec.into_boxed_slice());
+
         Ok(Self {
-            data: unsafe { Some(Arc::new_zeroed_slice(capacity).assume_init()) },
+            data: Some(arc_slice),
             offset: 0,
             len: capacity,
         })
     }
+
 
     /// Creates a data buffer from a raw pointer and a length.
     pub fn from_raw_parts(data: *mut u8, len: usize) -> Result<Self, Fail> {
