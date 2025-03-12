@@ -122,6 +122,8 @@ pub struct TcpMigPeer {
     additional_mig_delay: u32,
 
     num_be: u16,
+
+    mtu: usize,
 }
 
 #[derive(Default)]
@@ -141,7 +143,10 @@ impl TcpMigPeer {
     /// Creates a TCPMig peer.
     pub fn new(rt: Rc<dyn NetworkRuntime>, local_link_addr: MacAddress, local_ipv4_addr: Ipv4Addr) -> Self {
         log_init();
-
+        let mtu = env::var("MTU")
+            .unwrap_or_else(|_| String::from("1500")) // Default value is 1460 if MTU is not set
+            .parse::<usize>()
+            .expect("Invalid MTU value");
         Self {
             rt: rt.clone(),
             local_link_addr,
@@ -163,6 +168,7 @@ impl TcpMigPeer {
                     FRONTEND_PORT,
                 ),
                 Buffer::Heap(DataBuffer::new(4).unwrap()),
+                mtu,
             )),
 
             application_state: HashMap::new(),
@@ -177,6 +183,8 @@ impl TcpMigPeer {
             .unwrap_or_else(|_| String::from("1")) // Default value is 0 if NUM_BE is not set
             .parse::<u16>()
             .expect("Invalid NUM_BE value"),
+
+            mtu,
         }
     }
 
@@ -256,23 +264,24 @@ impl TcpMigPeer {
                 self.rt.clone(),
                 self.local_ipv4_addr,
                 self.local_link_addr,
-                if self.local_ipv4_addr == FRONTEND_IP {
-                    BACKEND_IP
-                } else {
-                    FRONTEND_IP
-                },
-                if self.local_link_addr == FRONTEND_MAC {
-                    BACKEND_MAC
-                } else {
-                    FRONTEND_MAC
-                },
-                // FRONTEND_IP,
-                // FRONTEND_MAC,
+                // if self.local_ipv4_addr == FRONTEND_IP {
+                //     BACKEND_IP
+                // } else {
+                //     FRONTEND_IP
+                // },
+                // if self.local_link_addr == FRONTEND_MAC {
+                //     BACKEND_MAC
+                // } else {
+                //     FRONTEND_MAC
+                // },
+                FRONTEND_IP,
+                FRONTEND_MAC,
                 self.self_udp_port,
                 hdr.origin.port(),
                 hdr.origin,
                 hdr.client,
                 None,
+                self.mtu,
             );
             if let Some(..) = self.active_migrations.insert(remote, active) {
                 // todo!("duplicate active migration");
@@ -375,31 +384,32 @@ impl TcpMigPeer {
             self.rt.clone(),
             self.local_ipv4_addr,
             self.local_link_addr,
-            if self.local_ipv4_addr == FRONTEND_IP {
-                BACKEND_IP
-            } else {
-                FRONTEND_IP
-            },
-            if self.local_link_addr == FRONTEND_MAC {
-                BACKEND_MAC
-            } else {
-                FRONTEND_MAC
-            },
-            // FRONTEND_IP,
-            // FRONTEND_MAC,
+            // if self.local_ipv4_addr == FRONTEND_IP {
+            //     BACKEND_IP
+            // } else {
+            //     FRONTEND_IP
+            // },
+            // if self.local_link_addr == FRONTEND_MAC {
+            //     BACKEND_MAC
+            // } else {
+            //     FRONTEND_MAC
+            // },
+            FRONTEND_IP,
+            FRONTEND_MAC,
             self.self_udp_port,
             // 10000,
-            if self.local_ipv4_addr == FRONTEND_IP {
-                let port = BACKEND_PORT.get();
-                BACKEND_PORT.set((port + 1) % self.num_be);
-                10000 + port                
-            } else {
-                10000
-            },
-            // if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
+            // if self.local_ipv4_addr == FRONTEND_IP {
+            //     let port = BACKEND_PORT.get();
+            //     BACKEND_PORT.set((port + 1) % self.num_be);
+            //     10000 + port                
+            // } else {
+            //     10000
+            // },
+            if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
             local,
             remote,
             Some(qd),
+            self.mtu,
         ); // Inho: Q. Why link_addr (MAC addr) is needed when the libOS has arp_table already? Is it possible to use the arp_table instead?
 
         let active = match self.active_migrations.entry(remote) {

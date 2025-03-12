@@ -86,6 +86,8 @@ pub struct ActiveMigration {
     defragmenter: TcpMigDefragmenter,
 
     configured_state_size: usize,
+
+    mtu: usize,
 }
 
 //======================================================================================================================
@@ -104,6 +106,7 @@ impl ActiveMigration {
         origin: SocketAddrV4,
         client: SocketAddrV4,
         qd: Option<QDesc>,
+        mtu: usize,
     ) -> Self {
         Self {
             rt,
@@ -123,6 +126,7 @@ impl ActiveMigration {
                 .ok()
                 .and_then(|v| v.parse::<usize>().ok())
                 .unwrap_or(0), // Use 0 as the default value if parsing or fetching fails
+            mtu,
         }
     }
 
@@ -355,6 +359,7 @@ impl ActiveMigration {
             ip_hdr,
             tcpmig_hdr,
             buf,
+            self.mtu
         );
         for fragment in segment.fragments() {
             self.rt.transmit(Box::new(fragment));
