@@ -11,6 +11,7 @@ CAPYBARA_CONFIG_PATH = f'{CAPYBARA_PATH}/scripts/config'
 CALADAN_PATH = f'{HOME}/Capybara/caladan'
 DATA_PATH = f'{HOME}/capybara-data'
 PCAP_PATH = f'{LOCAL}/capybara-pcap'
+LD_LIBRARY_PATH=f'{HOME}/lib:{HOME}/lib/x86_64-linux-gnu'
 
 ################## CLUSTER CONFIG #####################
 ALL_NODES = ['node1', 'node7', 'node8', 'node9']
@@ -28,17 +29,17 @@ LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
     'tcp-migration',
     # 'manual-tcp-migration',
-    # 'capy-log',
-    'capy-profile',
+    'capy-log',
+    # 'capy-profile',
     # 'capy-time-log',
     # 'server-reply-analysis',
 ]
 
 ################## TEST CONFIG #####################
 NUM_BACKENDS = 2
-SERVER_APP = 'redis-server' # 'https', 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
+SERVER_APP = 'http-server' # 'capy-proxy', 'https', 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
 TLS = 1
-CLIENT_APP = 'redis-bench' # 'wrk', 'caladan', 'redis-bench'
+CLIENT_APP = 'caladan' # 'wrk', 'caladan', 'redis-bench'
 NUM_THREADS = [1] # for wrk load generator
 REPEAT_NUM = 1
 
@@ -67,30 +68,38 @@ RAND_SEED = 2402271237
 
 ################## ENV VARS #####################
 ### SERVER ###
+MTU = 9000
+MSS = 9000
 RECV_QUEUE_LEN_THRESHOLD = 20
 MIG_DELAYS = [0]
 MAX_PROACTIVE_MIGS = [24] # set element to '' if you don't want to set this env var
 MAX_REACTIVE_MIGS = [0] # set element to '' if you don't want to set this env var
-MIG_PER_N = [0]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
+MIG_PER_N = [1000000]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
 CONFIGURED_STATE_SIZE = 1024 * 0 # bytes
 MIN_THRESHOLD = 190 # K rps
 RPS_THRESHOLD = 0.3
 THRESHOLD_EPSILON = 0.1
+DATA_SIZE = 8192 #0(index.html), 256, 1024, 8192
 
 CAPY_LOG = 'all' # 'all', 'mig'
 REDIS_LOG = 1 # 1, 0
 
+ENV = f'MTU=9000 MSS=9000  RUST_BACKTRACE=full USE_JUMBO=1 CAPY_LOG=all LIBOS={LIBOS} \
+        LD_LIBRARY_PATH={LD_LIBRARY_PATH} DATA_SIZE={DATA_SIZE}'
+
+
+
 
 ### CALADAN ###
-CLIENT_PPS = [0] #[i for i in range(10000, 250000 + 1, 30000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(1, 1 + 1, 10000)]#[i for i in range(100000, 1_300_001, 100000)]
 import workload_spec_generator
 LOADSHIFTS = workload_spec_generator.main()
 # LOADSHIFTS = '90000:10000,270000:10000,450000:10000,630000:10000,810000:10000/90000:50000/90000:50000/90000:50000'
 LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
 ZIPF_ALPHA = '' # 0.9, 1.2
 ONOFF = '0' # '0', '1'
-NUM_CONNECTIONS = [16]
-RUNTIME = 10
+NUM_CONNECTIONS = [1]
+RUNTIME = 5
 
 #####################
 # build command: run_eval.py [build [clean]]

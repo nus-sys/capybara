@@ -90,6 +90,74 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     ).stdout.decode()
     # print(result + '\n\n')
 
+    
+    if SERVER_APP == 'capy-proxy':
+        print('RUNNING FRONTEND')
+        host = pyrem.host.RemoteHost(FRONTEND_NODE) 
+        cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl-node8'] 
+        task = host.run(cmd, quiet=True)
+        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+        time.sleep(3)
+        print('Frontend dpdk-ctrl is running')
+
+        cmd = [f'cd {CAPYBARA_PATH} && \
+            sudo -E \
+            CAPY_LOG={CAPY_LOG} \
+            LIBOS={LIBOS} \
+            MTU=1500 \
+            MSS=1500 \
+            NUM_CORES=4 \
+            RUST_BACKTRACE=full \
+            CORE_ID=1 \
+            NUM_BE={NUM_BACKENDS} \
+            CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node8_config.yaml \
+            LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
+            PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
+            numactl -m0 \
+            {CAPYBARA_PATH}/bin/examples/rust/capy-proxy-fe.elf 10.0.1.8:10000 \
+            > {DATA_PATH}/{experiment_id}.fe 2>&1']
+        task = host.run(cmd, quiet=False)
+        pyrem.task.Parallel([task], aggregate=True).start(wait=False)    
+        time.sleep(2)
+        print(f'Frontend is running')
+        
+        print('RUNNING BACKENDS')
+        server_tasks = []
+        tasks = []
+        host = pyrem.host.RemoteHost(BACKEND_NODE) 
+        cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl-node9'] 
+        task = host.run(cmd, quiet=True)
+        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+        time.sleep(3)
+        print('Backend dpdk-ctrl is running')
+
+        for j in range(NUM_BACKENDS):
+            cmd = [f'cd {CAPYBARA_PATH} && \
+                {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
+                sudo -E \
+                CAPY_LOG={CAPY_LOG} \
+                LIBOS={LIBOS} \
+                MTU=1500 \
+                MSS=1500 \
+                NUM_CORES=4 \
+                RUST_BACKTRACE=full \
+                CORE_ID={j+1} \
+                NUM_BE={NUM_BACKENDS} \
+                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node9_config.yaml \
+                LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
+                PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
+                numactl -m0 \
+                {CAPYBARA_PATH}/bin/examples/rust/capy-proxy-be.elf 10.0.1.9:1000{j} \
+                > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
+            task = host.run(cmd, quiet=False)
+            server_tasks.append(task)
+        pyrem.task.Parallel(server_tasks, aggregate=True).start(wait=False)    
+        time.sleep(2)
+        print(f'{NUM_BACKENDS} Backend{"s are" if NUM_BACKENDS != 1 else " is"} running')
+        return
+    
+
+
     if SERVER_APP == 'proxy-server':
         print('RUNNING FRONTEND')
         host = pyrem.host.RemoteHost(FRONTEND_NODE) 
@@ -271,14 +339,11 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 MIN_THRESHOLD={MIN_THRESHOLD} \
                 RPS_THRESHOLD={RPS_THRESHOLD} \
                 THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
-                MTU=1500 \
-                MSS=1500 \
+                {ENV} \
                 NUM_CORES=4 \
                 RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
                 CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node9_config.yaml \
-                LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
-                PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
                 numactl -m0 \
                 {run_cmd} \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
@@ -780,7 +845,7 @@ def run_eval():
                                         time.sleep(3)
                                         print('iokerneld is running')
                                     
-                                    if SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'prism' or SERVER_APP == 'proxy-server':
+                                    if SERVER_APP == 'capy-proxy' or SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'prism' or SERVER_APP == 'proxy-server':
                                         if CLIENT_APP == 'wrk':
                                             cmd = [f'sudo numactl -m0 {HOME}/wrk-tools/wrk/wrk \
                                                 -t{num_thread} \

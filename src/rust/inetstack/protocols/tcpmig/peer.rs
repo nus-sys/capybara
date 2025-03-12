@@ -120,6 +120,8 @@ pub struct TcpMigPeer {
 
     /// for testing
     additional_mig_delay: u32,
+
+    num_be: u16,
 }
 
 #[derive(Default)]
@@ -170,6 +172,11 @@ impl TcpMigPeer {
             .unwrap_or_else(|_| String::from("0")) // Default value is 0 if MIG_DELAY is not set
             .parse::<u32>()
             .expect("Invalid DELAY value"),
+
+            num_be: env::var("NUM_BE")
+            .unwrap_or_else(|_| String::from("1")) // Default value is 0 if NUM_BE is not set
+            .parse::<u16>()
+            .expect("Invalid NUM_BE value"),
         }
     }
 
@@ -249,18 +256,18 @@ impl TcpMigPeer {
                 self.rt.clone(),
                 self.local_ipv4_addr,
                 self.local_link_addr,
-                // if self.local_ipv4_addr == FRONTEND_IP {
-                //     BACKEND_IP
-                // } else {
-                //     FRONTEND_IP
-                // },
-                // if self.local_link_addr == FRONTEND_MAC {
-                //     BACKEND_MAC
-                // } else {
-                //     FRONTEND_MAC
-                // },
-                FRONTEND_IP,
-                FRONTEND_MAC,
+                if self.local_ipv4_addr == FRONTEND_IP {
+                    BACKEND_IP
+                } else {
+                    FRONTEND_IP
+                },
+                if self.local_link_addr == FRONTEND_MAC {
+                    BACKEND_MAC
+                } else {
+                    FRONTEND_MAC
+                },
+                // FRONTEND_IP,
+                // FRONTEND_MAC,
                 self.self_udp_port,
                 hdr.origin.port(),
                 hdr.origin,
@@ -356,7 +363,9 @@ impl TcpMigPeer {
         // }
         capy_time_log!("INIT_MIG,({})", conn.1);
         let (local, remote) = conn;
-
+        thread_local! {
+            static BACKEND_PORT: Cell<u16> = Cell::new(0);
+        }
         // eprintln!("initiate migration for connection {} <-> {}", origin, client);
 
         //let origin = SocketAddrV4::new(self.local_ipv4_addr, origin_port);
@@ -366,21 +375,28 @@ impl TcpMigPeer {
             self.rt.clone(),
             self.local_ipv4_addr,
             self.local_link_addr,
-            // if self.local_ipv4_addr == FRONTEND_IP {
-            //     BACKEND_IP
-            // } else {
-            //     FRONTEND_IP
-            // },
-            // if self.local_link_addr == FRONTEND_MAC {
-            //     BACKEND_MAC
-            // } else {
-            //     FRONTEND_MAC
-            // },
-            FRONTEND_IP,
-            FRONTEND_MAC,
+            if self.local_ipv4_addr == FRONTEND_IP {
+                BACKEND_IP
+            } else {
+                FRONTEND_IP
+            },
+            if self.local_link_addr == FRONTEND_MAC {
+                BACKEND_MAC
+            } else {
+                FRONTEND_MAC
+            },
+            // FRONTEND_IP,
+            // FRONTEND_MAC,
             self.self_udp_port,
             // 10000,
-            if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
+            if self.local_ipv4_addr == FRONTEND_IP {
+                let port = BACKEND_PORT.get();
+                BACKEND_PORT.set((port + 1) % self.num_be);
+                10000 + port                
+            } else {
+                10000
+            },
+            // if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
             local,
             remote,
             Some(qd),

@@ -171,28 +171,12 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     server_log!("PUSH: {}", response.lines().next().unwrap_or(""));
     libos.push2(qd, response.as_bytes()).expect("push success") */    
 
-    const N: usize = 100;
     #[cfg(not(feature = "server-reply-analysis"))]
     {
         lazy_static! {
-            static ref N: usize = {
-                env::var("DATA_SIZE")
-                    .unwrap_or_else(|_| "0".to_string()) // Fallback to 0 if not set
-                    .parse()
-                    .expect("DATA_SIZE must be a valid number")
-            };
             static ref RESPONSE: String = {
-                let file_path = match *N {
-                    256 => format!("{}/{}", ROOT, "index_256b.html"),
-                    1024 => format!("{}/{}", ROOT, "index_1024b.html"),
-                    8192 => format!("{}/{}", ROOT, "index_8192b.html"),
-                    _ => format!("{}/{}", ROOT, "index.html"), // Default file
-                };
-                match std::fs::read_to_string(file_path) {
+                match std::fs::read_to_string("/var/www/demo/index.html") {
                     Ok(contents) => {
-                        // let extra_bytes = "A".repeat(*N);
-                        // let full_contents = format!("{}{}", contents, extra_bytes);
-
                         format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
                     },
                     Err(_) => {
@@ -202,12 +186,6 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
             };
         }
         
-        // Inho: this is to simulate request processing delay for some clients
-        /* if libos.get_remote_port(qd) == 1124 {
-            // eprintln!("qd: {:?}", qd);
-            std::thread::sleep(std::time::Duration::from_micros(20));
-        } */
-
         server_log!("PUSH: {}", RESPONSE.lines().next().unwrap_or(""));
         libos.push2(qd, RESPONSE.as_bytes()).expect("push success")
     }
@@ -392,7 +370,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
     qts.push(libos.accept(sockqd).expect("accept"));
 
     let mut requests_remaining: HashMap<QDesc, u64> = HashMap::new();
-    let mut last_migration_time = Instant::now();
     
     // Create qrs filled with garbage.
     let mut qrs: Vec<(QDesc, OperationResult)> = Vec::with_capacity(2000);
@@ -430,7 +407,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Accept(new_qd) => {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
-                    last_migration_time = Instant::now();
                     
                     /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
                     #[cfg(feature = "tcp-migration")]
@@ -493,59 +469,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                     //server_log!("Issued PUSH => {} pushes pending", state.pushing);
                     server_log!("Issued {sent} PUSHes");
-
-                    
-                    #[cfg(feature = "manual-tcp-migration")]{
-                        let elapsed = last_migration_time.elapsed();
-
-                        if elapsed >= Duration::from_micros(migration_per_n) {
-                            server_log!("Should be migrated (no POP issued)");
-                            server_log!("BUFFER DATA SIZE = {}", state.buffer.data_size());
-                            libos.initiate_migration(qd).unwrap();
-                            
-                            // Reset migration timer
-                            last_migration_time = Instant::now();
-                        } else {
-                            server_log!(
-                                "Skipping migration: Only {:?} elapsed since last migration",
-                                elapsed
-                            );
-                            qts.push(libos.pop(qd).expect("pop qt"));
-                            server_log!("Issued POP instead of migration");
-                        }
-                        // if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {
-                        //     let remaining = entry.get_mut();
-                        //     *remaining -= 1;
-                        //     if *remaining > 0 {
-                        //         // queue next pop
-                        //         qts.push(libos.pop(qd).expect("pop qt"));
-                        //         server_log!("Migrating after {} more requests, Issued POP", remaining);
-                        //     } else {
-                        //         server_log!("Should be migrated (no POP issued)");
-                        //         server_log!("BUFFER DATA SIZE = {}", state.buffer.data_size());
-                        //         libos.initiate_migration(qd).unwrap();
-                        //         entry.remove();
-                        //         /* NON-CONCURRENT MIGRATION */
-                        //         /* match libos.initiate_migration(qd) {
-                        //             Ok(()) => {
-                        //                 entry.remove();
-                        //             },
-                        //             Err(e) => {
-                        //                 // eprintln!("this conn is not for migration");
-                        //                 qts.push(libos.pop(qd).expect("pop qt"));
-                        //                 server_log!("Issued POP");
-                        //             },
-                        //         } */
-                        //         /* NON-CONCURRENT MIGRATION */
-                        //     }
-                        // }
-                    }
-                    #[cfg(not(feature = "manual-tcp-migration"))]
-                    {
-                        // queue next pop
-                        qts.push(libos.pop(qd).expect("pop qt"));
-                        server_log!("Issued POP");
-                    }
+                    libos.initiate_migration(qd).unwrap();
                 },
 
                 OperationResult::Failed(e) => {

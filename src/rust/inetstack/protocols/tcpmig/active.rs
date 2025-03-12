@@ -283,7 +283,8 @@ impl ActiveMigration {
             0,
             MigrationStage::PrepareMigration,
             self.self_udp_port,
-            if self.self_udp_port == 10001 { 10000 } else { 10001 }, 
+            self.dest_udp_port,
+            // if self.self_udp_port == 10001 { 10000 } else { 10001 }, 
             // 10000, 
         );
         self.last_sent_stage = MigrationStage::PrepareMigration;
