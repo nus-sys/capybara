@@ -91,7 +91,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     # print(result + '\n\n')
 
     
-    if SERVER_APP == 'capy-proxy':
+    if SERVER_APP == 'capy-proxy' or SERVER_APP == 'proxy-server':
         print('RUNNING FRONTEND')
         host = pyrem.host.RemoteHost(FRONTEND_NODE) 
         cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl-node8'] 
@@ -102,19 +102,12 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
 
         cmd = [f'cd {CAPYBARA_PATH} && \
             sudo -E \
-            CAPY_LOG={CAPY_LOG} \
-            LIBOS={LIBOS} \
-            MTU=1500 \
-            MSS=1500 \
-            NUM_CORES=4 \
-            RUST_BACKTRACE=full \
             CORE_ID=1 \
             NUM_BE={NUM_BACKENDS} \
             CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node8_config.yaml \
-            LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
-            PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
+            {ENV} \
             numactl -m0 \
-            {CAPYBARA_PATH}/bin/examples/rust/capy-proxy-fe.elf 10.0.1.8:10000 \
+            {CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP}-fe.elf 10.0.1.8:10000 \
             > {DATA_PATH}/{experiment_id}.fe 2>&1']
         task = host.run(cmd, quiet=False)
         pyrem.task.Parallel([task], aggregate=True).start(wait=False)    
@@ -135,101 +128,12 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             cmd = [f'cd {CAPYBARA_PATH} && \
                 {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
                 sudo -E \
-                CAPY_LOG={CAPY_LOG} \
-                LIBOS={LIBOS} \
-                MTU=1500 \
-                MSS=1500 \
-                NUM_CORES=4 \
-                RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
                 NUM_BE={NUM_BACKENDS} \
                 CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node9_config.yaml \
-                LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
-                PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
+                {ENV} \
                 numactl -m0 \
-                {CAPYBARA_PATH}/bin/examples/rust/capy-proxy-be.elf 10.0.1.9:1000{j} \
-                > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
-            task = host.run(cmd, quiet=False)
-            server_tasks.append(task)
-        pyrem.task.Parallel(server_tasks, aggregate=True).start(wait=False)    
-        time.sleep(2)
-        print(f'{NUM_BACKENDS} Backend{"s are" if NUM_BACKENDS != 1 else " is"} running')
-        return
-    
-
-
-    if SERVER_APP == 'proxy-server':
-        print('RUNNING FRONTEND')
-        host = pyrem.host.RemoteHost(FRONTEND_NODE) 
-        cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl-node8'] 
-        task = host.run(cmd, quiet=True)
-        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
-        time.sleep(3)
-        print('Frontend dpdk-ctrl is running')
-
-        cmd = [f'cd {CAPYBARA_PATH} && \
-            {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
-            sudo -E \
-            CAPY_LOG={CAPY_LOG} \
-            LIBOS={LIBOS} \
-            RECV_QUEUE_LEN_THRESHOLD={RECV_QUEUE_LEN_THRESHOLD} \
-            MIG_DELAY={int(mig_delay/10) * 76} \
-            {f"MAX_REACTIVE_MIGS={max_reactive_migs}" if max_reactive_migs != "" else ""} \
-            {f"MAX_PROACTIVE_MIGS={max_proactive_migs}" if max_proactive_migs != "" else ""} \
-            MIG_PER_N={int(mig_per_n)} \
-            MIN_THRESHOLD={MIN_THRESHOLD} \
-            RPS_THRESHOLD={RPS_THRESHOLD} \
-            THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
-            MTU=1500 \
-            MSS=1500 \
-            NUM_CORES=4 \
-            RUST_BACKTRACE=full \
-            CORE_ID=1 \
-            CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node8_config.yaml \
-            LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
-            PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
-            numactl -m0 \
-            {CAPYBARA_PATH}/bin/examples/rust/proxy-server-fe.elf 10.0.1.8:10000 \
-            > {DATA_PATH}/{experiment_id}.fe 2>&1']
-        task = host.run(cmd, quiet=False)
-        pyrem.task.Parallel([task], aggregate=True).start(wait=False)    
-        time.sleep(2)
-        print(f'Frontend is running')
-        
-        print('RUNNING BACKENDS')
-        server_tasks = []
-        tasks = []
-        host = pyrem.host.RemoteHost(BACKEND_NODE) 
-        cmd = [f'cd {CAPYBARA_PATH} && make be-dpdk-ctrl-node9'] 
-        task = host.run(cmd, quiet=True)
-        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
-        time.sleep(3)
-        print('Backend dpdk-ctrl is running')
-
-        for j in range(NUM_BACKENDS):
-            cmd = [f'cd {CAPYBARA_PATH} && \
-                {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
-                sudo -E \
-                CAPY_LOG={CAPY_LOG} \
-                LIBOS={LIBOS} \
-                RECV_QUEUE_LEN_THRESHOLD={RECV_QUEUE_LEN_THRESHOLD} \
-                MIG_DELAY={int(mig_delay/10) * 76} \
-                {f"MAX_REACTIVE_MIGS={max_reactive_migs}" if max_reactive_migs != "" else ""} \
-                {f"MAX_PROACTIVE_MIGS={max_proactive_migs}" if max_proactive_migs != "" else ""} \
-                MIG_PER_N={int(mig_per_n)} \
-                MIN_THRESHOLD={MIN_THRESHOLD} \
-                RPS_THRESHOLD={RPS_THRESHOLD} \
-                THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
-                MTU=1500 \
-                MSS=1500 \
-                NUM_CORES=4 \
-                RUST_BACKTRACE=full \
-                CORE_ID={j+1} \
-                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node9_config.yaml \
-                LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
-                PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
-                numactl -m0 \
-                {CAPYBARA_PATH}/bin/examples/rust/proxy-server-be.elf 10.0.1.9:1000{j} 10.0.1.8:10000 \
+                {CAPYBARA_PATH}/bin/examples/rust/{SERVER_APP}-be.elf 10.0.1.9:1000{j} 10.0.1.8:10000 \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
             task = host.run(cmd, quiet=False)
             server_tasks.append(task)
@@ -245,15 +149,10 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
 
         cmd = [f'cd {CAPYBARA_PATH} && \
             sudo -E \
-            CAPY_LOG={CAPY_LOG} \
-            LIBOS={LIBOS} \
             NUM_CORES=1 \
-            MTU=1500 \
-            MSS=1500 \
             NUM_BACKENDS={NUM_BACKENDS} \
             CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node8_config.yaml \
-            LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu \
-            PKG_CONFIG_PATH={HOME}/lib/x86_64-linux-gnu/pkgconfig \
+            {ENV} \
             taskset --cpu-list 1 numactl -m0 \
             {CAPYBARA_PATH}/bin/examples/rust/capybara-switch.elf 10.0.1.8:10000 10.0.1.8:10001 \
             > {DATA_PATH}/{experiment_id}.capybara_switch 2>&1']
@@ -283,8 +182,6 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             run_cmd = f'make redis-server-node8'
             cmd = [f'cd {CAPYBARA_PATH} && \
                 sudo -E \
-                CAPY_LOG={CAPY_LOG} \
-                LIBOS={LIBOS} \
                 RUST_BACKTRACE=full \
                 MIG_AFTER=900000 \
                 numactl -m0 \
@@ -328,8 +225,6 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             cmd = [f'cd {CAPYBARA_PATH} && \
                 {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
                 sudo -E \
-                CAPY_LOG={CAPY_LOG} \
-                LIBOS={LIBOS} \
                 RECV_QUEUE_LEN_THRESHOLD={RECV_QUEUE_LEN_THRESHOLD} \
                 MIG_DELAY={int(mig_delay/10) * 76} \
                 {f"MAX_REACTIVE_MIGS={max_reactive_migs}" if max_reactive_migs != "" else ""} \
@@ -339,11 +234,9 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 MIN_THRESHOLD={MIN_THRESHOLD} \
                 RPS_THRESHOLD={RPS_THRESHOLD} \
                 THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
-                {ENV} \
-                NUM_CORES=4 \
-                RUST_BACKTRACE=full \
                 CORE_ID={j+1} \
                 CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node9_config.yaml \
+                {ENV} \
                 numactl -m0 \
                 {run_cmd} \
                 > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
@@ -352,8 +245,6 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             cmd = [f'cd {CAPYBARA_PATH} && \
                 {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
                 sudo -E \
-                CAPY_LOG={CAPY_LOG} \
-                LIBOS={LIBOS} \
                 MIN_THRESHOLD={MIN_THRESHOLD} \
                 RPS_THRESHOLD={RPS_THRESHOLD} \
                 THRESHOLD_EPSILON={THRESHOLD_EPSILON} \

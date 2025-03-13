@@ -11,7 +11,6 @@ CAPYBARA_CONFIG_PATH = f'{CAPYBARA_PATH}/scripts/config'
 CALADAN_PATH = f'{HOME}/Capybara/caladan'
 DATA_PATH = f'{HOME}/capybara-data'
 PCAP_PATH = f'{LOCAL}/capybara-pcap'
-LD_LIBRARY_PATH=f'{HOME}/lib:{HOME}/lib/x86_64-linux-gnu'
 
 ################## CLUSTER CONFIG #####################
 ALL_NODES = ['node1', 'node7', 'node8', 'node9']
@@ -28,7 +27,7 @@ NODE9_MAC = '08:c0:eb:b6:c5:ad'
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
     'tcp-migration',
-    # 'manual-tcp-migration',
+    'manual-tcp-migration',
     'capy-log',
     # 'capy-profile',
     # 'capy-time-log',
@@ -68,8 +67,6 @@ RAND_SEED = 2402271237
 
 ################## ENV VARS #####################
 ### SERVER ###
-MTU = 9000
-MSS = 9000
 RECV_QUEUE_LEN_THRESHOLD = 20
 MIG_DELAYS = [0]
 MAX_PROACTIVE_MIGS = [24] # set element to '' if you don't want to set this env var
@@ -84,8 +81,16 @@ DATA_SIZE = 8192 #0(index.html), 256, 1024, 8192
 CAPY_LOG = 'all' # 'all', 'mig'
 REDIS_LOG = 1 # 1, 0
 
-ENV = f'MTU=9000 MSS=9000  RUST_BACKTRACE=full USE_JUMBO=1 CAPY_LOG=all LIBOS={LIBOS} \
-        LD_LIBRARY_PATH={LD_LIBRARY_PATH} DATA_SIZE={DATA_SIZE}'
+ENV = f'MTU=9000 MSS=9000 \
+        NUM_CORES=4 \
+        RUST_BACKTRACE=full \
+        USE_JUMBO=1 \
+        CAPY_LOG={CAPY_LOG} \
+        LIBOS={LIBOS} \
+        DATA_SIZE={DATA_SIZE} \
+        LD_LIBRARY_PATH={HOME}/lib:{HOME}/lib/x86_64-linux-gnu'
+
+        
 
 
 
@@ -99,7 +104,7 @@ LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
 ZIPF_ALPHA = '' # 0.9, 1.2
 ONOFF = '0' # '0', '1'
 NUM_CONNECTIONS = [1]
-RUNTIME = 5
+RUNTIME = 2
 
 #####################
 # build command: run_eval.py [build [clean]]

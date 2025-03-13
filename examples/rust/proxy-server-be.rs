@@ -355,7 +355,7 @@ pub fn main() -> Result<()> {
 
     let args: Vec<String> = env::args().collect();
 
-    if args.len() >= 2 {
+    if args.len() >= 3 {
         let local: SocketAddrV4 = SocketAddrV4::from_str(&args[1])?;
         let fe: SocketAddrV4 = SocketAddrV4::from_str(&args[2])?;
         return server(local, fe);
