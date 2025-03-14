@@ -18,7 +18,15 @@ LD_LIBRARY_PATH = f'{AUTOKERNEL_PATH}/lib:{HOME}/lib/x86_64-linux-gnu'
 ALL_NODES = ['node7', 'node9']
 CLIENT_NODE = 'node7'
 SERVER_NODE = 'node9'
-NODE9_IP = '10.0.1.9'
+SERVER_IP = '10.0.1.9'
+
+# FOR CLOUDLAB TEST
+ALL_NODES = ['mghgm@amd137.utah.cloudlab.us', 'mghgm@amd145.utah.cloudlab.us']
+CLIENT_NODE = 'mghgm@amd137.utah.cloudlab.us'
+SERVER_NODE = 'mghgm@amd145.utah.cloudlab.us'
+SERVER_IP = '10.0.1.2'
+CLIENT_NIC_PCI = '41:00.0'
+CONFIG_PATH = f'{AUTOKERNEL_PATH}/scripts/config/cl_config.yaml'
 
 ################## BUILD CONFIG #####################
 LIBOS = 'catnip'#'catnap', 'catnip'
