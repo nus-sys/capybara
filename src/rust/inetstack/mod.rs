@@ -853,6 +853,7 @@ impl InetStack {
             // if self.is_poll_ok() {
             //     self.scheduler.poll();
             // }
+            #[cfg(feature = "autokernel")]
             controller_test();
             self.scheduler.poll();
         }

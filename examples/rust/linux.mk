@@ -28,7 +28,8 @@ all: all-examples
 #	cp -f $(BUILD_DIR)/examples/proxy-server-fe $(BINDIR)/examples/rust/proxy-server-fe.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/proxy-server-be $(BINDIR)/examples/rust/proxy-server-be.$(EXEC_SUFFIX)
 
-# export EXAMPLE_FEATURES ?= --features=capy-log
+export EXAMPLE_FEATURES ?= --features=autokernel
+# capy-log
 #tcp-migration,
 all-examples:
 #	@echo "$(CARGO) build --examples $(CARGO_FEATURES) $(CARGO_FLAGS)"

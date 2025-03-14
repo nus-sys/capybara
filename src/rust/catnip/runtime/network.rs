@@ -167,6 +167,7 @@ impl NetworkRuntime for DPDKRuntime {
         out
     }
 
+    #[cfg(feature = "autokernel")]
     fn receive_4(&self) -> ArrayVec<Buffer, 4> {
         let mut out = ArrayVec::new();
         let mut packets: [*mut rte_mbuf; 4] = unsafe { mem::zeroed() };
@@ -184,6 +185,8 @@ impl NetworkRuntime for DPDKRuntime {
         }
         out
     }
+
+    #[cfg(feature = "autokernel")]
     fn receive_16(&self) -> ArrayVec<Buffer, 16> {
         let mut out = ArrayVec::new();
         let mut packets: [*mut rte_mbuf; 16] = unsafe { mem::zeroed() };
@@ -201,6 +204,8 @@ impl NetworkRuntime for DPDKRuntime {
         }
         out
     }
+
+    #[cfg(feature = "autokernel")]
     fn receive_64(&self) -> ArrayVec<Buffer, 64> {
         let mut out = ArrayVec::new();
         let mut packets: [*mut rte_mbuf; 64] = unsafe { mem::zeroed() };
@@ -218,6 +223,8 @@ impl NetworkRuntime for DPDKRuntime {
         }
         out
     }
+
+    #[cfg(feature = "autokernel")]
     fn receive_128(&self) -> ArrayVec<Buffer, 128> {
         let mut out = ArrayVec::new();
         let mut packets: [*mut rte_mbuf; 128] = unsafe { mem::zeroed() };

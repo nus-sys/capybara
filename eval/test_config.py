@@ -6,7 +6,7 @@ import itertools
 ################## PATHS #####################
 HOME = os.path.expanduser("~")
 LOCAL = HOME.replace("/homes", "/local")
-AUTOKERNEL_PATH = f'{HOME}/Capybara/capybara'
+AUTOKERNEL_PATH = f'{HOME}/Capybara/autokernel'
 CALADAN_PATH = f'{HOME}/Capybara/caladan'
 DATA_PATH = f'{HOME}/autokernel-data'
 TCP_GENERATOR_PATH = f'{HOME}/Autokernel/tcp_generator'
@@ -19,19 +19,19 @@ ALL_NODES = ['node7', 'node9']
 CLIENT_NODE = 'node7'
 SERVER_NODE = 'node9'
 NODE9_IP = '10.0.1.9'
-NODE9_MAC = '08:c0:eb:b6:c5:ad'
 
 ################## BUILD CONFIG #####################
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
     'autokernel',
-    # 'tcp-migration',
-    # 'manual-tcp-migration',
+    # 'profiler',
     # 'capy-log',
     # 'capy-profile',
     # 'capy-time-log',
+    
+    # 'tcp-migration',
+    # 'manual-tcp-migration',
     # 'server-reply-analysis',
-    # 'profiler',
 ]
 ENV = f'MTU=9000 MSS=9000  RUST_BACKTRACE=full USE_JUMBO=1 CAPY_LOG=all LIBOS={LIBOS} \
         CONFIG_PATH={CONFIG_PATH} \
@@ -42,20 +42,20 @@ SERVER_APP = 'http-server' # 'tcp-echo', 'http-server'
 CLIENT_APP = 'caladan' # 'tcp_generator', 'caladan', 
 REPEAT_NUM = 1
 
-EVAL_LATENCY_TRACE = True
+EVAL_LATENCY_TRACE = False
 
 ################## VARS #####################
 ### CLIENT ###
-CLIENT_PPS = [i for i in range(5500, 5500+1, 100000)]#, 550000, 600000, 650000, 700000]#[i for i in range(300000, 650000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(500000, 500000+1, 100000)]#, 550000, 600000, 650000, 700000]#[i for i in range(300000, 650000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
 LOADSHIFTS = '' #'90000:10000,270000:10000,450000:10000,630000:10000,810000:10000/90000:50000/90000:50000/90000:50000'
-PARTIAL_UNIFORM = '1:5000000'#'5:500000,10:200000,20:200000,40:200000,60:200000,80:200000,100:200000,120:200000,140:200000,160:200000,180:200000,200:200000'
-# partial uniform: choose a partial number of connections and uniformly distribute the workload only to those connections (other connections are silent)
+PARTIAL_UNIFORM = ''#'5:500000,10:200000,20:200000,40:200000,60:200000,80:200000,100:200000,120:200000,140:200000,160:200000,180:200000,200:200000'
+# partial uniform: choose a partial number of connections and uniformly distribute the workload only to those connections (other connections send a minimal traffic)
 ZIPF_ALPHA = '' # 0.9, 1.2
 DATA_SIZE = [0] #0(index.html), 256, 1024, 8192
-NUM_CONNECTIONS = [1024] #[1, 32, 64, 128, 512, 1024]
+NUM_CONNECTIONS = [100] #[1, 32, 64, 128, 512, 1024]
 RUNTIME = 10
 
-### SERVER ###
+### DEMIKERNEL PARAMETERS ###
 TIMER_RESOLUTION = [64] # Default: 64
 MAX_RECV_ITERS = [2] # 2
 MAX_OUT_OF_ORDER = [2048, 256, 2048 * 4] # 2048
@@ -73,7 +73,7 @@ FIRST_SLOT_SIZE = [16, 4, 64] # 16
 WAKER_BIT_LENGTH_SHIFT = [6, 4, 8]
 FALLBACK_MSS = [536, 128, 2048] # 536
 RECEIVE_BATCH_SIZE = [4] # 4
-POP_SIZE = [58, 58*64] # 58*2, 58*4, 58*8, 58*16, 58*32,
+POP_SIZE = [58] # 58*2, 58*4, 58*8, 58*16, 58*32,
 
 
 

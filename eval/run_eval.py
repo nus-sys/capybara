@@ -90,7 +90,7 @@ def run_server(test_values, data_size):
     global experiment_id
     print('SETUP SWITCH')
     cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
-        /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4//port_forward/port_forward.py"'] 
+        /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/port_forward/port_forward.py"'] 
     result = subprocess.run(
         cmd,
         shell=True,
