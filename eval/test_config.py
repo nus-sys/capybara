@@ -54,14 +54,14 @@ EVAL_LATENCY_TRACE = False
 
 ################## VARS #####################
 ### CLIENT ###
-CLIENT_PPS = [i for i in range(500000, 500000+1, 100000)]#, 550000, 600000, 650000, 700000]#[i for i in range(300000, 650000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(100, 100+1, 100000)]#, 550000, 600000, 650000, 700000]#[i for i in range(300000, 650000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
 LOADSHIFTS = '' #'90000:10000,270000:10000,450000:10000,630000:10000,810000:10000/90000:50000/90000:50000/90000:50000'
 PARTIAL_UNIFORM = ''#'5:500000,10:200000,20:200000,40:200000,60:200000,80:200000,100:200000,120:200000,140:200000,160:200000,180:200000,200:200000'
 # partial uniform: choose a partial number of connections and uniformly distribute the workload only to those connections (other connections send a minimal traffic)
 ZIPF_ALPHA = '' # 0.9, 1.2
 DATA_SIZE = [0] #0(index.html), 256, 1024, 8192
-NUM_CONNECTIONS = [100] #[1, 32, 64, 128, 512, 1024]
-RUNTIME = 10
+NUM_CONNECTIONS = [1] #[1, 32, 64, 128, 512, 1024]
+RUNTIME = 5
 
 ### DEMIKERNEL PARAMETERS ###
 TIMER_RESOLUTION = [64] # Default: 64

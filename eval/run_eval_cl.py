@@ -112,7 +112,7 @@ def run_server(test_values, data_size):
             sudo -E \
             {ENV} \
             {AK_ENV} \
-            {AUTOKERNEL_PATH}/bin/examples/rust/http-server.elf {SERVER_IP}:10000 \
+            {AUTOKERNEL_PATH}/http-server.elf {SERVER_IP}:10000 \
             >> {output_file} 2>&1']
     cmd[0] = cmd[0] + f' && echo "cmd: {cmd[0]}" >> {output_file}'
     
@@ -218,7 +218,7 @@ def run_eval():
                     
                     cmd = [f'sudo {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                             {SERVER_IP}:10000 \
-                            --config {CALADAN_PATH}/client.config \
+                            --config {CALADAN_PATH}/cl_client.config \
                             --mode runtime-client \
                             --protocol=http \
                             --transport=tcp \
@@ -299,12 +299,9 @@ def exiting():
 
 
 def run_compile():
-    # only for redis-server
-    mig = ''
-    if 'manual-tcp-migration' in FEATURES:
-        mig = '-mig-manual'
-    elif 'tcp-migration' in FEATURES:
-        mig = '-mig'
+    caladan_features = ''
+    if 'server-reply-analysis' in FEATURES:
+        caladan_features = '--features=server-reply-analysis'
 
     features = '--features=' if len(FEATURES) > 0 else ''
     for feat in FEATURES:
@@ -312,8 +309,12 @@ def run_compile():
 
     # if SERVER_APP == 'http-server':
     
+    cmd = f'cd {CALADAN_PATH} && make -j && cd apps/synthetic; cargo build {caladan_features} --release \
+    && cd {AUTOKERNEL_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-examples-rust \
+    && scp {AUTOKERNEL_PATH}/bin/examples/rust/http-server.elf mghgm@amd145.utah.cloudlab.us:{AUTOKERNEL_PATH}'
     
-    return os.system(f"cd {AUTOKERNEL_PATH} && EXAMPLE_FEATURES={features} make LIBOS={LIBOS} all-examples-rust")
+    
+    return os.system(cmd)
     
     # else:
     #     print(f'Invalid server app: {SERVER_APP}')
