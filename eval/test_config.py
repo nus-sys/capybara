@@ -28,9 +28,9 @@ LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
     'tcp-migration',
     'manual-tcp-migration',
-    'capy-log',
+    # 'capy-log',
     # 'capy-profile',
-    # 'capy-time-log',
+    'capy-time-log',
     # 'server-reply-analysis',
 ]
 
@@ -71,7 +71,7 @@ RECV_QUEUE_LEN_THRESHOLD = 20
 MIG_DELAYS = [0]
 MAX_PROACTIVE_MIGS = [24] # set element to '' if you don't want to set this env var
 MAX_REACTIVE_MIGS = [0] # set element to '' if you don't want to set this env var
-MIG_PER_N = [1000000]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
+MIG_PER_N = [5000000]#[5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 70000]
 CONFIGURED_STATE_SIZE = 1024 * 0 # bytes
 MIN_THRESHOLD = 190 # K rps
 RPS_THRESHOLD = 0.3
@@ -96,15 +96,15 @@ ENV = f'MTU=9000 MSS=9000 \
 
 
 ### CALADAN ###
-CLIENT_PPS = [i for i in range(1, 1 + 1, 10000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(500, 500 + 1, 10000)]#[i for i in range(100000, 1_300_001, 100000)]
 import workload_spec_generator
 LOADSHIFTS = workload_spec_generator.main()
 # LOADSHIFTS = '90000:10000,270000:10000,450000:10000,630000:10000,810000:10000/90000:50000/90000:50000/90000:50000'
 LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
 ZIPF_ALPHA = '' # 0.9, 1.2
 ONOFF = '0' # '0', '1'
-NUM_CONNECTIONS = [1]
-RUNTIME = 2
+NUM_CONNECTIONS = [100]
+RUNTIME = 10
 
 #####################
 # build command: run_eval.py [build [clean]]
