@@ -171,7 +171,6 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     server_log!("PUSH: {}", response.lines().next().unwrap_or(""));
     libos.push2(qd, response.as_bytes()).expect("push success") */    
 
-    const N: usize = 100;
     #[cfg(not(feature = "server-reply-analysis"))]
     {
         lazy_static! {
@@ -182,18 +181,13 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
                     .expect("DATA_SIZE must be a valid number")
             };
             static ref RESPONSE: String = {
-                let file_path = match *N {
-                    256 => format!("{}/{}", ROOT, "index_256b.html"),
-                    1024 => format!("{}/{}", ROOT, "index_1024b.html"),
-                    8192 => format!("{}/{}", ROOT, "index_8192b.html"),
-                    _ => format!("{}/{}", ROOT, "index.html"), // Default file
-                };
+                let file_path = format!("{}/{}", ROOT, "index.html");
                 match std::fs::read_to_string(file_path) {
                     Ok(contents) => {
-                        // let extra_bytes = "A".repeat(*N);
-                        // let full_contents = format!("{}{}", contents, extra_bytes);
-
-                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
+                        let extra_bytes = "A".repeat(*N - contents.len());
+                        let full_contents = format!("{}{}", contents, extra_bytes);
+                        // server_log!("full_contents len: {}", full_contents.len());
+                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", full_contents.len(), full_contents)
                     },
                     Err(_) => {
                         format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
