@@ -6,7 +6,6 @@
 //======================================================================================================================
 
 use ::anyhow::Result;
-use demikernel::capy_log;
 use ::demikernel::{
     LibOS,
     LibOSName,
@@ -16,17 +15,12 @@ use ::demikernel::{
 };
 use num_traits::ToBytes;
 
-use std::{
-    cell::RefCell, collections::{HashMap, HashSet, hash_map::Entry}, rc::Rc, time::Instant,
-    sync::atomic::{AtomicBool, Ordering},
-    sync::Arc,
-};
+use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map::Entry}, rc::Rc, time::{Duration, Instant}};
 use ::std::{
     env,
     net::SocketAddrV4,
     panic,
     str::FromStr,
-    time::Duration,
 };
 use ctrlc;
 
@@ -61,7 +55,7 @@ macro_rules! server_log {
 //=====================================================================================
 
 const ROOT: &str = "/var/www/demo";
-const BUFSZ: usize = 8192 * 2;
+const BUFSZ: usize = 4096;
 
 static mut START_TIME: Option<Instant> = None;
 static mut SERVER_PORT: u16 = 0;
@@ -113,9 +107,9 @@ impl Buffer {
             return Ok(());
         }
 
-        // if self.head < self.buf.len() {
-        //     return Ok(());
-        // }
+        if self.head < self.buf.len() {
+            return Ok(());
+        }
 
         if self.data_size() == self.buf.len() {
             panic!("Need larger buffer for HTTP messages");
@@ -176,7 +170,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
 
     server_log!("PUSH: {}", response.lines().next().unwrap_or(""));
     libos.push2(qd, response.as_bytes()).expect("push success") */    
-    const N: usize = 100;
+
     #[cfg(not(feature = "server-reply-analysis"))]
     {
         lazy_static! {
@@ -187,18 +181,13 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
                     .expect("DATA_SIZE must be a valid number")
             };
             static ref RESPONSE: String = {
-                let file_path = match *N {
-                    256 => format!("{}/{}", ROOT, "index_256b.html"),
-                    1024 => format!("{}/{}", ROOT, "index_1024b.html"),
-                    8192 => format!("{}/{}", ROOT, "index_8192b.html"),
-                    _ => format!("{}/{}", ROOT, "index.html"), // Default file
-                };
+                let file_path = format!("{}/{}", ROOT, "index.html");
                 match std::fs::read_to_string(file_path) {
                     Ok(contents) => {
-                        // let extra_bytes = "A".repeat(*N);
-                        // let full_contents = format!("{}{}", contents, extra_bytes);
-
-                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
+                        let extra_bytes = "A".repeat(*N - contents.len());
+                        let full_contents = format!("{}{}", contents, extra_bytes);
+                        // server_log!("full_contents len: {}", full_contents.len());
+                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", full_contents.len(), full_contents)
                     },
                     Err(_) => {
                         format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
@@ -267,6 +256,17 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[u8], qts: &mut Vec<QToken>) -> usize {
     
+    server_log!("buffer.data_size() {}", buffer.data_size());
+    // fast path: no previous data in the stream and this request contains exactly one HTTP request
+    if buffer.data_size() == 0 {
+        if find_subsequence(data, b"\r\n\r\n").unwrap_or(data.len()) == data.len() - 4 {
+            server_log!("responding 1");
+            let resp_qt = respond_to_request(libos, qd, data);
+            qts.push(resp_qt);
+            return 1;
+        }
+    }
+    // println!("* CHECK *\n");
     // Copy new data into buffer
     buffer.get_empty_buf()[..data.len()].copy_from_slice(data);
     buffer.push_data(data.len());
@@ -277,14 +277,14 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut Buffer, data: &[
         let dbuf = buffer.get_data();
         match find_subsequence(dbuf, b"\r\n\r\n") {
             Some(idx) => {
-                server_log!("Processing {} request", sent+1);
+                server_log!("responding 2");
                 let resp_qt = respond_to_request(libos, qd, &dbuf[..idx + 4]);
                 qts.push(resp_qt);
                 buffer.pull_data(idx + 4);
+                buffer.try_shrink().unwrap();
                 sent += 1;
             }
             None => {
-                buffer.try_shrink().unwrap();
                 return sent;
             }
         }
@@ -355,27 +355,23 @@ fn server(local: SocketAddrV4) -> Result<()> {
     #[cfg(not(feature = "tcp-migration"))]{
         eprintln!("TCP MIGRATION DISABLED");
     }
-
-    // Atomic flag to control the loop
-    let running = Arc::new(AtomicBool::new(true));
-
-    // Set up Ctrl+C handler
-    let r = running.clone();
-    ctrlc::set_handler(move || {
-        eprintln!("Ctrl+C detected! Exiting gracefully...");
-        r.store(false, Ordering::SeqCst);
-    })?;
     
     unsafe{ SERVER_PORT = local.port() };
     let mut request_count = 0;
     let mut queue_length_vec: Vec<(usize, usize)> = Vec::new();
-    let migration_per_n: i32 = env::var("MIG_PER_N")
+    let migration_per_n: u64 = env::var("MIG_PER_N")
             .unwrap_or(String::from("10")) // Default value is 10 if MIG_PER_N is not set
             .parse()
-            .expect("MIG_PER_N must be a i32");
+            .expect("MIG_PER_N must be a u64");
+    ctrlc::set_handler(move || {
+        eprintln!("Received Ctrl-C signal.");
+        // LibOS::dpdk_print_eth_stats();
+        // LibOS::capylog_dump(&mut std::io::stderr().lock());
+        std::process::exit(0);
+    }).expect("Error setting Ctrl-C handler");
     // unsafe { START_TIME = Some(Instant::now()); }
 
-    let session_data_size: usize = std::env::var("SESSION_DATA_SIZE").map_or(1024, |v| v.parse().unwrap());
+    let session_data_size: usize = std::env::var("SESSION_DATA_SIZE").map_or(0, |v| v.parse().unwrap());
 
     let libos_name: LibOSName = LibOSName::from_env().unwrap().into();
     let mut libos: LibOS = LibOS::new(libos_name).expect("intialized libos");
@@ -389,17 +385,17 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     qts.push(libos.accept(sockqd).expect("accept"));
 
-    #[cfg(feature = "manual-tcp-migration")]
-    let mut requests_remaining: HashMap<QDesc, i32> = HashMap::new();
-
+    let mut requests_remaining: HashMap<QDesc, u64> = HashMap::new();
+    let mut last_migration_time = Instant::now();
+    
     // Create qrs filled with garbage.
     let mut qrs: Vec<(QDesc, OperationResult)> = Vec::with_capacity(2000);
     qrs.resize_with(2000, || (0.into(), OperationResult::Connect));
     let mut indices: Vec<usize> = Vec::with_capacity(2000);
     indices.resize(2000, 0);
     
-    while running.load(Ordering::SeqCst) {
-        let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, Some(Duration::from_secs(1))).expect("result");
+    loop {
+        let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, None).expect("result");
 
         /* let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
             matches!(result, OperationResult::Pop(_, _))
@@ -420,7 +416,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
         for (index, (qd, result)) in indices.iter().zip(results.iter()).rev() {
             let (index, qd) = (*index, *qd);
             qts.swap_remove(index);
-            server_log!("index: {}, qts.len(): {}", index, qts.len());
 
             #[cfg(feature = "manual-tcp-migration")]
             let mut should_migrate_this_qd = false;
@@ -429,7 +424,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Accept(new_qd) => {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
-
+                    last_migration_time = Instant::now();
+                    
+                    /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
                     #[cfg(feature = "tcp-migration")]
                     let state = if let Some(data) = libos.get_migrated_application_state::<ConnectionState>(new_qd) {
                         server_log!("Connection State LOG: Received migrated app data ({} bytes)", data.borrow().serialized_size() - 8);
@@ -452,7 +449,6 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     // capy_time_log!("APP_STATE_REGISTERED,(n/a)");
                     
                     // Pop from new_qd
-                    /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
                     match libos.pop(new_qd) {
                         Ok(pop_qt) => {
                             qts.push(pop_qt)
@@ -461,24 +457,21 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     }
                     #[cfg(feature = "manual-tcp-migration")]
                     assert!(requests_remaining.insert(new_qd, migration_per_n).is_none());
+                    connstate.insert(new_qd, state);
                     /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
 
-                    connstate.insert(new_qd, state);
 
+                    /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
+                    // static mut NUM_MIG: u32 = 0;
+                    // unsafe{ NUM_MIG += 1; }
+                    // if unsafe{ NUM_MIG } < 11000 {
+                    //     libos.initiate_migration(new_qd).unwrap();
+                    // }
+                    // qts.push(libos.pop(new_qd).unwrap());
+                    /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
+                    
                     // Re-arm accept
                     qts.push(libos.accept(qd).expect("accept qtoken"));
-
-                    /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
-                    // #[cfg(feature = "manual-tcp-migration")]
-                    // {
-                    //     static mut NUM_MIG: u32 = 0;
-                    //     unsafe{ NUM_MIG += 1; }
-                    //     if unsafe{ NUM_MIG } < 11000 {
-                    //         libos.initiate_migration(new_qd).unwrap();
-                    //     }
-                    //     // }
-                    // }
-                    /* ACTIVATE THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
                 },
 
                 OperationResult::Push => {
@@ -490,46 +483,56 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
                     let mut state = connstate.get_mut(&qd).unwrap().borrow_mut();
                     
-                    // To print out the request payload
-                    // match std::str::from_utf8(recvbuf) {
-                    //     Ok(human_readable) => eprintln!("POP: {:?}", human_readable),
-                    //     Err(e) => eprintln!("POP: invalid UTF-8 sequence: {:?}", e),
-                    // }
-                    
                     let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
 
                     //server_log!("Issued PUSH => {} pushes pending", state.pushing);
                     server_log!("Issued {sent} PUSHes");
+
                     
-                    
-                    #[cfg(feature = "manual-tcp-migration")]
-                    if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {
-                        let remaining = entry.get_mut();
-                        *remaining -= 1;
-                        if *remaining > 0 {
-                            // queue next pop
-                            qts.push(libos.pop(qd).expect("pop qt"));
-                            server_log!("Issued POP");
-                        } else {
+                    #[cfg(feature = "manual-tcp-migration")]{
+                        let elapsed = last_migration_time.elapsed();
+
+                        if elapsed >= Duration::from_micros(migration_per_n) {
                             server_log!("Should be migrated (no POP issued)");
                             server_log!("BUFFER DATA SIZE = {}", state.buffer.data_size());
                             libos.initiate_migration(qd).unwrap();
-                            entry.remove();
-
-
-                            /* NON-CONCURRENT MIGRATION */
-                            /* match libos.initiate_migration(qd) {
-                                Ok(()) => {
-                                    entry.remove();
-                                },
-                                Err(e) => {
-                                    // eprintln!("this conn is not for migration");
-                                    qts.push(libos.pop(qd).expect("pop qt"));
-                                    server_log!("Issued POP");
-                                },
-                            } */
-                            /* NON-CONCURRENT MIGRATION */
+                            
+                            // Reset migration timer
+                            last_migration_time = Instant::now();
+                        } else {
+                            server_log!(
+                                "Skipping migration: Only {:?} elapsed since last migration",
+                                elapsed
+                            );
+                            qts.push(libos.pop(qd).expect("pop qt"));
+                            server_log!("Issued POP instead of migration");
                         }
+                        // if let Entry::Occupied(mut entry) = requests_remaining.entry(qd) {
+                        //     let remaining = entry.get_mut();
+                        //     *remaining -= 1;
+                        //     if *remaining > 0 {
+                        //         // queue next pop
+                        //         qts.push(libos.pop(qd).expect("pop qt"));
+                        //         server_log!("Migrating after {} more requests, Issued POP", remaining);
+                        //     } else {
+                        //         server_log!("Should be migrated (no POP issued)");
+                        //         server_log!("BUFFER DATA SIZE = {}", state.buffer.data_size());
+                        //         libos.initiate_migration(qd).unwrap();
+                        //         entry.remove();
+                        //         /* NON-CONCURRENT MIGRATION */
+                        //         /* match libos.initiate_migration(qd) {
+                        //             Ok(()) => {
+                        //                 entry.remove();
+                        //             },
+                        //             Err(e) => {
+                        //                 // eprintln!("this conn is not for migration");
+                        //                 qts.push(libos.pop(qd).expect("pop qt"));
+                        //                 server_log!("Issued POP");
+                        //             },
+                        //         } */
+                        //         /* NON-CONCURRENT MIGRATION */
+                        //     }
+                        // }
                     }
                     #[cfg(not(feature = "manual-tcp-migration"))]
                     {
@@ -583,10 +586,11 @@ fn server(local: SocketAddrV4) -> Result<()> {
     #[cfg(feature = "tcp-migration")]
     demi_print_queue_length_log();
 
+    LibOS::capylog_dump(&mut std::io::stderr().lock());
+
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
 
-    std::process::exit(0);
     // TODO: close socket when we get close working properly in catnip.
     Ok(())
 }
@@ -607,10 +611,6 @@ fn usage(program_name: &String) {
 pub fn main() -> Result<()> {
     server_log!("*** HTTP SERVER LOGGING IS ON ***");
     // logging::initialize();
-    eprintln!("HTTP data size: {}", env::var("DATA_SIZE")
-                                    .unwrap_or_else(|_| "0".to_string()) // Fallback to 0 if not set
-                                    .parse::<usize>()
-                                    .expect("DATA_SIZE must be a valid number"));
 
     let args: Vec<String> = env::args().collect();
 
