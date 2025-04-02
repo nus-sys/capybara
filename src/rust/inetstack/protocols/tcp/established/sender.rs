@@ -3,17 +3,18 @@
 
 use super::ControlBlock;
 use crate::{
-    capy_time_log, inetstack::protocols::tcp::{
-        segment::TcpHeader,
+    inetstack::protocols::tcp::{
+        segment::{self, TcpHeader},
         SeqNumber,
-    }, runtime::{
+    },
+    runtime::{
         fail::Fail,
         memory::Buffer,
         watched::{
             WatchFuture,
             WatchedValue,
         },
-    }
+    },
 };
 use ::libc::{
     EBUSY,
@@ -26,7 +27,7 @@ use ::std::{
     },
     collections::VecDeque,
     convert::TryInto,
-    fmt,
+    cmp, fmt,
     time::{
         Duration,
         Instant,
@@ -34,9 +35,6 @@ use ::std::{
 };
 
 use crate::capy_log;
-
-#[cfg(feature = "autokernel")]
-use crate::autokernel::parameters::get_param;
 
 // Structure of entries on our unacknowledged queue.
 // ToDo: We currently allocate these on the fly when we add a buffer to the queue.  Would be more efficient to have a
@@ -159,7 +157,7 @@ impl Sender {
 
     // This is the main TCP send routine.
     //
-    pub fn send(&self, buf: Buffer, cb: &ControlBlock) -> Result<(), Fail> {
+    pub fn send(&self, mut buf: Buffer, cb: &ControlBlock) -> Result<(), Fail> {
         
         // If the user is done sending (i.e. has called close on this connection), then they shouldn't be sending.
         //
@@ -195,96 +193,128 @@ impl Sender {
         // it on the unsent queue and that's it.
         //
 
-        // Check for unsent data.
-        if self.unsent_queue.borrow().is_empty() {
-            // No unsent data queued up, so we can try to send this new buffer immediately.
-
-            // Calculate amount of data in flight (SND.NXT - SND.UNA).
-            let send_unacknowledged: SeqNumber = self.send_unacked.get();
-            let send_next: SeqNumber = self.send_next.get();
-            let sent_data: u32 = (send_next - send_unacknowledged).into();
-
-            // ToDo: What limits buffer len to MSS?
-            let in_flight_after_send: u32 = sent_data + buf_len;
-
-            // Before we get cwnd for the check, we prompt it to shrink it if the connection has been idle.
-            cb.congestion_control_on_cwnd_check_before_send();
-            let cwnd: u32 = cb.congestion_control_get_cwnd();
-
-            // The limited transmit algorithm can increase the effective size of cwnd by up to 2MSS.
-            let effective_cwnd: u32 = cwnd + cb.congestion_control_get_limited_transmit_cwnd_increase();
-
-            let win_sz: u32 = self.send_window.get();
-
-            if win_sz > 0 && win_sz >= in_flight_after_send && effective_cwnd >= in_flight_after_send {
-                if let Some(remote_link_addr) = cb.arp().try_query(cb.get_remote().ip().clone()) {
-                    // This hook is primarily intended to record the last time we sent data, so we can later tell if
-                    // the connection has been idle.
-                    let rto: Duration = cb.rto();
-                    cb.congestion_control_on_send(rto, sent_data);
-
-                    // Prepare the segment and send it.
-                    let mut header: TcpHeader = cb.tcp_header();
-                    header.seq_num = send_next;
-                    if buf_len == 0 {
-                        // This buffer is the end-of-send marker.
-                        // Set FIN and adjust sequence number consumption accordingly.
-                        header.fin = true;
-                        buf_len = 1;
-                    } else {
-                        header.psh = true;
-                    }
-                    trace!("Send immediate");
-                    capy_log!("SEND immediate");
-                    cb.emit(header, Some(buf.clone()), remote_link_addr);
-
-                    // Update SND.NXT.
-                    self.send_next.modify(|s| s + SeqNumber::from(buf_len));
-
-                    // ToDo: We don't need to track this.
-                    self.unsent_seq_no.modify(|s| s + SeqNumber::from(buf_len));
-
-                    // Put the segment we just sent on the retransmission queue.
-                    let unacked_segment = UnackedSegment {
-                        bytes: buf,
-                        initial_tx: Some(cb.clock.now()),
-                    };
-                    self.unacked_queue.borrow_mut().push_back(unacked_segment);
-
-                    // Start the retransmission timer if it isn't already running.
-                    if cb.get_retransmit_deadline().is_none() {
-                        let rto: Duration = cb.rto();
-                        capy_log!("[sender] Setting retransmit deadline to {:?} (now: {:?}, rto: {:?})", cb.clock.now() + rto, cb.clock.now(), rto);
-                        cb.set_retransmit_deadline(Some(cb.clock.now() + rto));
-                    }
-
-                    return Ok(());
-                } else {
-                    warn!("no ARP cache entry for send");
-                    capy_log!("ARP issue in send()");
-                }
-            }
-        }
-
         // Too fast.
         // ToDo: We need to fix this the correct way: limit our send buffer size to the amount we're willing to buffer.
-        capy_log!("WARNINIG: TOO FAST, unsent_queue_len: {}", self.unsent_queue.borrow().len());
-        #[cfg(not(feature = "autokernel"))]
         if self.unsent_queue.borrow().len() > UNSENT_QUEUE_CUTOFF {
             return Err(Fail::new(EBUSY, "too many packets to send"));
         }
-        #[cfg(feature = "autokernel")]
-        if self.unsent_queue.borrow().len() > get_param(|p| p.unsent_queue_cutoff) {
-            return Err(Fail::new(EBUSY, "too many packets to send"));
-        }
 
-        // Slow path: Delegating sending the data to background processing.
-        trace!("Queueing Send for background processing");
-        eprintln!("Queueing Send for background processing");
-        self.unsent_queue.borrow_mut().push_back(buf);
         self.unsent_seq_no.modify(|s| s + SeqNumber::from(buf_len));
 
+        if self.send_window.get() > 0 {
+            self.send_segment(cb, cb.clock.now(), &mut buf);
+        }
+        capy_log!("WARNINIG: TOO FAST, unsent_queue_len: {}", self.unsent_queue.borrow().len());
+        if buf.len() > 0 {
+            // Slow path: Delegating sending the data to background processing.
+            trace!("Queueing Send for background processing");
+            // eprintln!("Queueing Send for background processing");
+            self.unsent_queue.borrow_mut().push_back(buf);
+        }
         Ok(())
+    }
+
+    // Takes a segment and attempts to send it. The buffer must be non-zero length and the function returns the number
+    // of bytes sent.
+    fn send_segment(
+        &self,
+        cb: &ControlBlock,
+        now: Instant,
+        segment: &mut Buffer,
+    ) -> usize {
+        let buf_len: usize = segment.len();
+        debug_assert_ne!(buf_len, 0);
+        // Check window size.
+        let max_frame_size_bytes: usize = match self.get_open_window_size_bytes(cb) {
+            0 => return 0,
+            size => size,
+        };
+
+        // Split the packet if necessary.
+        // TODO: Use a scatter/gather array to coalesce multiple buffers into a single segment.
+        let (frame_size_bytes, do_push): (usize, bool) = {
+            if buf_len > max_frame_size_bytes {
+                // Suppress PSH flag for partial buffers.
+                (max_frame_size_bytes, false)
+            } else {
+                // We can just send the whole packet. Clone it so we can attach headers/retransmit it later.
+                (buf_len, true)
+            }
+        };
+        let mut segment_data = segment.clone();
+        segment_data.trim(buf_len - frame_size_bytes);
+        segment.adjust(frame_size_bytes);
+        let segment_data_len: u32 = segment_data.len() as u32;
+
+        let rto: Duration = cb.rto();
+        cb.congestion_control_on_send(rto, (self.send_next.get() - self.send_unacked.get()).into());
+
+        // Prepare the segment and send it.
+        let mut header: TcpHeader = cb.tcp_header();
+        header.seq_num = self.send_next.get();
+        if do_push {
+            header.psh = true;
+        }
+        trace!("Send immediate");
+        capy_log!("SEND immediate");
+        if let Some(remote_link_addr) = cb.arp().try_query(cb.get_remote().ip().clone()) {
+            cb.emit(header, Some(segment_data.clone()), remote_link_addr);
+        }else{
+            warn!("no ARP cache entry for send");
+            capy_log!("ARP issue in send()");
+        }
+
+        // Update SND.NXT.
+        self.send_next.modify(|s| s + SeqNumber::from(segment_data_len));
+
+        // Put the segment we just sent on the retransmission queue.
+        let unacked_segment = UnackedSegment {
+            bytes: segment_data,
+            initial_tx: Some(now),
+        };
+        self.unacked_queue.borrow_mut().push_back(unacked_segment);
+
+        // Start the retransmission timer if it isn't already running.
+        if cb.get_retransmit_deadline().is_none() {
+            let rto: Duration = cb.rto();
+            cb.set_retransmit_deadline(Some(now + rto));
+        }
+
+        segment_data_len as usize
+    }
+
+    fn get_open_window_size_bytes(&self, cb: &ControlBlock) -> usize {
+        // Calculate amount of data in flight (SND.NXT - SND.UNA).
+        let send_unacknowledged: SeqNumber = self.send_unacked.get();
+        let send_next: SeqNumber = self.send_next.get();
+        let sent_data: u32 = (send_next - send_unacknowledged).into();
+
+        // Before we get cwnd for the check, we prompt it to shrink it if the connection has been idle.
+        cb.congestion_control_on_cwnd_check_before_send();
+        let cwnd: u32 = cb.congestion_control_get_cwnd();
+
+        // The limited transmit algorithm can increase the effective size of cwnd by up to 2MSS.
+        let effective_cwnd: u32 = cwnd + cb.congestion_control_get_limited_transmit_cwnd_increase();
+
+        let win_sz: u32 = self.send_window.get();
+
+        if Self::has_open_window(win_sz, sent_data, effective_cwnd) {
+            Self::calculate_open_window_bytes(win_sz, sent_data, self.mss, effective_cwnd)
+        } else {
+            0
+        }
+
+    }
+
+    fn has_open_window(win_sz: u32, sent_data: u32, effective_cwnd: u32) -> bool {
+        win_sz > 0 && win_sz >= sent_data && effective_cwnd >= sent_data
+    }
+
+    fn calculate_open_window_bytes(win_sz: u32, sent_data: u32, mss: usize, effective_cwnd: u32) -> usize {
+        cmp::min(
+            cmp::min((win_sz - sent_data) as usize, mss),
+            (effective_cwnd - sent_data) as usize,
+        )
     }
 
     /// Retransmits the earliest segment that has not (yet) been acknowledged by our peer.
@@ -310,7 +340,7 @@ impl Sender {
                 }else{
                     header.psh = true;
                 }
-                capy_time_log!("RETRANSMIT seq_num {}", header.seq_num); 
+                // capy_time_log!("RETRANSMIT seq_num {}", header.seq_num); 
                 cb.emit(header, Some(data), first_hop_link_addr);
             }
         } else {
@@ -332,7 +362,6 @@ impl Sender {
                 // Note that in the case of repacketization, an ack for the first byte is enough for the time sample.
                 // ToDo: TCP timestamp support.
                 if let Some(initial_tx) = segment.initial_tx {
-                    capy_log!("RTO add sample: {:?}", now - initial_tx);
                     cb.rto_add_sample(now - initial_tx);
                 }
 
