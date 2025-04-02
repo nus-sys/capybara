@@ -184,7 +184,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
                 let file_path = format!("{}/{}", ROOT, "index.html");
                 match std::fs::read_to_string(file_path) {
                     Ok(contents) => {
-                        let extra_bytes = "A".repeat(*N - contents.len());
+                        let extra_bytes = "A".repeat((*N).saturating_sub(contents.len()));
                         let full_contents = format!("{}{}", contents, extra_bytes);
                         // server_log!("full_contents len: {}", full_contents.len());
                         format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", full_contents.len(), full_contents)
