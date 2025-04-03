@@ -26,7 +26,6 @@ use crate::capy_log;
 
 pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
     'top: loop {
-        capy_log!("sender polled");
         // First, check to see if there's any unsent data.
         // ToDo: Change this to just look at the unsent queue to see if it is empty or not.
         let (unsent_seq, unsent_seq_changed) = cb.get_unsent_seq_no();
@@ -34,7 +33,7 @@ pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
 
         let (send_next, send_next_changed) = cb.get_send_next();
         futures::pin_mut!(send_next_changed);
-
+        capy_log!("sender polled, send_next = {}, unsent_seq = {}", send_next, unsent_seq);
         if send_next == unsent_seq {
             futures::select_biased! {
                 _ = unsent_seq_changed => continue 'top,
@@ -50,6 +49,7 @@ pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
         // If we don't have any window size at all, we need to transition to PERSIST mode and
         // repeatedly send window probes until window opens up.
         if win_sz == 0 {
+            capy_log!("win_sz = 0");
             // Send a window probe (this is a one-byte packet designed to elicit a window update from our peer).
             let remote_link_addr = cb.arp().query(cb.get_remote().ip().clone()).await?;
             let buf: Buffer = cb
@@ -104,7 +104,8 @@ pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
         let next_buf_size: usize = cb.unsent_top_size().expect("no buffer in unsent queue");
 
         let sent_data: u32 = (send_next - send_unacked).into();
-        if win_sz <= (sent_data + next_buf_size as u32)
+        capy_log!("win_sz = {}, sent_data = {}, effective_cwnd = {}, next_buf_size = {}", win_sz, sent_data, effective_cwnd, next_buf_size);
+        if win_sz - sent_data == 0
             || effective_cwnd <= sent_data
             || (effective_cwnd - sent_data) <= cb.get_mss() as u32
         {
@@ -136,6 +137,7 @@ pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
         let mut segment_data_len: u32 = segment_data.len() as u32;
 
         let rto: Duration = cb.rto();
+        capy_log!("congestion_control_on_send, segment_data_len = {}", segment_data_len);
         cb.congestion_control_on_send(rto, sent_data);
 
         // Prepare the segment and send it.
@@ -167,7 +169,6 @@ pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
         let retransmit_deadline = cb.get_retransmit_deadline();
         if retransmit_deadline.is_none() {
             let rto: Duration = cb.rto();
-            capy_log!("[bg_sender] Setting retransmit deadline to {:?} (now: {:?}, rto: {:?})", cb.clock.now() + rto, cb.clock.now(), rto);
             cb.set_retransmit_deadline(Some(cb.clock.now() + rto));
         }
     }
