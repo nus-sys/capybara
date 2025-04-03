@@ -195,16 +195,14 @@ impl Sender {
 
         // Too fast.
         // ToDo: We need to fix this the correct way: limit our send buffer size to the amount we're willing to buffer.
-        capy_log!("WARNINIG: TOO FAST, unsent_queue_len: {}", self.unsent_queue.borrow().len());
         if self.unsent_queue.borrow().len() > UNSENT_QUEUE_CUTOFF {
             return Err(Fail::new(EBUSY, "too many packets to send"));
         }
-
         self.unsent_seq_no.modify(|s| s + SeqNumber::from(buf_len));
-
         if self.send_window.get() > 0 {
             self.send_segment(cb, cb.clock.now(), &mut buf);
         }
+        capy_log!("WARNINIG: TOO FAST, remaining buf.len(): {}, unsent_queue_len: {}", buf.len(), self.unsent_queue.borrow().len());
         if buf.len() > 0 {
             // Slow path: Delegating sending the data to background processing.
             trace!("Queueing Send for background processing");
@@ -340,6 +338,7 @@ impl Sender {
                 }else{
                     header.psh = true;
                 }
+                // capy_time_log!("RETRANSMIT seq_num {}", header.seq_num); 
                 cb.emit(header, Some(data), first_hop_link_addr);
             }
         } else {
