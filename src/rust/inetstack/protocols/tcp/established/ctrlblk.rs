@@ -777,6 +777,10 @@ impl ControlBlock {
             seg_len,
         );
 
+        // Update our send window (SND.WND).
+        // This should be done by every ack.
+        self.sender.update_send_window(header);
+
         if send_unacknowledged < header.ack_num {
             if header.ack_num <= send_next {
                 // This segment acknowledges new data (possibly and/or FIN).
@@ -792,7 +796,7 @@ impl ControlBlock {
                 self.sender.send_unacked.set(header.ack_num);
 
                 // Update our send window (SND.WND).
-                self.sender.update_send_window(header);
+                //self.sender.update_send_window(header);
 
                 if header.ack_num == send_next {
                     // This segment acknowledges everything we've sent so far (i.e. nothing is currently outstanding).
