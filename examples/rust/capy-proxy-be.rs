@@ -174,10 +174,20 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
     #[cfg(not(feature = "server-reply-analysis"))]
     {
         lazy_static! {
+            static ref N: usize = {
+                env::var("DATA_SIZE")
+                    .unwrap_or_else(|_| "0".to_string()) // Fallback to 0 if not set
+                    .parse()
+                    .expect("DATA_SIZE must be a valid number")
+            };
             static ref RESPONSE: String = {
-                match std::fs::read_to_string("/var/www/demo/index.html") {
+                let file_path = format!("{}/{}", ROOT, "index.html");
+                match std::fs::read_to_string(file_path) {
                     Ok(contents) => {
-                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
+                        let extra_bytes = "A".repeat((*N).saturating_sub(contents.len()));
+                        let full_contents = format!("{}{}", contents, extra_bytes);
+                        server_log!("full_contents len: {}", full_contents.len());
+                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", full_contents.len(), full_contents)
                     },
                     Err(_) => {
                         format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
@@ -186,6 +196,12 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
             };
         }
         
+        // Inho: this is to simulate request processing delay for some clients
+        /* if libos.get_remote_port(qd) == 1124 {
+            // eprintln!("qd: {:?}", qd);
+            std::thread::sleep(std::time::Duration::from_micros(20));
+        } */
+
         server_log!("PUSH: {}", RESPONSE.lines().next().unwrap_or(""));
         libos.push2(qd, RESPONSE.as_bytes()).expect("push success")
     }
@@ -293,6 +309,7 @@ impl SessionData {
 struct ConnectionState {
     buffer: Buffer,
     session_data: SessionData,
+    should_migrate: bool,
 }
 
 #[cfg(feature = "tcp-migration")]
@@ -314,23 +331,23 @@ impl ApplicationState for SessionData {
     }
 }
 
-#[cfg(feature = "tcp-migration")]
-impl ApplicationState for ConnectionState {
-    fn serialized_size(&self) -> usize {
-        self.buffer.serialized_size() + self.session_data.serialized_size()
-    }
+// #[cfg(feature = "tcp-migration")]
+// impl ApplicationState for ConnectionState {
+//     fn serialized_size(&self) -> usize {
+//         self.buffer.serialized_size() + self.session_data.serialized_size()
+//     }
 
-    fn serialize(&self, buf: &mut [u8]) {
-        self.buffer.serialize(&mut buf[0..self.buffer.serialized_size()]);
-        self.session_data.serialize(&mut buf[self.buffer.serialized_size()..])
-    }
+//     fn serialize(&self, buf: &mut [u8]) {
+//         self.buffer.serialize(&mut buf[0..self.buffer.serialized_size()]);
+//         self.session_data.serialize(&mut buf[self.buffer.serialized_size()..])
+//     }
 
-    fn deserialize(buf: &[u8]) -> Self where Self: Sized {
-        let buffer = Buffer::deserialize(buf);
-        let session_data = SessionData::deserialize(&buf[buffer.serialized_size()..]);
-        Self { buffer, session_data }
-    }
-}
+//     fn deserialize(buf: &[u8]) -> Self where Self: Sized {
+//         let buffer = Buffer::deserialize(buf);
+//         let session_data = SessionData::deserialize(&buf[buffer.serialized_size()..]);
+//         Self { buffer, session_data }
+//     }
+// }
 
 fn server(local: SocketAddrV4) -> Result<()> {
     #[cfg(feature = "tcp-migration")]{
@@ -409,19 +426,20 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
                     
                     /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
-                    #[cfg(feature = "tcp-migration")]
-                    let state = if let Some(data) = libos.get_migrated_application_state::<ConnectionState>(new_qd) {
-                        server_log!("Connection State LOG: Received migrated app data ({} bytes)", data.borrow().serialized_size() - 8);
-                        data
-                    } else {
-                        server_log!("Connection State LOG: No migrated app data, creating new ConnectionState");
-                        let state = Rc::new(RefCell::new(ConnectionState {
-                            buffer: Buffer::new(),
-                            session_data: SessionData::new(session_data_size),
-                        }));
-                        libos.register_application_state(new_qd, state.clone());
-                        state
-                    };
+                    // #[cfg(feature = "tcp-migration")]
+                    // let state = if let Some(data) = libos.get_migrated_application_state::<ConnectionState>(new_qd) {
+                    //     server_log!("Connection State LOG: Received migrated app data ({} bytes)", data.borrow().serialized_size() - 8);
+                    //     data
+                    // } else {
+                    server_log!("Connection State LOG: No migrated app data, creating new ConnectionState");
+                    let state = Rc::new(RefCell::new(ConnectionState {
+                        buffer: Buffer::new(),
+                        session_data: SessionData::new(session_data_size),
+                        should_migrate: false,
+                    }));
+                    //     libos.register_application_state(new_qd, state.clone());
+                    //     state
+                    // };
 
                     #[cfg(not(feature = "tcp-migration"))]
                     let state = Rc::new(RefCell::new(ConnectionState {
@@ -464,12 +482,21 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     server_log!("POP complete");
 
                     let mut state = connstate.get_mut(&qd).unwrap().borrow_mut();
-                    
+                    if state.should_migrate {
+                        server_log!("PUSH: should_migrate is true, init mig");
+                        libos.return_req_to_buffer(qd, recvbuf);
+                        libos.initiate_migration(qd).unwrap();
+                        // return back req to buffer and mig
+                        continue;
+                    }
+
                     let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
 
                     //server_log!("Issued PUSH => {} pushes pending", state.pushing);
                     server_log!("Issued {sent} PUSHes");
-                    libos.initiate_migration(qd).unwrap();
+                    state.should_migrate = true;
+                    qts.push(libos.pop(qd).expect("pop qt"));
+                    server_log!("Issued POP");
                 },
 
                 OperationResult::Failed(e) => {

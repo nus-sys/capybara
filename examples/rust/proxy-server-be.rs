@@ -128,71 +128,39 @@ impl AppBuffer {
 }
 
 fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
-    /* let data_str = std::str::from_utf8(data).unwrap();
-    let data_str = String::from_utf8_lossy(data);
-    let data_str = unsafe { std::str::from_utf8_unchecked(&data[..]) };
-
-    let mut file_name = data_str
-            .split_whitespace()
-            .nth(1)
-            .and_then(|file_path| {
-                let mut path_parts = file_path.split('/');
-                path_parts.next().and_then(|_| path_parts.next())
-            })
-            .unwrap_or("index.html");
-    if file_name == "" {
-        file_name = "index.html";
+    lazy_static! {
+        static ref N: usize = {
+            env::var("DATA_SIZE")
+                .unwrap_or_else(|_| "0".to_string()) // Fallback to 0 if not set
+                .parse()
+                .expect("DATA_SIZE must be a valid number")
+        };
+        static ref RESPONSE: String = {
+            let file_path = format!("{}/{}", ROOT, "index.html");
+            match std::fs::read_to_string(file_path) {
+                Ok(contents) => {
+                    let extra_bytes = "A".repeat((*N).saturating_sub(contents.len()));
+                    let full_contents = format!("{}{}", contents, extra_bytes);
+                    server_log!("full_contents len: {}", full_contents.len());
+                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", full_contents.len(), full_contents)
+                },
+                Err(_) => {
+                    format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
+                },
+            }
+        };
     }
-    let full_path = format!("{}/{}", ROOT, file_name);
     
-    let response = match std::fs::read_to_string(full_path.as_str()) {
-        Ok(mut contents) => {
-            // contents.push_str(unsafe { START_TIME.as_ref().unwrap().elapsed() }.as_nanos().to_string().as_str());
-            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
-        },
-        Err(_) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n"),
-    }; 
+    // Inho: this is to simulate request processing delay for some clients
+    /* if libos.get_remote_port(qd) == 1124 {
+        // eprintln!("qd: {:?}", qd);
+        std::thread::sleep(std::time::Duration::from_micros(20));
+    } */
 
-    server_log!("PUSH: {}", response.lines().next().unwrap_or(""));
-    libos.push2(qd, response.as_bytes()).expect("push success") */
-
-    static mut RESPONSE: Option<Vec<u8>> = None;
-
-    if unsafe { RESPONSE.is_none() } {
-        let mut response = vec![0u8; 4];
-        response.extend(match std::fs::read_to_string("/var/www/demo/index.html") {
-            Ok(contents) => {
-                format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
-            },
-            Err(_) => {
-                format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
-            },
-        }.as_bytes());
-        unsafe { RESPONSE = Some(response); }
-    }
-
-
-    // lazy_static! {
-    //     static ref RESPONSE: Vec<u8> = {
-    //         let mut response = vec![0u8; 2];
-    //         response.extend(match std::fs::read_to_string("/var/www/demo/index.html") {
-    //             Ok(contents) => {
-    //                 format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
-    //             },
-    //             Err(_) => {
-    //                 format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
-    //             },
-    //         }.as_bytes());
-    //         response
-    //     };
-    // }
-    
-    // server_log!("PUSH: {}", RESPONSE.lines().next().unwrap_or(""));
-
-    let response = unsafe { RESPONSE.as_mut().unwrap() };
-    response[0..4].copy_from_slice(&data[0..4]);
-    libos.push2(qd, &response).expect("push success")
+    server_log!("PUSH: {}", RESPONSE.lines().next().unwrap_or(""));
+    libos.push2(qd, RESPONSE.as_bytes()).expect("push success")
 }
+
 
 #[inline(always)]
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -267,6 +235,7 @@ fn server(local: SocketAddrV4, fe: SocketAddrV4) -> Result<()> {
 
     // Connect to FE.
     let fe_qd: QDesc = libos.socket(libc::AF_INET, libc::SOCK_STREAM, 0).expect("created socket");
+    server_log!("connecting to {:?}", fe);
     let qt = libos.connect(fe_qd, fe).expect("connect");
     let (_, res) = libos.wait2(qt).unwrap();
     match res {

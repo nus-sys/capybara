@@ -144,6 +144,53 @@ def main():
     
     return workload_spec[:-1]
 
+def uniform_servers(workload, runtime): # zipf-1.2
+    uniform_weights = [
+        0.08333333333,
+        0.08333333333,
+        0.08333333333,
+        0.08333333333,
+        0.08333333333,
+        0.08333333333,
+        0.08333333333,
+        0.08333333333,
+        0.08333333333,
+        0.08333333333,
+        0.08333333333,
+        0.08333333333,
+    ]
+    workload_spec = ''
+    for i in range(12):
+        server_workload = int(workload * uniform_weights[i])
+        if server_workload == 0:
+            server_workload = 1
+        workload_spec = workload_spec + str(server_workload) + ':' + str(runtime * 1000000) + '/'
+
+    return workload_spec[:-1]
+def zipf_for_12_servers(workload, runtime): # zipf-1.2
+    zipf12_weights = [
+        0.3883967083491887,
+        0.16905948661787334,
+        0.10392739341425353,
+        0.07358741565287161,
+        0.0563004071301698,
+        0.04523702543933815,
+        0.03759740690089057,
+        0.0320307830740567,
+        0.027808946033009267,
+        0.02450617557048522,
+        0.021857692828834718,
+        0.019690558989028467
+    ]
+    workload_spec = ''
+    for i in range(12):
+        server_workload = int(workload * zipf12_weights[i])
+        if server_workload == 0:
+            server_workload = 1
+        workload_spec = workload_spec + str(server_workload) + ':' + str(runtime * 1000000) + '/'
+
+    return workload_spec[:-1]
+
 
 if __name__ == '__main__':
     main()

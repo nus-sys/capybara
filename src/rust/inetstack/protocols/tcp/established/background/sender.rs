@@ -50,12 +50,13 @@ pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
         // repeatedly send window probes until window opens up.
         if win_sz == 0 {
             capy_log!("win_sz = 0");
+            
             // Send a window probe (this is a one-byte packet designed to elicit a window update from our peer).
             let remote_link_addr = cb.arp().query(cb.get_remote().ip().clone()).await?;
-            let buf: Buffer = cb
-                .pop_one_unsent_byte()
-                .unwrap_or_else(|| panic!("No unsent data? {}, {}", send_next, unsent_seq));
-
+            let buf: Buffer = match cb.pop_one_unsent_byte() {
+                Some(b) => b,
+                None => continue 'top,
+            };
             // Update SND.NXT.
             cb.modify_send_next(|s| s + SeqNumber::from(1));
 
@@ -101,8 +102,10 @@ pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
         futures::pin_mut!(ltci_changed);
 
         let effective_cwnd: u32 = cwnd + ltci;
-        let next_buf_size: usize = cb.unsent_top_size().expect("no buffer in unsent queue");
-
+        let Some(next_buf_size) = cb.unsent_top_size() else {
+            continue 'top;
+        };
+        //inho: check if bg sender is properly removed when this connection is migrated
         let sent_data: u32 = (send_next - send_unacked).into();
         capy_log!("win_sz = {}, sent_data = {}, effective_cwnd = {}, next_buf_size = {}", win_sz, sent_data, effective_cwnd, next_buf_size);
         if win_sz - sent_data == 0

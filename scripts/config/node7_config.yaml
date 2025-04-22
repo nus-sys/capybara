@@ -5,10 +5,14 @@ catnip:
   my_link_addr: "08:c0:eb:b6:cd:5d"
   my_interface_name: "ens85f1"
   arp_table:
+    "1c:34:da:5e:0e:d8": "10.0.1.5"
+    "1c:34:da:5e:0e:d4": "10.0.1.6"
     "08:c0:eb:b6:cd:5d": "10.0.1.7"
     "08:c0:eb:b6:e8:05": "10.0.1.8"
     "08:c0:eb:b6:c5:ad": "10.0.1.9"
+    "08:c0:eb:b6:e7:e5": "10.0.1.10"
 dpdk:
   eal_init: ["", "-l", "", "-n", "4", "-a", "31:00.1","--proc-type=auto"]
 
 # vim: set tabstop=2 shiftwidth=2
+

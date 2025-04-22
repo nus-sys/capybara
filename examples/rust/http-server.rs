@@ -393,6 +393,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
     qrs.resize_with(2000, || (0.into(), OperationResult::Connect));
     let mut indices: Vec<usize> = Vec::with_capacity(2000);
     indices.resize(2000, 0);
+    let mut remaining_push = 0;
+    let mut should_migrate = false;
     
     loop {
         let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, None).expect("result");
@@ -424,6 +426,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 OperationResult::Accept(new_qd) => {
                     let new_qd = *new_qd;
                     server_log!("ACCEPT complete {:?} ==> issue POP and ACCEPT", new_qd);
+                    remaining_push = 0;
+                    should_migrate = false;
                     last_migration_time = Instant::now();
                     
                     /* COMMENT OUT THIS FOR APP_STATE_SIZE VS MIG_LAT EVAL */
@@ -475,7 +479,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 },
 
                 OperationResult::Push => {
-                    server_log!("PUSH complete");
+
+                    server_log!("1 PUSH complete, remining_push: {remaining_push}");
                 },
 
                 OperationResult::Pop(_, recvbuf) => {
@@ -486,16 +491,18 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     let sent = push_data_and_run(&mut libos, qd, &mut state.buffer, &recvbuf, &mut qts);
 
                     //server_log!("Issued PUSH => {} pushes pending", state.pushing);
-                    server_log!("Issued {sent} PUSHes");
-
+                    remaining_push += sent;
+                    server_log!("Issued {sent} PUSHes, remaining_push: {remaining_push}");
+                    
                     
                     #[cfg(feature = "manual-tcp-migration")]{
                         let elapsed = last_migration_time.elapsed();
 
-                        if elapsed >= Duration::from_micros(migration_per_n) {
+                        if elapsed >= Duration::from_micros(migration_per_n) && migration_per_n != 0 {
                             server_log!("Should be migrated (no POP issued)");
                             server_log!("BUFFER DATA SIZE = {}", state.buffer.data_size());
-                            libos.initiate_migration(qd).unwrap();
+                            should_migrate = true;
+                            libos.initiate_migration(qd);
                             
                             // Reset migration timer
                             last_migration_time = Instant::now();
@@ -555,6 +562,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 },
             }
         }
+        #[cfg(feature = "tcp-migration")]
+        libos.large_scale_migrate();
         // #[cfg(feature = "profiler")]
         // profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
         

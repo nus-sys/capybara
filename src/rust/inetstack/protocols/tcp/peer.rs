@@ -79,6 +79,7 @@ use ::std::{
     collections::{
         hash_map::Entry,
         HashMap,
+        HashSet,
     },
     net::{
         Ipv4Addr,
@@ -195,11 +196,14 @@ pub struct Inner {
     #[cfg(feature = "tcp-migration")]
     last_rps_signal: Option<(usize, usize)>,
 
+    #[cfg(feature = "tcp-migration")]
+    migration_trigerred: HashSet<SocketAddrV4>,
+
     #[cfg(feature = "server-reply-analysis")]
     listening_port: u16,
 
     #[cfg(feature = "capybara-switch")]
-    backend_servers: arrayvec::ArrayVec<SocketAddrV4, 4>,
+    backend_servers: arrayvec::ArrayVec<SocketAddrV4, 12>,
 
     #[cfg(feature = "capybara-switch")]
     migration_directory: HashMap<SocketAddrV4, SocketAddrV4>,
@@ -429,6 +433,7 @@ impl TcpPeer {
             }
 
             cb.enable_stats(&mut inner.recv_queue_stats, &mut inner.rps_stats);
+            inner.migration_trigerred.remove(&remote);
         }
 
         let established: EstablishedSocket = EstablishedSocket::new(cb, new_qd, inner.dead_socket_tx.clone());
@@ -676,10 +681,22 @@ impl Inner {
     ) -> Self {
         #[cfg(feature = "capybara-switch")]
         let backend_servers = arrayvec::ArrayVec::from([
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10000),
             SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10000),
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10000),
+
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10001),
             SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10001),
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10001),
+            
+            
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10002),
             SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10002),
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10002),
+            
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10003),
             SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10003),
+            SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10003),
         ]);
 
         let mut rng: SmallRng = SmallRng::from_seed(rng_seed);
@@ -729,9 +746,11 @@ impl Inner {
                 .parse::<f64>()
                 .expect("Invalid THRESHOLD_EPSILON value"),
             #[cfg(feature = "tcp-migration")]
-            reactive_migration_enabled: false,
+            reactive_migration_enabled: true,
             #[cfg(feature = "tcp-migration")]
             last_rps_signal: None,
+            #[cfg(feature = "tcp-migration")]
+            migration_trigerred: HashSet::new(),
 
             #[cfg(feature = "server-reply-analysis")]
             listening_port: 0,
@@ -904,14 +923,14 @@ impl Inner {
                 None => panic!("MAC of this BE is not cached"),
             };
 
-            // capy_log!("Element at index {}: {:?}", unsafe{BE_IDX}, self.backend_servers[unsafe{BE_IDX}]);
+            capy_log!("Element at index {}: {:?}", unsafe{BE_IDX}, self.backend_servers[unsafe{BE_IDX}]);
 
-            // capy_log!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
+            capy_log!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
 
             eth_hdr.set_dst_addr(be_mac);
             ip_hdr.set_dst_addr(*be_sockaddr.ip());
             tcp_hdr.set_dst_port(be_sockaddr.port());
-            // capy_log!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
+            capy_log!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
 
             if self.migration_directory.insert(src_addr, be_sockaddr).is_some() {
                 panic!("duplicate queue descriptor in established sockets table");
@@ -933,7 +952,7 @@ impl Inner {
             capy_profile_total!("capybara-switch");
             let src_matching_addr = self.migration_directory.get(&src_addr);
             let dst_matching_addr = self.migration_directory.get(&dst_addr);
-            // capy_log!("{:?}, {:?}", src_matching_addr, dst_matching_addr);
+            capy_log!("matching {:?}, {:?}", src_matching_addr, dst_matching_addr);
             match (src_matching_addr, dst_matching_addr) {
                 (Some(target_sockaddr), None) => {
                     let target_mac = match self.arp.try_query(*target_sockaddr.ip()) {
@@ -948,7 +967,7 @@ impl Inner {
                     eth_hdr.set_src_addr(self.local_link_addr);
                     ip_hdr.set_src_addr(self.local_ipv4_addr);
                     tcp_hdr.set_src_port(10000);
-                    // capy_log!("ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
+                    capy_log!("[REPLY] ETH: {:?}\n\nIP: {:?}\n\nTCP: {:?}\n", eth_hdr, ip_hdr, tcp_hdr);
                 },
                 (Some(_), Some(_)) => panic!("Both src and dst are matching in migration directory"),
                 (None, None) => panic!("No matching entry in migration_directory"),
@@ -1083,8 +1102,18 @@ impl TcpPeer {
             .expect("can migrate out and send")
     }
 
+    pub fn initiate_migration_if_no_unsent(&mut self, qd: QDesc) -> bool {
+        self.inner
+            .borrow_mut()
+            .initiate_migration_if_no_unsent(qd)
+    }
+
     pub fn initiate_migration_by_addr(&mut self, conn: (SocketAddrV4, SocketAddrV4)) {
         self.inner.borrow_mut().initiate_migration_by_addr(conn)
+    }
+
+    pub fn return_req_to_buffer(&mut self, qd: QDesc, buffer: &Buffer) {
+        self.inner.borrow_mut().return_req_to_buffer(qd, buffer)
     }
 
     pub fn initiate_migration_by_qd(&mut self, qd: QDesc) -> Result<(), Fail> {
@@ -1118,6 +1147,12 @@ impl TcpPeer {
         } else {
             None
         }
+    }
+
+    pub fn large_scale_migrate(
+        &mut self,
+    ) {
+        self.inner.borrow_mut().large_scale_migrate()   
     }
 
     pub fn global_recv_queue_length(&self) -> usize {
@@ -1303,6 +1338,41 @@ impl Inner {
         self.tcpmig.initiate_migration(conn, qd);
     }
 
+    pub fn initiate_migration_if_no_unsent(&mut self, qd: QDesc) -> bool {
+        // capy_profile!("prepare");
+        // capy_log_mig!("INIT MIG");
+        let conn = match self.sockets.get(&qd) {
+            Some(Socket::Established { local, remote }) => (*local, *remote),
+            _ => panic!("unsupported socket variant for migration"),
+        };
+
+        // Disable stats for this connection.
+        if self.established
+            .get(&conn)
+            .expect("connection not in established table")
+            .cb
+            .unsent_top_size() == None
+        {
+            self.tcpmig.initiate_migration(conn, qd);
+            return true;
+        }
+        return false;
+    }
+
+    pub fn return_req_to_buffer(&mut self, qd: QDesc, buffer: &Buffer) {
+        let conn = match self.sockets.get(&qd) {
+            Some(Socket::Established { local, remote }) => (*local, *remote),
+            _ => panic!("unsupported socket variant for migration"),
+        };
+
+        // Disable stats for this connection.
+        self.established
+            .get(&conn)
+            .expect("connection not in established table")
+            .cb
+            .return_req_to_buffer(buffer);
+    }
+
     pub fn initiate_migration_by_qd(&mut self, qd: QDesc) -> Result<(), Fail> {
         // capy_profile!("prepare");
         // capy_log_mig!("INIT MIG");
@@ -1336,6 +1406,62 @@ impl Inner {
             return Err(Fail::new(EBADF, "this connection is not for migration"));
         } */
         /* NON-CONCURRENT MIGRATION */
+    }
+
+    pub fn large_scale_migrate(&mut self) {
+        let mut total_unsent = 0;
+        let mut first_max = (None, 0);  // (Option<(src, dst)>, unsent_queue_len)
+        let mut second_max = (None, 0);
+        let mut min = (None, 9999999);
+        for ((src, dst), socket) in &self.established {
+            let unsent = socket.cb.unsent_queue_len();
+
+            total_unsent += unsent;
+
+            if(self.migration_trigerred.contains(dst) || unsent == 0) {
+                continue;
+            }
+            if unsent < min.1 {
+                min = (Some((src, dst)), unsent);
+            }
+            capy_log!("src: {}, dst: {}, unsent_queue_len: {}", src, dst, unsent);
+
+            if unsent >= first_max.1 {
+                second_max = first_max;
+                first_max = (Some((src, dst)), unsent);
+            } else if unsent >= second_max.1 {
+                second_max = (Some((src, dst)), unsent);
+            }
+        }
+        if total_unsent <= self.min_threshold {
+            return;
+        }
+
+        capy_log!("Total unsent_queue_len: {}", total_unsent);
+        if let Some((src, dst)) = min.0 {
+            capy_log!(
+                "Second largest unsent_queue_len: {} (src: {}, dst: {})",
+                min.1, src, dst
+            );
+            capy_time_log!("Total unsent_queue_len: {}, INIT_MIG,({}), (len: {})", total_unsent, dst, min.1);
+            self.migration_trigerred.insert(*dst);
+            self.initiate_migration_by_addr((*src, *dst));
+            
+        } else {
+            capy_log!("Not enough elements to find second largest unsent_queue_len.");
+        }
+        // if let Some((src, dst)) = second_max.0 {
+        //     capy_log!(
+        //         "Second largest unsent_queue_len: {} (src: {}, dst: {})",
+        //         second_max.1, src, dst
+        //     );
+        //     capy_time_log!("Total unsent_queue_len: {}, INIT_MIG,({}), (len: {})", total_unsent, dst, second_max.1);
+        //     self.migration_trigerred.insert(*dst);
+        //     self.initiate_migration_by_addr((*src, *dst));
+            
+        // } else {
+        //     capy_log!("Not enough elements to find second largest unsent_queue_len.");
+        // }
     }
 }
 

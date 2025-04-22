@@ -95,17 +95,17 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
         be_app = SERVER_APP + '-be'
         if SERVER_APP == 'capybara-switch':
             print('RUNNING CAPYBARA ENDHOST SWITCH')
-            host = pyrem.host.RemoteHost(FRONTEND_NODE) 
+            host = pyrem.host.RemoteHost('node7') 
             
 
             cmd = [f'cd {CAPYBARA_PATH} && \
                 sudo -E \
                 NUM_CORES=1 \
                 NUM_BACKENDS={NUM_BACKENDS} \
-                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node8_config.yaml \
+                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node7_config.yaml \
                 {ENV} \
                 taskset --cpu-list 1 numactl -m0 \
-                {CAPYBARA_PATH}/bin/examples/rust/capybara-switch.elf 10.0.1.8:10000 10.0.1.8:10001 \
+                {CAPYBARA_PATH}/bin/examples/rust/capybara-switch.elf 10.0.1.7:10000 10.0.1.7:10001 \
                 > {DATA_PATH}/{experiment_id}.capybara_switch 2>&1']
             
             task = host.run(cmd, quiet=False)
@@ -137,26 +137,30 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             print(f'Frontend is running')
         
         print('RUNNING BACKENDS')
-        server_tasks = []
-        tasks = []
-        host = pyrem.host.RemoteHost(BACKEND_NODE) 
-        cmd = [f'cd {CAPYBARA_PATH} && make dpdk-ctrl-node9'] 
-        task = host.run(cmd, quiet=True)
-        pyrem.task.Parallel([task], aggregate=True).start(wait=False)
+        dpdk_ctrl_task = []
+        for server in LS_SERVER_NODES:
+            host = pyrem.host.RemoteHost(server)
+            cmd = [f'cd {CAPYBARA_PATH} && make dpdk-ctrl-{server}'] 
+            task = host.run(cmd, quiet=True)
+            dpdk_ctrl_task.append(task)
+        pyrem.task.Parallel(dpdk_ctrl_task, aggregate=True).start(wait=False)    
+        print('dpdk-ctrl is running')
         time.sleep(3)
-        print('Backend dpdk-ctrl is running')
-
+        
+        server_tasks = []
+        
         for j in range(NUM_BACKENDS):
+            host = pyrem.host.RemoteHost(f'node{8 + (j%3)}')
             cmd = [f'cd {CAPYBARA_PATH} && \
-                {f"taskset --cpu-list {j+1}" if LIBOS == "catnap" else ""} \
+                {f"taskset --cpu-list {int(j/3) + 1}" if LIBOS == "catnap" else ""} \
                 sudo -E \
-                CORE_ID={j+1} \
+                CORE_ID={int(j/3) + 1} \
                 NUM_BE={NUM_BACKENDS} \
-                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node9_config.yaml \
+                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node{8 + (j%3)}_config.yaml \
                 {ENV} \
                 numactl -m0 \
-                {CAPYBARA_PATH}/bin/examples/rust/{be_app}.elf 10.0.1.9:1000{j} 10.0.1.8:10000 \
-                > {DATA_PATH}/{experiment_id}.be{j} 2>&1']
+                {CAPYBARA_PATH}/bin/examples/rust/{be_app}.elf 10.0.1.{8 + (j%3)}:1000{int(j/3)} 10.0.1.7:10000 \
+                > {DATA_PATH}/{experiment_id}.{LS_SERVER_NODES[j%3]}_{int(j/3)} 2>&1']
             task = host.run(cmd, quiet=False)
             server_tasks.append(task)
         pyrem.task.Parallel(server_tasks, aggregate=True).start(wait=False)    
@@ -172,7 +176,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
 
     if SERVER_APP != 'prism' and LIBOS == 'catnip':
         dpdk_ctrl_task = []
-        for server in SERVER_NODES:
+        for server in LS_SERVER_NODES:
             host = pyrem.host.RemoteHost(server)
             cmd = [f'cd {CAPYBARA_PATH} && make dpdk-ctrl-{server}'] 
             task = host.run(cmd, quiet=True)
@@ -197,10 +201,9 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             
     elif SERVER_APP == 'prism': # run FE
         fe_host = pyrem.host.RemoteHost(FRONTEND_NODE)
-        BE_ADDRs = f''
-        for j in range(NUM_BACKENDS): 
-            BE_ADDRs = BE_ADDRs + f'{NODE9_IP}:{j+1}{j+1}{j+1}{j+1}{j+1},'
-        BE_ADDRs=BE_ADDRs[:-1]
+        BE_ADDRs = f'{NODE9_IP}:10000'
+        for j in range(NUM_BACKENDS-1): 
+            BE_ADDRs = BE_ADDRs + f',{NODE9_IP}:1000{j+1}'
         cmd = [f'taskset --cpu-list {1} \
                 sudo numactl -m0 phttp-bench-proxy \
                 --addr {NODE8_IP} --port 10000 --mac {NODE8_MAC} \
@@ -210,8 +213,6 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 --backlog 8192 --ho-backlog 64 \
                 --nworkers 1 \
                 > {DATA_PATH}/{experiment_id}.fe 2>&1']
-        # print(cmd)
-        # exit(1)
         task = fe_host.run(cmd, quiet=True)
         pyrem.task.Parallel([task], aggregate=True).start(wait=False)
         time.sleep(1)
@@ -221,8 +222,8 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     server_tasks = []
     for j in range(NUM_BACKENDS):
         if SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'https':
-            host = pyrem.host.RemoteHost(f'node{8 + (j%2)}')
-            run_cmd = f'{CAPYBARA_PATH}/bin/examples/rust/http-server.elf 10.0.1.{8 + (j%2)}:1000{int(j/2)}'
+            host = pyrem.host.RemoteHost(f'node{8 + (j%3)}')
+            run_cmd = f'{CAPYBARA_PATH}/bin/examples/rust/http-server.elf 10.0.1.{8 + (j%3)}:1000{int(j/3)}'
             if SERVER_APP == 'https':
                 run_cmd = f'{CAPYBARA_PATH}/bin/examples/rust/https.elf 10.0.1.9:1000{j}'
             
@@ -230,7 +231,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 run_cmd = run_cmd + ' migrate'
             
             cmd = [f'cd {CAPYBARA_PATH} && \
-                {f"taskset --cpu-list {int(j/2) + 1}" if LIBOS == "catnap" else ""} \
+                {f"taskset --cpu-list {int(j/3) + 1}" if LIBOS == "catnap" else ""} \
                 sudo -E \
                 RECV_QUEUE_LEN_THRESHOLD={RECV_QUEUE_LEN_THRESHOLD} \
                 MIG_DELAY={int(mig_delay/10) * 76} \
@@ -241,12 +242,12 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 MIN_THRESHOLD={MIN_THRESHOLD} \
                 RPS_THRESHOLD={RPS_THRESHOLD} \
                 THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
-                CORE_ID={int(j/2) + 1} \
-                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node{8 + (j%2)}_config.yaml \
+                CORE_ID={int(j/3) + 1} \
+                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node{8 + (j%3)}_config.yaml \
                 {ENV} \
                 numactl -m0 \
                 {run_cmd} \
-                > {DATA_PATH}/{experiment_id}.{SERVER_NODES[j%2]}_{int(j/2)} 2>&1']
+                > {DATA_PATH}/{experiment_id}.{LS_SERVER_NODES[j%3]}_{int(j/3)} 2>&1']
         elif SERVER_APP == 'redis-server':
             run_cmd = f'make redis-server-node9-1000{j}'
             cmd = [f'cd {CAPYBARA_PATH} && \
@@ -269,7 +270,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
             cmd = [f'taskset --cpu-list {j+1} \
                 sudo numactl -m0 phttp-bench-backend \
                 --addr {NODE9_IP} --port 80 --mac {NODE9_MAC} \
-                --ho-addr {NODE9_IP} --ho-port {j+1}{j+1}{j+1}{j+1}{j+1} \
+                --ho-addr {NODE9_IP} --ho-port 1000{j} \
                 --proxy-addr {NODE8_IP} --proxy-port 10001 \
                 --sw-addr 10.0.1.7 --sw-port 18080 \
                 --backlog 8192 --ho-backlog 64 \
@@ -289,7 +290,7 @@ def run_tcpdump(experiment_id):
     print(f'RUNNING TCPDUMP to {TCPDUMP_NODE}:{PCAP_PATH}/{experiment_id}.pcap')
     
     host = pyrem.host.RemoteHost(TCPDUMP_NODE)
-    cmd = [f'sudo tcpdump --time-stamp-precision=nano -i ens85f1 -w {PCAP_PATH}/{experiment_id}.pcap']
+    cmd = [f'sudo tcpdump --time-stamp-precision=nano -i ens1f1 -w {PCAP_PATH}/{experiment_id}.pcap']
     task = host.run(cmd, quiet=False)
     pyrem.task.Parallel([task], aggregate=True).start(wait=False)
     
@@ -661,7 +662,39 @@ def parse_rps_signal(experiment_id):
         print("ERROR: " + result + '\n\n')
     else:
         print("DONE")
-    
+def load_data(filename):
+    df = pd.read_csv(filename, header=None, names=["latency", "count", "_"], usecols=[0, 1])
+    df["latency"] = pd.to_numeric(df["latency"], errors="coerce")
+    df["count"] = pd.to_numeric(df["count"], errors="coerce")
+    return df
+
+def aggregate_data(dfs):
+    combined = pd.concat(dfs)
+    aggregated = combined.groupby("latency", as_index=False).sum()
+    return aggregated
+
+def expand_latencies(aggregated_df):
+    expanded = np.repeat(aggregated_df["latency"], aggregated_df["count"])
+    return expanded
+
+def analyze_latency_csv(experiment_id):
+    # Load data from all client nodes
+    dfs = [load_data(f'{DATA_PATH}/{experiment_id}.{client}.latency') for client in CLIENT_NODES]
+
+    # Aggregate
+    aggregated = aggregate_data(dfs)
+
+    # Expand according to counts
+    all_latencies = expand_latencies(aggregated)
+
+    # Total number of latencies
+    total_latencies = len(all_latencies)
+
+    # 99th percentile latency
+    p99_latency = np.percentile(all_latencies, 99)
+
+    return total_latencies, p99_latency
+
 def run_eval():
     global experiment_id
     global final_result
@@ -669,10 +702,7 @@ def run_eval():
     #     print("Error: NUM_THREADS is used only for wrk generator")
     #     kill_procs()
     #     exit(1)
-    if CLIENT_APP == 'caladan' and LOADSHIFTS.count('/') != 0 and LOADSHIFTS.count('/') != NUM_BACKENDS - 1:
-        print(f"Error: LOADSHIFT configuration is wrong (check '/')")
-        kill_procs()
-        exit(1)
+    
     for repeat in range(0, REPEAT_NUM):
         for mig_delay in MIG_DELAYS:
             for max_reactive_migs in MAX_REACTIVE_MIGS: 
@@ -680,6 +710,20 @@ def run_eval():
                     for mig_per_n in MIG_PER_N:
                         for pps in CLIENT_PPS:
                             for conn in NUM_CONNECTIONS:
+                                LOADSHIFTS = ''
+                                if ZIPF_ALPHA != '':
+                                    if ZIPF_ALPHA == '0':
+                                        LOADSHIFTS = workload_spec_generator.uniform_servers(pps, RUNTIME)
+                                    elif ZIPF_ALPHA == '1.2':
+                                        LOADSHIFTS = workload_spec_generator.zipf_for_12_servers(pps, RUNTIME)
+                                    else:
+                                        print("check ZIPF_ALPHA")
+                                        exit(1)
+                                    if CLIENT_APP == 'caladan' and LOADSHIFTS.count('/') != 0 and LOADSHIFTS.count('/') != NUM_BACKENDS - 1:
+                                        print(f"Error: LOADSHIFT configuration is wrong (check '/')")
+                                        kill_procs()
+                                        exit(1)
+                                    print(LOADSHIFTS)
                                 # for num_thread in NUM_THREADS:
                                 kill_procs()
                                 experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
@@ -768,9 +812,14 @@ def run_eval():
                                                 --latency \
                                                 http://{FE_IP}:{FE_PORT}/get \
                                                 > {DATA_PATH}/{experiment_id}.{client}']
-                                        else:    
+                                        else:
+                                            dst_ip = FE_IP
+                                            dst_port = FE_PORT
+                                            if SERVER_APP == 'capybara-switch':
+                                                dst_ip = '10.0.1.7'
+                                                dst_port = '10000'
                                             cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
-                                                {FE_IP}:{FE_PORT} \
+                                                {dst_ip}:{dst_port} \
                                                 --config {CALADAN_PATH}/client_{client}.config \
                                                 --mode runtime-client \
                                                 --protocol=http \
@@ -785,7 +834,7 @@ def run_eval():
                                                 {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
                                                 {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
                                                 {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
-                                                --exptid={DATA_PATH}/{experiment_id} \
+                                                --exptid={DATA_PATH}/{experiment_id}.{client} \
                                                 > {DATA_PATH}/{experiment_id}.{client}']
                                     elif SERVER_APP == 'redis-server':
                                         if CLIENT_APP == 'caladan':
@@ -819,29 +868,12 @@ def run_eval():
                                     else:
                                         print(f'Invalid server app: {SERVER_APP}')
                                         exit(1)
-                                    # cmd = [f'sudo {HOME}/Capybara/tcp_generator/build/tcp-generator \
-                                    #         -a 31:00.1 \
-                                    #         -n 4 \
-                                    #         -c 0xffff -- \
-                                    #         -d exponential \
-                                    #         -c {HOME}/Capybara/tcp_generator/addr.cfg \
-                                    #         -s 256 \
-                                    #         -t 10 \
-                                    #         -r {i} \
-                                    #         -f {j} \
-                                    #         -q {4 if j >= 4 else j} \
-                                    #         -o {DATA_PATH}/{experiment_id}.latency \
-                                    #         > {DATA_PATH}/{experiment_id}.stats 2>&1']
                                     task = host.run(cmd, quiet=False)
                                     client_task.append(task)
                                 pyrem.task.Parallel(client_task, aggregate=True).start(wait=True)
 
                                 print('================ TEST COMPLETE =================\n')
-                                if CLIENT_APP == 'wrk':
-                                    result_str = parse_wrk_result(experiment_id)
-                                    print(result_str + '\n\n')
-                                    final_result = final_result + result_str 
-                                else:
+                                if ZIPF_ALPHA == '':
                                     try:
                                         for client in CLIENT_NODES:
                                             cmd = f'cat {DATA_PATH}/{experiment_id}.{client} | grep "\[RESULT\]" | tail -1'
@@ -859,38 +891,11 @@ def run_eval():
                                     except subprocess.CalledProcessError as e:
                                         # Handle the exception for a failed command execution
                                         print("EXPERIMENT FAILED\n\n")
-
-                                    except Exception as e:
-                                        # Handle any other unexpected exceptions
-                                        print("EXPERIMENT FAILED\n\n")
+                                else:
+                                    total_latencies, latency_99 = analyze_latency_csv(experiment_id)
                                 
-                                kill_procs()
-                                time.sleep(7)
-                                if TCPDUMP == True:
-                                    parse_tcpdump(experiment_id)
-                                    # print("Parsing pcap file is done, finishing test here.\n\n")
-
-                                    # exit()
-
-                                if EVAL_MIG_DELAY == True:
-                                    parse_mig_delay(experiment_id)
-
-                                if EVAL_POLL_INTERVAL == True:
-                                    parse_poll_interval(experiment_id)
-                                
-                                if EVAL_LATENCY_TRACE == True:
-                                    parse_latency_trace(experiment_id)
-
-                                if EVAL_SERVER_REPLY == True:
-                                    parse_server_reply(experiment_id)
-
-                                if EVAL_RPS_SIGNAL == True:
-                                    parse_rps_signal(experiment_id)
-                                
-                                if EVAL_MIG_CPU_OVHD == True:
-                                    parse_mig_cpu_ovhd(experiment_id)
-                                    
-                                
+                                    print(f'{experiment_id}, {DATA_SIZE}, {pps * len(CLIENT_NODES)}, {total_latencies/RUNTIME}, {latency_99}\n')
+                                    final_result = final_result + f'{experiment_id}, {DATA_SIZE}, {pps * len(CLIENT_NODES)}, {total_latencies/RUNTIME}, {latency_99}\n'
 
             # task = host.run(cmd, return_output=True, quiet=False)
             # task.start()
@@ -906,9 +911,7 @@ def run_eval():
 def exiting():
     global final_result
     print('EXITING')
-    result_header = "SERVER_APP, ID, #BE, #CONN, DATA_SIZE, MIG_DELAY, MAX_REACTIVE_MIG, MAX_PROACTIVE_MIG, MIG_PER_N, RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th"
-    if CLIENT_APP == 'wrk':
-        result_header = "SERVER_APP, ID, #BE, #CONN, #THREAD, DATA_SIZE, req/sec, datasize/sec, AVG, p50, p75, p90, p99"
+    result_header = "ID, DATA_SIZE, target_rate, tput, 99th"
         
     print(f'\n\n\n\n\n{result_header}')
     print(final_result)
@@ -955,7 +958,9 @@ if __name__ == '__main__':
     
     # kill_procs()
     # exit()
-
+    # print(LOADSHIFTS)
+    # analyze_latency_csv('202
+    
     if len(sys.argv) > 1 and sys.argv[1] == 'build':
         exit(run_compile())
     

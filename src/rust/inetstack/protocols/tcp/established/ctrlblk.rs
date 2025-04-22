@@ -145,6 +145,12 @@ impl Receiver {
             rps_stats,
         }
     }
+    pub fn return_req_to_buffer(&self, buf: Buffer) {
+        let buf_len: u32 = buf.len() as u32;
+        let mut recv_queue = self.recv_queue.borrow_mut();
+        recv_queue.push_back(buf);
+        self.reader_next.set(self.reader_next.get() - SeqNumber::from(buf_len as u32));
+    }
 
     pub fn pop(&self) -> Option<Buffer> {
         let mut recv_queue = self.recv_queue.borrow_mut();
@@ -423,6 +429,11 @@ impl ControlBlock {
         self.rto_calculator.borrow_mut().back_off()
     }
 
+    pub fn return_req_to_buffer(&self, buffer: &Buffer) {
+        self.receiver.return_req_to_buffer(buffer.clone());
+        
+    }
+
     pub fn unsent_top_size(&self) -> Option<usize> {
         self.sender.top_size_unsent()
     }
@@ -435,9 +446,14 @@ impl ControlBlock {
         self.sender.pop_one_unsent_byte()
     }
 
+    pub fn unsent_queue_len(&self) -> usize {
+        self.sender.unsent_queue_len()
+    }
+
     // This is the main TCP receive routine.
     //
     pub fn receive(&self, mut header: &mut TcpHeader, mut data: Buffer) {
+        // self.sender.update_send_window(header);
         capy_log!("CTRLBLK RECEIVE seq_num: {}", header.seq_num);
         debug!(
             "{:?} Connection Receiving {} bytes + {:?}",
@@ -558,7 +574,7 @@ impl ControlBlock {
                 header.fin = false;
                 excess -= 1;
             }
-            capy_log!("Segment go over the window by {} bytes. Trim.", excess);
+            panic!("Segment go over the window by {} bytes. Trim.", excess);
             data.trim(excess as usize);
         }
 
@@ -989,11 +1005,26 @@ impl ControlBlock {
 
     pub fn get_receive_window_size(&self) -> u32 {
         let bytes_unread: u32 = (self.receiver.receive_next.get() - self.receiver.reader_next.get()).into();
-        self.receive_buffer_size - bytes_unread
+        // self.receive_buffer_size - bytes_unread
+        (self.receive_buffer_size * 1024 * 4) - bytes_unread
+    }
+    pub fn get_real_receive_window_size(&self) -> u32 {
+        let bytes_unread: u32 = (self.receiver.receive_next.get() - self.receiver.reader_next.get()).into();
+        // eprintln!("bytes_unread {}", bytes_unread);
+        if bytes_unread > self.receive_buffer_size {
+            0
+        }else {
+            self.receive_buffer_size - bytes_unread
+        }
     }
 
     pub fn hdr_window_size(&self) -> u16 {
-        let window_size: u32 = self.get_receive_window_size();
+        let window_size: u32 = self.get_real_receive_window_size();
+        // let hdr_window_size: u16 = u16::MAX;
+        // eprintln!(
+        //     "Window scale {}, size {}",
+        //     self.window_scale, window_size
+        // );
         let hdr_window_size: u16 = (window_size >> self.window_scale)
             .try_into()
             .expect("Window size overflow");
@@ -1014,6 +1045,7 @@ impl ControlBlock {
         //  if self.receiver.reader_next.get() == self.receiver.receive_next.get() {
         // But that will think data is available to be read once we've received a FIN, because FINs consume sequence
         // number space.  Now we call is_empty() on the receive queue instead.
+        // if self.receiver.recv_queue.borrow().is_empty()  || self.unsent_queue_len() > 0{ // For Capybara-L7 to init migration after send_queue is flushed.
         if self.receiver.recv_queue.borrow().is_empty() {
             *self.waker.borrow_mut() = Some(ctx.waker().clone());
             capy_log!("Pending (nothing in recv_queue)");

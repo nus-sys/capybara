@@ -322,10 +322,31 @@ tcpmig-client:
 	taskset --cpu-list 0 \
 	$(ELF_DIR)/tcpmig-client.elf 10.0.1.8:10000
 
+proxy-server-fe:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	taskset --cpu-list 0 \
+	$(ELF_DIR)/proxy-server-fe.elf 10.0.1.8:10000
+
+proxy-server-be0:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	taskset --cpu-list 0 \
+	$(ELF_DIR)/proxy-server-be.elf 10.0.1.9:10000 10.0.1.8:10000
+
 http-server-fe:
 	sudo -E \
 	IS_FRONTEND=1 \
 	NUM_CORES=4 \
+	DATA_SIZE=131072 \
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
@@ -352,17 +373,154 @@ capybara-switch:
 	$(ENV) \
 	numactl -m0 taskset --cpu-list 1 \
 	$(ELF_DIR)/capybara-switch.elf 10.0.1.8:10000 10.0.1.8:10001
+capybara-switch-node7:
+	sudo -E \
+	NUM_CORES=1 \
+	CONFIG_PATH=$(CONFIG_DIR)/node7_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	numactl -m0 taskset --cpu-list 1 \
+	$(ELF_DIR)/capybara-switch.elf 10.0.1.7:10000 10.0.1.7:10001
+http-server-node1:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	DATA_SIZE=654930 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m0 taskset --cpu-list 1 \
+	$(ELF_DIR)/http-server.elf 10.0.0.1:10000
 
 http-server-be0:
 	sudo -E \
 	NUM_CORES=4 \
 	CORE_ID=1 \
+	DATA_SIZE=654930 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
 	MIG_PER_N=1000000 \
 	numactl -m0 taskset --cpu-list 1 \
 	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
+
+
+http-server-be0-1:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	DATA_SIZE=654930 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9-1_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m1 taskset --cpu-list 17 \
+	$(ELF_DIR)/http-server.elf 10.0.0.9:10000
+
+
+http-server-node2:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	DATA_SIZE=131072 \
+	CONFIG_PATH=$(CONFIG_DIR)/node2_0_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m0 taskset --cpu-list 1 \
+	$(ELF_DIR)/http-server.elf 10.0.0.2:10000
+
+http-server-node80:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	DATA_SIZE=0 \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m0 taskset --cpu-list 1 \
+	$(ELF_DIR)/http-server.elf 10.0.1.8:10000
+http-server-node81:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=2 \
+	DATA_SIZE=131072 \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m0 taskset --cpu-list 2 \
+	$(ELF_DIR)/http-server.elf 10.0.1.8:10001
+http-server-node90:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	DATA_SIZE=131072 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m0 taskset --cpu-list 1 \
+	$(ELF_DIR)/http-server.elf 10.0.1.9:10000
+http-server-node91:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=2 \
+	DATA_SIZE=131072 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m0 taskset --cpu-list 2 \
+	$(ELF_DIR)/http-server.elf 10.0.1.9:10001
+http-server-node92:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=3 \
+	DATA_SIZE=131072 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m0 taskset --cpu-list 3 \
+	$(ELF_DIR)/http-server.elf 10.0.1.9:10002
+http-server-node93:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=4 \
+	DATA_SIZE=131072 \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m0 taskset --cpu-list 4 \
+	$(ELF_DIR)/http-server.elf 10.0.1.9:10003
+
+http-server-node7:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	DATA_SIZE=131072 \
+	CONFIG_PATH=$(CONFIG_DIR)/node7_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m0 taskset --cpu-list 1 \
+	$(ELF_DIR)/http-server.elf 10.0.1.7:10000
+
+http-server-node10:
+	sudo -E \
+	NUM_CORES=4 \
+	CORE_ID=1 \
+	DATA_SIZE=131072 \
+	CONFIG_PATH=$(CONFIG_DIR)/node10_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	$(ENV) \
+	MIG_PER_N=1000000 \
+	numactl -m0 taskset --cpu-list 1 \
+	$(ELF_DIR)/http-server.elf 10.0.1.10:10000
 
 be-tcp-server0:
 	sudo -E \
@@ -447,7 +605,17 @@ client-dpdk-ctrl:
 	taskset --cpu-list 4 \
 	$(ELF_DIR)/dpdk-ctrl.elf
 
-be-dpdk-ctrl:
+dpdk-ctrl-node8:
+	sudo -E RUST_LOG="debug" \
+	NUM_CORES=4 \
+	CORE_ID=5 \
+	$(ENV) \
+	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 4 \
+	$(ELF_DIR)/dpdk-ctrl.elf
+	
+dpdk-ctrl-node9:
 	sudo -E RUST_LOG="debug" \
 	NUM_CORES=4 \
 	CORE_ID=5 \
@@ -457,30 +625,12 @@ be-dpdk-ctrl:
 	taskset --cpu-list 4 \
 	$(ELF_DIR)/dpdk-ctrl.elf
 
-fe-dpdk-ctrl:
+dpdk-ctrl-node10:
 	sudo -E RUST_LOG="debug" \
 	NUM_CORES=4 \
 	CORE_ID=5 \
 	$(ENV) \
-	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	taskset --cpu-list 4 \
-	$(ELF_DIR)/dpdk-ctrl.elf
-
-be-dpdk-ctrl-node9:
-	sudo -E RUST_LOG="debug" \
-	NUM_CORES=4 \
-	CORE_ID=5 \
-	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
-	taskset --cpu-list 4 \
-	$(ELF_DIR)/dpdk-ctrl.elf
-
-be-dpdk-ctrl-node8:
-	sudo -E RUST_LOG="debug" \
-	NUM_CORES=4 \
-	CORE_ID=5 \
-	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
+	CONFIG_PATH=$(CONFIG_DIR)/node10_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 4 \
 	$(ELF_DIR)/dpdk-ctrl.elf

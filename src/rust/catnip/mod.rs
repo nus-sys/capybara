@@ -163,7 +163,7 @@ impl CatnipLibOS {
         #[cfg(feature = "profiler")]
         timer!("catnip::wait");
         trace!("wait(): qt={:?}", qt);
-
+        panic!("ARE YOU RUNNUING REDIS? Search for [comment for Redis eval, uncomment for FE-proxy (or other native applications) eval] and handle it first!!!");
         let (qd, result): (QDesc, OperationResult) = self.wait2(qt)?;
         Ok(pack_result(self.rt.clone(), result, qd, qt.into()))
     }

@@ -20,6 +20,7 @@ use ::libc::{
     EBUSY,
     EINVAL,
 };
+use std::thread::panicking;
 use ::std::{
     cell::{
         Cell,
@@ -50,7 +51,7 @@ pub struct UnackedSegment {
 /// Hard limit for unsent queue.
 /// ToDo: Remove this.  We should limit the unsent queue by either having a (configurable) send buffer size (in bytes,
 /// not segments) and rejecting send requests that exceed that, or by limiting the user's send buffer allocations.
-const UNSENT_QUEUE_CUTOFF: usize = 1024;
+const UNSENT_QUEUE_CUTOFF: usize = 1024 * 8;
 
 // ToDo: Consider moving retransmit timer and congestion control fields out of this structure.
 // ToDo: Make all public fields in this structure private.
@@ -201,7 +202,7 @@ impl Sender {
         self.unsent_seq_no.modify(|s| s + SeqNumber::from(buf_len));
         if self.send_window.get() > 0 {
             self.send_segment(cb, cb.clock.now(), &mut buf);
-        }
+        }// comment out this send_segement to enforce FE-proxy of run-to-completion push
         capy_log!("WARNINIG: TOO FAST, remaining buf.len(): {}, unsent_queue_len: {}", buf.len(), self.unsent_queue.borrow().len());
         if buf.len() > 0 {
             // Slow path: Delegating sending the data to background processing.
@@ -396,6 +397,13 @@ impl Sender {
         let buf = queue.front_mut()?;
         let mut cloned_buf = buf.clone();
         let buf_len: usize = buf.len();
+        if buf_len == 0 {
+            let mut buf: Buffer = queue.pop_front()?;
+            if buf.len() != 0 {
+                panic!("Buffer length is not zero");
+            }
+            return None;
+        }
 
         // Pop one byte off the buf still in the queue and all but one of the bytes on our clone.
         buf.adjust(1);
@@ -429,6 +437,10 @@ impl Sender {
     pub fn top_size_unsent(&self) -> Option<usize> {
         let unsent_queue = self.unsent_queue.borrow_mut();
         Some(unsent_queue.front()?.len())
+    }
+    pub fn unsent_queue_len(&self) -> usize {
+        let unsent_queue = self.unsent_queue.borrow_mut();
+        unsent_queue.len()
     }
 
     // Update our send window to the value advertised by our peer.

@@ -124,6 +124,8 @@ pub struct TcpMigPeer {
     num_be: u16,
 
     mtu: usize,
+    
+    backend_servers: arrayvec::ArrayVec<(MacAddress, SocketAddrV4), 12>,
 }
 
 #[derive(Default)]
@@ -147,6 +149,23 @@ impl TcpMigPeer {
             .unwrap_or_else(|_| String::from("1500")) // Default value is 1460 if MTU is not set
             .parse::<usize>()
             .expect("Invalid MTU value");
+        
+        let backend_servers = arrayvec::ArrayVec::from([
+            (NODE10_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10003)),
+            (NODE10_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10002)),
+            (NODE10_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10001)),
+            (NODE10_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10000)),
+            (NODE9_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10003)),
+            (NODE9_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10002)),
+            (NODE9_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10001)),
+            (NODE9_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10000)),
+            (NODE8_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10003)),
+            (NODE8_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10002)),
+            (NODE8_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10001)),
+            (NODE8_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10000)),
+        ]);
+        
+        
         Self {
             rt: rt.clone(),
             local_link_addr,
@@ -185,6 +204,7 @@ impl TcpMigPeer {
             .expect("Invalid NUM_BE value"),
 
             mtu,
+            backend_servers,
         }
     }
 
@@ -274,8 +294,16 @@ impl TcpMigPeer {
                 // } else {
                 //     FRONTEND_MAC
                 // },
-                FRONTEND_IP,
-                FRONTEND_MAC,
+                // FRONTEND_IP,
+                // FRONTEND_MAC,
+                *hdr.origin.ip(),
+                if *hdr.origin.ip() == Ipv4Addr::new(10, 0, 1, 8) {
+                    NODE8_MAC
+                } else if *hdr.origin.ip() == Ipv4Addr::new(10, 0, 1, 9) {
+                    NODE9_MAC
+                } else{
+                    NODE10_MAC
+                },
                 self.self_udp_port,
                 hdr.origin.port(),
                 hdr.origin,
@@ -379,6 +407,18 @@ impl TcpMigPeer {
 
         //let origin = SocketAddrV4::new(self.local_ipv4_addr, origin_port);
         // let target = SocketAddrV4::new(FRONTEND_IP, FRONTEND_PORT); // TEMP
+        let mut be_sockaddr: (MacAddress, SocketAddrV4);
+        static mut BE_IDX: usize = 0;
+        loop {
+            be_sockaddr = self.backend_servers[unsafe { BE_IDX }];
+            unsafe {
+                BE_IDX = (BE_IDX + 1) % 12;
+            }
+            if be_sockaddr.1 != local {
+                break;
+            }
+        }
+        
 
         let active = ActiveMigration::new(
             self.rt.clone(),
@@ -394,8 +434,10 @@ impl TcpMigPeer {
             // } else {
             //     FRONTEND_MAC
             // },
-            FRONTEND_IP,
-            FRONTEND_MAC,
+            *be_sockaddr.1.ip(),
+            be_sockaddr.0,
+            // FRONTEND_IP,
+            // FRONTEND_MAC,
             self.self_udp_port,
             // 10000,
             // if self.local_ipv4_addr == FRONTEND_IP {
@@ -405,7 +447,8 @@ impl TcpMigPeer {
             // } else {
             //     10000
             // },
-            if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
+            be_sockaddr.1.port(),
+            // if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
             local,
             remote,
             Some(qd),
@@ -413,7 +456,10 @@ impl TcpMigPeer {
         ); // Inho: Q. Why link_addr (MAC addr) is needed when the libOS has arp_table already? Is it possible to use the arp_table instead?
 
         let active = match self.active_migrations.entry(remote) {
-            Entry::Occupied(..) => panic!("duplicate initiate migration"),
+            Entry::Occupied(..) => {
+                eprintln!("duplicate initiate migration");
+                return;
+            },
             Entry::Vacant(entry) => entry.insert(active),
         };
 

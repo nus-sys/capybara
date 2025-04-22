@@ -6,8 +6,7 @@ mod none;
 mod options;
 
 use crate::{
-    inetstack::protocols::tcp::SeqNumber,
-    runtime::watched::WatchFuture,
+    capy_log, inetstack::protocols::tcp::SeqNumber, runtime::watched::WatchFuture
 };
 use ::std::{
     fmt::Debug,
@@ -32,7 +31,9 @@ pub trait SlowStartCongestionAvoidance {
     }
 
     // Called immediately before the cwnd check is performed before data is sent.
-    fn on_cwnd_check_before_send(&self) {}
+    fn on_cwnd_check_before_send(&self) {
+        capy_log!("none::on_cwnd_check_before_send");
+    }
 
     fn on_ack_received(&self, _rto: Duration, _send_unacked: SeqNumber, _send_next: SeqNumber, _ack_seq_no: SeqNumber) {
     }

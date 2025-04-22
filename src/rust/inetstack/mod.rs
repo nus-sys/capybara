@@ -529,9 +529,9 @@ impl InetStack {
 
         loop {
             // Poll first, so as to give pending operations a chance to complete.
-            capy_log!("START6");
+            // capy_log!("START6");
             self.scheduler.poll();
-            // self.poll_bg_work(); // comment for Redis eval, uncomment for FE-proxy (or other native applications) eval
+            self.poll_bg_work(); // comment for Redis eval, uncomment for FE-proxy (or other native applications) eval
 
             // The operation has completed, so extract the result and return.
             if handle.has_completed() {
@@ -860,6 +860,15 @@ impl InetStack {
 
         #[cfg(feature = "tcp-migration")]
         {
+            // match self.tcpmig_state.poll_state.take_qd_to_migrate() {
+            //     None => {},
+            //     Some(qd) => {
+            //         if self.ipv4.tcp.initiate_migration_if_no_unsent(qd) == false{
+            //             self.tcpmig_state.poll_state.set_qd_to_migrate(qd);
+            //         } 
+            //     },
+            // };
+            
             // Poll stats updates.
             self.ipv4.tcp.poll_stats();
 
@@ -875,6 +884,8 @@ impl InetStack {
                 }
             }
             /* comment out this for recv_queue_len vs mig_lat eval */
+
+            // self.ipv4.tcp.large_scale_migrate();
         }
 
         if self.ts_iters == 0 {
@@ -932,6 +943,11 @@ impl InetStack {
 
 #[cfg(feature = "tcp-migration")]
 impl InetStack {
+
+    pub fn large_scale_migrate(&mut self) {
+        self.ipv4.tcp.large_scale_migrate();
+    }
+    
     /// Returns if TCP DPDK queue was also polled.
     pub fn poll_runtime_tcpmig(&mut self) -> bool {
         // capy_profile!("poll_tcpmig()");
@@ -991,7 +1007,14 @@ impl InetStack {
     }
 
 
+    pub fn set_qd_to_migrate(&mut self, qd: QDesc) {
+        self.tcpmig_state.poll_state.set_qd_to_migrate(qd)
+    }
     
+    pub fn return_req_to_buffer(&mut self, qd: QDesc, buffer: &Buffer) {
+        self.ipv4.tcp.return_req_to_buffer(qd, buffer);
+    }
+
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         self.ipv4.tcp.initiate_migration_by_qd(qd)
     }

@@ -17,11 +17,10 @@ use super::{
     SlowStartCongestionAvoidance,
 };
 use crate::{
-    inetstack::protocols::tcp::SeqNumber,
-    runtime::watched::{
+    capy_log, inetstack::protocols::tcp::SeqNumber, runtime::watched::{
         WatchFuture,
         WatchedValue,
-    },
+    }
 };
 use ::std::{
     cell::Cell,
@@ -284,6 +283,7 @@ impl SlowStartCongestionAvoidance for Cubic {
     }
 
     fn on_cwnd_check_before_send(&self) {
+        capy_log!("cubic::on_cwnd_check_before_send");
         let long_time_since_send: bool =
             Instant::now().duration_since(self.last_send_time.get()) > self.rtt_at_last_send.get();
         if long_time_since_send {

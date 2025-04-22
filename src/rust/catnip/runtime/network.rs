@@ -77,6 +77,7 @@ impl NetworkRuntime for DPDKRuntime {
                             Ok(mbuf) => mbuf,
                             Err(e) => panic!("failed to allocate body mbuf: {:?}", e.cause),
                         };
+                        capy_log!("body mbuf len = {}, bytes.len() {} ", mbuf.len(), bytes.len());
                         assert!(mbuf.len() >= bytes.len());
                         unsafe { mbuf.slice_mut()[..bytes.len()].copy_from_slice(&bytes[..]) };
                         mbuf.trim(mbuf.len() - bytes.len());
@@ -144,6 +145,9 @@ impl NetworkRuntime for DPDKRuntime {
         {
             #[cfg(feature = "profiler")]
             timer!("catnip_libos:receive::for");
+            if nb_rx != 0 {
+                capy_log!("{nb_rx} packets received");
+            }
             for &packet in &packets[..nb_rx as usize] {
                 let mbuf: DPDKBuffer = DPDKBuffer::new(packet);
                 let buf: Buffer = Buffer::DPDK(mbuf);

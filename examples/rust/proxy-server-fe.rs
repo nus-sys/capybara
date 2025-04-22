@@ -32,8 +32,6 @@ use ::demikernel::perftools::profiler;
 
 use colored::Colorize;
 
-use demikernel::runtime::memory::Buffer;
-
 #[macro_use]
 extern crate lazy_static;
 //=====================================================================================
@@ -63,7 +61,7 @@ macro_rules! server_log_mig {
 //=====================================================================================
 
 const ROOT: &str = "/var/www/demo";
-const BUFSZ: usize = 4096;
+const BUFSZ: usize = 1024 * 256; // 128KB
 
 static mut START_TIME: Option<Instant> = None;
 
@@ -83,6 +81,11 @@ impl AppBuffer {
             head: 0,
             tail: 0,
         }
+    }
+
+    pub fn flush(&mut self) {
+        self.head = 0;
+        self.tail = 0;
     }
 
     pub fn data_size(&self) -> usize {
@@ -129,98 +132,37 @@ impl AppBuffer {
     }
 }
 
-fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
-    /* let data_str = std::str::from_utf8(data).unwrap();
-    let data_str = String::from_utf8_lossy(data);
-    let data_str = unsafe { std::str::from_utf8_unchecked(&data[..]) };
 
-    let mut file_name = data_str
-            .split_whitespace()
-            .nth(1)
-            .and_then(|file_path| {
-                let mut path_parts = file_path.split('/');
-                path_parts.next().and_then(|_| path_parts.next())
-            })
-            .unwrap_or("index.html");
-    if file_name == "" {
-        file_name = "index.html";
-    }
-    let full_path = format!("{}/{}", ROOT, file_name);
-    
-    let response = match std::fs::read_to_string(full_path.as_str()) {
-        Ok(mut contents) => {
-            // contents.push_str(unsafe { START_TIME.as_ref().unwrap().elapsed() }.as_nanos().to_string().as_str());
-            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
-        },
-        Err(_) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n"),
-    }; 
-
-    server_log!("PUSH: {}", response.lines().next().unwrap_or(""));
-    libos.push2(qd, response.as_bytes()).expect("push success") */
-
-
+fn response_size() -> usize {
     lazy_static! {
+        static ref N: usize = {
+            env::var("DATA_SIZE")
+                .unwrap_or_else(|_| "0".to_string()) // Fallback to 0 if not set
+                .parse()
+                .expect("DATA_SIZE must be a valid number")
+        };
         static ref RESPONSE: String = {
-            match std::fs::read_to_string("/var/www/demo/index.html") {
+            let file_path = format!("{}/{}", ROOT, "index.html");
+            match std::fs::read_to_string(file_path) {
                 Ok(contents) => {
-                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
-                },
+                    let extra_bytes = "A".repeat((*N).saturating_sub(contents.len()));
+                    let full_contents = format!("{}{}", contents, extra_bytes);
+                    server_log!("full_contents len: {}", full_contents.len());
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        full_contents.len(),
+                        full_contents
+                    )
+                }
                 Err(_) => {
                     format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
-                },
+                }
             }
         };
     }
-    
-    server_log!("PUSH: {}", RESPONSE.lines().next().unwrap_or(""));
-    libos.push2(qd, RESPONSE.as_bytes()).expect("push success")
+
+    RESPONSE.len()
 }
-
-#[inline(always)]
-fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
-fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut AppBuffer, data: &[u8], qts: &mut Vec<QToken>) -> usize {
-    
-    server_log!("buffer.data_size() {}", buffer.data_size());
-    // fast path: no previous data in the stream and this request contains exactly one HTTP request
-    if buffer.data_size() == 0 {
-        if find_subsequence(data, b"\r\n\r\n").unwrap_or(data.len()) == data.len() - 4 {
-            server_log!("responding 1");
-            let resp_qt = respond_to_request(libos, qd, data);
-            qts.push(resp_qt);
-            return 1;
-        }
-    }
-    // println!("* CHECK *\n");
-    // Copy new data into buffer
-    buffer.get_empty_buf()[..data.len()].copy_from_slice(data);
-    buffer.push_data(data.len());
-    server_log!("buffer.data_size() {}", buffer.data_size());
-    let mut sent = 0;
-
-    loop {
-        let dbuf = buffer.get_data();
-        match find_subsequence(dbuf, b"\r\n\r\n") {
-            Some(idx) => {
-                server_log!("responding 2");
-                let resp_qt = respond_to_request(libos, qd, &dbuf[..idx + 4]);
-                qts.push(resp_qt);
-                buffer.pull_data(idx + 4);
-                buffer.try_shrink().unwrap();
-                sent += 1;
-            }
-            None => {
-                return sent;
-            }
-        }
-    }
-}
-
-
 //======================================================================================================================
 // server()
 //======================================================================================================================
@@ -229,6 +171,7 @@ fn push_data_and_run(libos: &mut LibOS, qd: QDesc, buffer: &mut AppBuffer, data:
 struct ConnectionState {
     buffer: AppBuffer,
     is_backend: bool,
+    client_qds: VecDeque<QDesc>,
 }
 
 fn server(local: SocketAddrV4) -> Result<()> {
@@ -239,7 +182,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
     let switch_addr: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 7), 5000);
     const FE_MAC: MacAddress = MacAddress::new([0x08, 0xc0, 0xeb, 0xb6, 0xe8, 0x05]);
-    
+    let RESPONSE_SIZE = response_size();
+
     let mut qts: Vec<QToken> = Vec::new();
     let mut connstate: HashMap<QDesc, ConnectionState> = HashMap::new();
     let mut backends: VecDeque<QDesc> = VecDeque::new();
@@ -288,6 +232,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     connstate.insert(new_qd, ConnectionState {
                         buffer: AppBuffer::new(),
                         is_backend: false,
+                        client_qds: VecDeque::new(),
                     });
 
                     // Re-arm accept
@@ -314,21 +259,44 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     }
 
                     // Response from BE, forward to client.
+                    // if connstate.get(&qd).unwrap().is_backend {
+                    //     // let client_qd = i32::from_be_bytes(buf[0..4].try_into().unwrap());
+                    //     let buf = &buf[0..];
+                    //     connstate.get_mut(&qd).unwrap().buffer
+                    //     qts.push(libos.push2(client_qd.into(), buf).unwrap());
+                    //     server_log!("Sending response to client ({client_qd}): {}", std::str::from_utf8(buf).unwrap());
+                    //     continue;
+                    // }
                     if connstate.get(&qd).unwrap().is_backend {
-                        let client_qd = i32::from_be_bytes(buf[0..4].try_into().unwrap());
-                        let buf = &buf[4..];
-                        qts.push(libos.push2(client_qd.into(), buf).unwrap());
-                        server_log!("Sending response to client ({client_qd}): {}", std::str::from_utf8(buf).unwrap());
-                        continue;
+                        let state = connstate.get_mut(&qd).unwrap();
+                        let app_buf = state.buffer.get_empty_buf();
+                        app_buf[0..buf.len()].copy_from_slice(&buf[..]);
+                        state.buffer.push_data(buf.len());
+                        server_log!("Buffered {} bytes, now total {} bytes buffered, waiting for {} bytes", buf.len(),state.buffer.data_size(), RESPONSE_SIZE);
+                        if state.buffer.data_size() == RESPONSE_SIZE {
+                            server_log!("Buffered {} bytes, sending to client", state.buffer.data_size());
+                            
+                            let client_qd = state.client_qds.pop_front().unwrap();
+                            qts.push(libos.push2(client_qd.into(), state.buffer.get_data()).unwrap());
+                            server_log!("Sending response to client ({:?}): {}", client_qd, std::str::from_utf8(&state.buffer.get_data()[..300]).unwrap());
+                            state.buffer.flush();
+                        }
+                        else if state.buffer.data_size() > RESPONSE_SIZE{
+                            panic!("Buffered {} bytes, but expected {} bytes", state.buffer.data_size(), RESPONSE_SIZE);
+                        }
+                        continue;   
                     }
+
+
+
+
 
                     // New request from client, forward to a backend.
                     let be_qd = backends.pop_front().unwrap();
                     backends.push_back(be_qd);
-                    tmpbuf[0..4].copy_from_slice(&i32::to_be_bytes(qd.into()));
-                    tmpbuf[4..4 + buf.len()].copy_from_slice(buf);
-                    qts.push(libos.push2(be_qd, &tmpbuf[0..4 + buf.len()]).unwrap());
-                    server_log!("Sending response to BE ({be_qd:?}): {}", std::str::from_utf8(buf).unwrap());
+                    connstate.get_mut(&be_qd).unwrap().client_qds.push_back(qd);
+                    qts.push(libos.push2(be_qd, &buf).unwrap());
+                    server_log!("Sending request to BE ({be_qd:?}): {}", std::str::from_utf8(buf).unwrap());
                 },
 
                 OperationResult::Failed(e) => {

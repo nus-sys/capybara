@@ -26,6 +26,7 @@ use crate::{
         },
         QDesc,
         QToken,
+        memory::Buffer,
     }
 };
 use std::{cell::RefCell, os::raw::c_void, rc::Rc, time::Duration};
@@ -267,9 +268,25 @@ use crate::inetstack::protocols::tcpmig::ApplicationState;
 
 #[cfg(feature = "tcp-migration")]
 impl LibOS {
+    pub fn large_scale_migrate(&mut self) {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.large_scale_migrate(),
+        }
+    }
+    pub fn return_req_to_buffer(&mut self, qd: QDesc, buffer: &Buffer) {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.return_req_to_buffer(qd, buffer),
+        }
+    }
     pub fn initiate_migration(&mut self, qd: QDesc) -> Result<(), Fail> {
         match self {
             LibOS::NetworkLibOS(libos) => libos.initiate_migration(qd),
+        }
+    }
+
+    pub fn set_qd_to_migrate(&mut self, qd: QDesc) {
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.set_qd_to_migrate(qd),
         }
     }
 

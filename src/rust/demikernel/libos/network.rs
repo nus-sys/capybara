@@ -13,6 +13,7 @@ use crate::runtime::{
     },
     QDesc,
     QToken,
+    memory::Buffer,
 };
 use std::{cell::RefCell, rc::Rc, time::Duration};
 use ::std::{
@@ -384,6 +385,27 @@ impl NetworkLibOS {
 
 #[cfg(feature = "tcp-migration")]
 impl NetworkLibOS {
+    pub fn large_scale_migrate(&mut self) {
+        match self {
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.large_scale_migrate(),
+            _ => panic!("capybara_switch is only supported on Catnip"),
+        }
+    }
+    
+    pub fn return_req_to_buffer(&mut self, _qd: QDesc, buffer: &Buffer) {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(_) => Erpanic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.return_req_to_buffer(_qd, buffer),
+        }
+    }
+
     pub fn initiate_migration(&mut self, _qd: QDesc) -> Result<(), Fail> {
         match self {
             #[cfg(feature = "catpowder-libos")]
@@ -394,6 +416,19 @@ impl NetworkLibOS {
             NetworkLibOS::Catcollar(_) => Err(Fail::new(libc::EOPNOTSUPP, "TCP migration only supported for catnip")),
             #[cfg(feature = "catnip-libos")]
             NetworkLibOS::Catnip(libos) => libos.initiate_migration(_qd),
+        }
+    }
+
+    pub fn set_qd_to_migrate(&mut self, _qd: QDesc) {
+        match self {
+            #[cfg(feature = "catpowder-libos")]
+            NetworkLibOS::Catpowder(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catnap-libos")]
+            NetworkLibOS::Catnap(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catcollar-libos")]
+            NetworkLibOS::Catcollar(_) => panic!("TCP migration only supported for catnip"),
+            #[cfg(feature = "catnip-libos")]
+            NetworkLibOS::Catnip(libos) => libos.set_qd_to_migrate(_qd),
         }
     }
     

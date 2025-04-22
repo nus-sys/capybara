@@ -23,10 +23,10 @@ all: all-examples
 #	cp -f $(BUILD_DIR)/examples/tcpmig-server-multi $(BINDIR)/examples/rust/tcpmig-server-multi.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/tcpmig-server-single $(BINDIR)/examples/rust/tcpmig-server-single.$(EXEC_SUFFIX)
 	cp -f $(BUILD_DIR)/examples/dpdk-ctrl $(BINDIR)/examples/rust/dpdk-ctrl.$(EXEC_SUFFIX)
-	cp -f $(BUILD_DIR)/examples/capy-proxy-fe $(BINDIR)/examples/rust/capy-proxy-fe.$(EXEC_SUFFIX)
-	cp -f $(BUILD_DIR)/examples/capy-proxy-be $(BINDIR)/examples/rust/capy-proxy-be.$(EXEC_SUFFIX)
+#	cp -f $(BUILD_DIR)/examples/capy-proxy-fe $(BINDIR)/examples/rust/capy-proxy-fe.$(EXEC_SUFFIX)
+#	cp -f $(BUILD_DIR)/examples/capy-proxy-be $(BINDIR)/examples/rust/capy-proxy-be.$(EXEC_SUFFIX)
 	cp -f $(BUILD_DIR)/examples/http-server $(BINDIR)/examples/rust/http-server.$(EXEC_SUFFIX)
-	cp -f $(BUILD_DIR)/examples/https $(BINDIR)/examples/rust/https.$(EXEC_SUFFIX)
+#	cp -f $(BUILD_DIR)/examples/https $(BINDIR)/examples/rust/https.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/capybara-switch $(BINDIR)/examples/rust/capybara-switch.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/proxy-server-fe $(BINDIR)/examples/rust/proxy-server-fe.$(EXEC_SUFFIX)
 #	cp -f $(BUILD_DIR)/examples/proxy-server-be $(BINDIR)/examples/rust/proxy-server-be.$(EXEC_SUFFIX)
@@ -58,7 +58,7 @@ all-examples:
 	$(CARGO) build --example http-server $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
 #	@echo "$(CARGO) build --example https $(CARGO_FEATURES) $(CARGO_FLAGS)"
 #	$(CARGO) build --example https $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
-#	$(CARGO) build --example capybara-switch $(CARGO_FEATURES) $(CARGO_FLAGS) --features=capybara-switch
+#	$(CARGO) build --example capybara-switch $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES) --features=capybara-switch
 #,capy-profile
 #	$(CARGO) build --example proxy-server-fe $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)
 #	$(CARGO) build --example proxy-server-be $(CARGO_FEATURES) $(CARGO_FLAGS) $(EXAMPLE_FEATURES)

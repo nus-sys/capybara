@@ -49,6 +49,7 @@ pub trait ApplicationState {
 #[derive(Default)]
 pub struct TcpmigPollState {
     migrated_qd: Cell<Option<QDesc>>,
+    qd_to_migrate: Cell<Option<QDesc>>,
     fast_migrate: Cell<bool>,
 }
 
@@ -60,6 +61,7 @@ impl TcpmigPollState {
     #[inline]
     pub fn reset(&self) {
         self.migrated_qd.take();
+        self.qd_to_migrate.take();
         self.fast_migrate.take();
     }
 
@@ -71,6 +73,16 @@ impl TcpmigPollState {
     #[inline]
     pub fn set_qd(&self, qd: QDesc) {
         self.migrated_qd.set(Some(qd));
+    }
+
+    #[inline]
+    pub fn take_qd_to_migrate(&self) -> Option<QDesc> {
+        self.qd_to_migrate.take()
+    }
+
+    #[inline]
+    pub fn set_qd_to_migrate(&self, qd: QDesc) {
+        self.qd_to_migrate.set(Some(qd));
     }
 
     #[inline]
