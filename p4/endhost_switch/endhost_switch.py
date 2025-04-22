@@ -152,9 +152,12 @@ sl2 = endhost_switch(default_ttl=10000)
 sl2.setup()
 
 routes = (
+    (0x1c34da5e0ed8, 16, '100G'), # node5
+    (0x1c34da5e0ed4, 20, '100G'), # node6
     (0x08c0ebb6cd5d, 32, '100G'), # node7
     (0x08c0ebb6e805, 36, '100G'), # node8
     (0x08c0ebb6c5ad, 24, '100G'), # node9
+    (0x08c0ebb6e7e5, 28, '100G'), # node10
     #
 )
 port = bfrt.port.port

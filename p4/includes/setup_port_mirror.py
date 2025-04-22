@@ -5,8 +5,8 @@ EGRESS_CONTROL_NAME="Egress"
 port_mirroring_cfgs = [
     #{"src_devport": 32, "mirror_devport": 36, "ig_mirror": False, "eg_mirror": True},
     #{"src_devport": 24, "mirror_devport": 36, "ig_mirror": False, "eg_mirror": True},
-    # {"src_devport": 32, "mirror_devport": 8, "ig_mirror": True, "eg_mirror": False},
-    {"src_devport": 24, "mirror_devport": 8, "ig_mirror": False, "eg_mirror": False},
+    {"src_devport": 16, "mirror_devport": 28, "ig_mirror": False, "eg_mirror": False},
+    {"src_devport": 36, "mirror_devport": 28, "ig_mirror": False, "eg_mirror": False},
 ] 
 
 

@@ -252,21 +252,21 @@ def set_bcast(ports):
 
 
 p4 = bfrt.capybara_switch_fe.pipe
-num_backends = 1
+num_backends = 12
 
 ### Setup L2 learning
 sl2 = capybara_switch_fe(default_ttl=10000)
 sl2.setup()
-set_bcast([24, 32, 36])
+set_bcast([24, 32, 36, 28, 16, 20])
 
 
-for i in range(num_backends):
+for i in range(int(num_backends/3)):
     bfrt.pre.node.entry(MULTICAST_NODE_ID=10000 + i, MULTICAST_RID=10000 + i,
-        MULTICAST_LAG_ID=[], DEV_PORT=[24]).push()
+        MULTICAST_LAG_ID=[], DEV_PORT=[24, 28, 36]).push()
 
-mcast_node_ids = [i for i in range(10000, 10000 + num_backends)]
-xid_valid_list = [False] * num_backends
-xid_list = [0] * num_backends
+mcast_node_ids = [i for i in range(10000, 10000 + int(num_backends/3))]
+xid_valid_list = [False] * int(num_backends/3)
+xid_list = [0] * int(num_backends/3)
 # print(mcast_node_ids)
 # print(xid_valid_list)
 # print(xid_list)
@@ -280,22 +280,63 @@ bfrt.pre.mgid.entry(MGID=2, MULTICAST_NODE_ID=mcast_node_ids,
 # p4.Ingress.min_workload_ip.reg.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.9'))
 # p4.Ingress.min_workload_port.reg.mod(REGISTER_INDEX=0, f1=10001)
 
+# p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=0, f1 = 0)
+
 for i in range(65536):
     p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = i % num_backends)
     # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = (i/2) % 4) // for redis-benchmark distribution
-    
-for i in range(num_backends):
-    p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
-    p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xc5ad)
-    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.9'))
-    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + i)
+  
+for i in range(4):
+    p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i*3, f1=0x08c0ebb6)
+    p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i*3, f1=0xe805)
+    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3, f1=IPAddress('10.0.1.8'))
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3, f1=10000 + i)
+    p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i*3 + 1, f1=0x08c0ebb6)
+    p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i*3 + 1, f1=0xc5ad)
+    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 1, f1=IPAddress('10.0.1.9'))
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 1, f1=10000 + i)
+    p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i*3 + 2, f1=0x08c0ebb6)
+    p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i*3 + 2, f1=0xe7e5)
+    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 2, f1=IPAddress('10.0.1.10'))
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 2, f1=10000 + i)
+
+# for i in range(num_backends):
+#     p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
+#     p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xe805)
+#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.8'))
+#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000)
+# for i in range(num_backends):
+#     p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
+#     p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xc5ad)
+#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.9'))
+#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + i)
+# p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=0, f1=0x08c0ebb6)
+# p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=0, f1=0xe805)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.8'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=0, f1=10000)
+
+# p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=1, f1=0x08c0ebb6)
+# p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=1, f1=0xc5ad)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=1, f1=IPAddress('10.0.1.9'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=1, f1=10000)
+
+# p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=2, f1=0x08c0ebb6)
+# p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=2, f1=0xe805)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=2, f1=IPAddress('10.0.1.8'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=2, f1=10001)
+
+# p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=3, f1=0x08c0ebb6)
+# p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=3, f1=0xc5ad)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=3, f1=IPAddress('10.0.1.9'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=3, f1=10001)
 
 
-p4.Egress.reg_min_rps_server_port.mod(REGISTER_INDEX=0, f1=0)
-# p4.Egress.reg_round_robin_server_port.mod(REGISTER_INDEX=0, f1=1) // f1=1 for redis load-balancing case (migrations from be0 to others)
 
-port_mirror_setup_file="/home/singtel/inho/Capybara/capybara/p4/includes/setup_port_mirror.py" # <== To Modify and Add
-exec(open(port_mirror_setup_file).read()) # <== To Add
+# p4.Egress.reg_min_rps_server_port.mod(REGISTER_INDEX=0, f1=0)
+# p4.Egress.reg_round_robin_server_port.mod(REGISTER_INDEX=0, f1=0) # f1=1 for redis load-balancing case (migrations from be0 to others)
+
+# port_mirror_setup_file="/home/singtel/inho/Capybara/capybara/p4/includes/setup_port_mirror.py" # <== To Modify and Add
+# exec(open(port_mirror_setup_file).read()) # <== To Add
 
 
 bfrt.complete_operations()

@@ -7,6 +7,7 @@
 /******  G L O B A L   I N G R E S S   M E T A D A T A  *********/
 
 struct my_ingress_headers_t {
+    bridged_meta_h              bridged_meta; // <== To Add
     pktgen_timer_header_t       pktgen_timer_header;
     remaining_ethernet_h        remaining_ethernet;
 
@@ -20,6 +21,7 @@ struct my_ingress_headers_t {
 }
 
 struct my_ingress_metadata_t {
+    port_mirror_meta_t port_mirror_meta; // <== To Add
     PortId_t ingress_port;
     PortId_t egress_port;
     bit<16> l4_payload_checksum;
@@ -214,6 +216,8 @@ control Ingress(
 {
 
     #include "../forwarding.p4"
+
+    PortMirroringIngress() port_mirroring_ingress; // <== To Add
     calc_hash(CRCPolynomial<bit<32>>(
             coeff=32w0x04C11DB7, reversed=true, msb=false, extended=false,
             init=32w0xFFFFFFFF, xor=32w0xFFFFFFFF)) hash;
@@ -287,8 +291,9 @@ control Ingress(
 
 
     apply {
-        
-        ig_tm_md.bypass_egress = 1w1;
+        port_mirroring_ingress.apply(hdr.bridged_meta, meta.port_mirror_meta, ig_intr_md.ingress_port,
+                                    ig_intr_md.ingress_mac_tstamp, ig_dprsr_md.mirror_type); // <== To Add
+        // ig_tm_md.bypass_egress = 1w1;
 
         // if(hdr.prism_req_base.isValid()){
         //     // meta.type = hdr.prism_req_base.type;
@@ -464,12 +469,14 @@ control IngressDeparser(packet_out pkt,
     /* Intrinsic */
     in    ingress_intrinsic_metadata_for_deparser_t  ig_dprsr_md)
 {
+    PortMirroringCommonDeparser() port_mirroring_deparser; // <== To Add
     Digest <migration_digest_t>() migration_digest;
 
     Checksum()  ipv4_checksum;
     Checksum()  tcp_checksum;
     // Checksum()  udp_checksum;
     apply {
+        port_mirroring_deparser.apply(meta.port_mirror_meta, ig_dprsr_md.mirror_type); // <== To Add
         if (ig_dprsr_md.digest_type == TCP_MIGRATION_DIGEST) {
             migration_digest.pack({
                     hdr.ethernet.src_mac,
@@ -555,6 +562,7 @@ struct my_egress_headers_t {
 /********  G L O B A L   E G R E S S   M E T A D A T A  *********/
 
 struct my_egress_metadata_t {
+    port_mirror_meta_t  port_mirror_meta; // <== To Add
 }
 
 /***********************  P A R S E R  **************************/
@@ -566,9 +574,11 @@ parser EgressParser(packet_in        pkt,
     /* Intrinsic */
     out egress_intrinsic_metadata_t  eg_intr_md)
 {
+    PortMirroringEgressParser() port_mirror_parser; // <== To Add
     /* This is a mandatory state, required by Tofino Architecture */
     state start {
         pkt.extract(eg_intr_md);
+        port_mirror_parser.apply(pkt, meta.port_mirror_meta); // <== To Add 
         transition parse_ethernet;
     }
 
@@ -592,7 +602,10 @@ control Egress(
     inout egress_intrinsic_metadata_for_deparser_t     eg_dprsr_md,
     inout egress_intrinsic_metadata_for_output_port_t  eg_oport_md)
 {
+    PortMirroringEgress() port_mirroring_egress; // <== To Add
     apply {
+        port_mirroring_egress.apply(hdr.ethernet.src_mac, meta.port_mirror_meta, eg_intr_md.egress_port,
+                        eg_prsr_md.global_tstamp, eg_dprsr_md.mirror_type); // <== To Add
     }
 }
 
@@ -605,7 +618,9 @@ control EgressDeparser(packet_out pkt,
     /* Intrinsic */
     in    egress_intrinsic_metadata_for_deparser_t  eg_dprsr_md)
 {
+    PortMirroringCommonDeparser() port_mirroring_deparser; // <== To Add
     apply {
+        port_mirroring_deparser.apply(meta.port_mirror_meta, eg_dprsr_md.mirror_type); // <== To Add
         pkt.emit(hdr);
     }
 }

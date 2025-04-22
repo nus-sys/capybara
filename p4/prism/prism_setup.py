@@ -254,5 +254,8 @@ def set_bcast(ports):
 ### Setup L2 learning
 sl2 = prism(default_ttl=10000)
 sl2.setup()
-set_bcast([24, 32, 36])
+set_bcast([24, 32, 36, 28, 16])
+
+# port_mirror_setup_file="/home/singtel/inho/Capybara/capybara/p4/includes/setup_port_mirror.py" # <== To Modify and Add
+# exec(open(port_mirror_setup_file).read()) # <== To Add
 bfrt.complete_operations()

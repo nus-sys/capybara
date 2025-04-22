@@ -30,13 +30,13 @@
 // #define FE_IP 0x0a000101
 #define FE_MAC 0x08c0ebb6e805
 #define FE_IP 0x0a000108
-#define FE_PORT 10000 
+#define FE_PORT 55555 // 10000, 55555
 
 #define BE_MAC 0x08c0ebb6c5ad
 #define BE_IP 0x0a000109
 
 
-#define NUM_BACKENDS 4
+#define NUM_BACKENDS 12
 
 
 const int MAC_TABLE_SIZE        = 65536;

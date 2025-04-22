@@ -210,7 +210,7 @@ control Ingress(
     }
 
     action exec_forwarding_to_endhost_switch() {
-        ig_tm_md.ucast_egress_port=36;
+        ig_tm_md.ucast_egress_port=32;
         // hdr.ethernet.dst_mac = FE_MAC;
         // hdr.ipv4.dst_ip = FE_IP;
         // hdr.tcp.dst_port = FE_PORT;
@@ -218,7 +218,7 @@ control Ingress(
 
     apply {
         ig_tm_md.bypass_egress = 1;
-        if(ig_intr_md.ingress_port != 36){ // not from endhost switch
+        if(ig_intr_md.ingress_port != 32){ // not from endhost switch
             exec_forwarding_to_endhost_switch(); // send to endhost switch
         }else{
             l2_forwarding_decision.apply();

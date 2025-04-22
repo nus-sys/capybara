@@ -379,6 +379,7 @@ control Ingress(
                     meta.client_port = hdr.tcp.src_port;
 
                     meta.backend_idx = get_be_idx.execute(meta.client_port);
+                    // meta.backend_idx = get_be_idx.execute(0);
                     exec_read_backend_mac_hi32();
                     exec_read_backend_mac_lo16();
                     exec_read_backend_ip();
@@ -398,8 +399,8 @@ control Ingress(
 
                 // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
                 hdr.udp.checksum = 0;
-                hdr.ethernet.dst_mac = BE_MAC;
-                hdr.ipv4.dst_ip = BE_IP;
+                // hdr.ethernet.dst_mac = BE_MAC; // for capy-proxy-switch-fe
+                // hdr.ipv4.dst_ip = BE_IP;
             }
 
             if(meta.flag[0:0] == 1){ // chown
@@ -824,7 +825,7 @@ control Egress(
         void apply(inout bit<16> val, out bit<16> rv) {
             rv = val+10000;
             if(val == NUM_BACKENDS-1){
-                val = 1; // val=1 for redis load-balancing case (migrations from be0 to others)
+                val = 0; // val=1 for redis load-balancing case (migrations from be0 to others)
             }else{
                 val = val + 1;    
             }

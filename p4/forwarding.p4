@@ -37,14 +37,16 @@ table l2_forwarding {
         // l2_forward;
     }
     const entries = {
-        0xb8cef62a2f95 : send(8);
-        0xb8cef62a45fd : send(12);
-        0xb8cef62a3f9d : send(16);
-        0xb8cef62a30ed : send(20);
-        0x1070fdc8944d : send(0);
-        0x08c0ebb6cd5d : send(32);
-        0x08c0ebb6e805 : send(36);
-        0x08c0ebb6c5ad : send(24);
+        0x1c34da5e0ed8 : send(16); // node5
+        0x1c34da5e0ed4 : send(20); // node6
+        0x08c0ebb6cd5d : send(32); // node7
+        0x08c0ebb6e805 : send(36); // node8
+        0x08c0ebb6c5ad : send(24); // node9
+        0x08c0ebb6e7e5 : send(28); // node10
+        // 0xb8cef62a2f95 : send(8);
+        // 0xb8cef62a3f9d : send(16);
+        // 0xb8cef62a30ed : send(20);
+        // 0x1070fdc8944d : send(0);
         0xffffffffffff : broadcast();
     }
     default_action = drop();
