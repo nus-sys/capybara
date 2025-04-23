@@ -25,7 +25,8 @@ use crate::{
         },
         QDesc,
         QToken,
-    }
+    },
+    autokernel::feedback::init_feedback, 
 };
 use std::{cell::RefCell, os::raw::c_void, rc::Rc, time::Duration};
 use ::std::{
@@ -64,6 +65,8 @@ impl LibOS {
     pub fn new(libos_name: LibOSName) -> Result<Self, Fail> {
         logging::initialize();
         crate::capylog::init();
+
+        init_feedback();
 
         assert_eq!(unsafe { libc::atexit(exit_dump) }, 0, "atexit() call failed");
 

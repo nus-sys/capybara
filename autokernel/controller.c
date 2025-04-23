@@ -8,10 +8,37 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <errno.h>
 
-#define SHM_NAME "/shm_example"
-#define SHM_SIZE sizeof(uint64_t)
+#define SHM_NAME "/autokernel_feedback_shm"
 #define SOCKET_PATH "/tmp/eventfd_socket"
+
+// Struct must match Rust #[repr(C)]
+typedef struct {
+    size_t timer_resolution;
+    size_t max_recv_iters;
+    size_t max_out_of_order;
+    double rto_alpha;
+    double rto_beta;
+    double rto_granularity;
+    double rto_lower_bound_sec;
+    double rto_upper_bound_sec;
+    size_t unsent_queue_cutoff;
+    float beta_cubic;
+    float cubic_c;
+    uint32_t dup_ack_threshold;
+    size_t waker_page_size;
+    size_t first_slot_size;
+    size_t waker_bit_length_shift;
+    size_t fallback_mss;
+    size_t receive_batch_size;
+    size_t pop_size;
+
+    size_t num_rx_pkts;
+    double bytes_acked_per_sec;
+} CombinedFeedback;
+
+#define SHM_SIZE sizeof(CombinedFeedback)
 
 int send_fd(int socket, int fd) {
     struct msghdr msg = {0};
@@ -34,7 +61,6 @@ int send_fd(int socket, int fd) {
     cmsg->cmsg_len = CMSG_LEN(sizeof(fd));
 
     memcpy(CMSG_DATA(cmsg), &fd, sizeof(fd));
-
     return sendmsg(socket, &msg, 0);
 }
 
@@ -42,16 +68,13 @@ int main() {
     int sockfd, connfd;
     struct sockaddr_un addr;
 
-    // Create Unix domain socket
     sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sockfd == -1) {
         perror("socket");
         return 1;
     }
 
-    // Remove any existing socket
     unlink(SOCKET_PATH);
-
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     strcpy(addr.sun_path, SOCKET_PATH);
@@ -66,70 +89,72 @@ int main() {
         return 1;
     }
 
-    printf("Controller: Waiting for test.rs to connect...\n");
+    printf("Controller: Waiting for feedback.rs to connect...\n");
     connfd = accept(sockfd, NULL, NULL);
     if (connfd == -1) {
         perror("accept");
         return 1;
     }
 
-    // Create shared memory
-    int shm_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
+    // Open shared memory (must match what Rust created)
+    int shm_fd = shm_open(SHM_NAME, O_RDWR, 0666);
     if (shm_fd == -1) {
         perror("shm_open");
         return 1;
     }
 
-    // Resize shared memory
-    if (ftruncate(shm_fd, SHM_SIZE) == -1) {
-        perror("ftruncate");
-        return 1;
-    }
-
-    // Map shared memory
-    uint64_t *shm_ptr = mmap(NULL, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    // Map shared memory as read-only
+    CombinedFeedback *shm_ptr = mmap(NULL, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if (shm_ptr == MAP_FAILED) {
         perror("mmap");
         return 1;
     }
 
-    // Write value to shared memory
-    *shm_ptr = 7;
-    printf("Controller: wrote 7 to shared memory\n");
-
-    // Create eventfd
-    int efd = eventfd(0, 0);
+    int efd = eventfd(0, EFD_NONBLOCK);
     if (efd == -1) {
         perror("eventfd");
         return 1;
     }
 
-    // Send eventfd to Rust via Unix socket
     if (send_fd(connfd, efd) == -1) {
         perror("send_fd");
         return 1;
     }
-    printf("Controller: Sent eventfd to test.rs\n");
+    printf("Controller: Sent eventfd to feedback.rs\n");
 
-    while(1){
-        // Notify Rust
-        uint64_t event_val = 1;
-        if (write(efd, &event_val, sizeof(event_val)) == -1) {
-            perror("write to eventfd");
-            return 1;
+    while (1) {
+        uint64_t val;
+        int res = read(efd, &val, sizeof(val));
+        if (res == -1) {
+            if (errno == EAGAIN) {
+                usleep(100000); // retry in 100ms
+                continue;
+            } else {
+                perror("read eventfd");
+                break;
+            }
         }
-        printf("Controller: Sent notification via eventfd\nsleep for 3 seconds...");
-        // Wait before notifying Rust
-        sleep(5);
+
+        // Print feedback
+        printf("==== FEEDBACK RECEIVED ====\n");
+        printf("Parameters:\n");
+        printf("  timer_resolution: %zu\n", shm_ptr->timer_resolution);
+        printf("  receive_batch_size: %zu\n", shm_ptr->receive_batch_size);
+        printf("  rto_alpha: %.3f\n", shm_ptr->rto_alpha);
+        printf("Observations:\n");
+        printf("  num_rx_pkts: %zu\n", shm_ptr->num_rx_pkts);
+        printf("  bytes_acked_per_sec: %.2f\n", shm_ptr->bytes_acked_per_sec);
+        printf("===========================\n");
+
+        sleep(1);
     }
 
-    // Cleanup
     close(efd);
     close(connfd);
     close(sockfd);
     close(shm_fd);
     munmap(shm_ptr, SHM_SIZE);
-    shm_unlink(SHM_NAME);
+    shm_unlink(SHM_NAME); // optional, only if you're shutting down
     unlink(SOCKET_PATH);
 
     return 0;
