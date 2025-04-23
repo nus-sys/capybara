@@ -96,14 +96,12 @@ int main() {
         return 1;
     }
 
-    // Open shared memory (must match what Rust created)
     int shm_fd = shm_open(SHM_NAME, O_RDWR, 0666);
     if (shm_fd == -1) {
         perror("shm_open");
         return 1;
     }
 
-    // Map shared memory as read-only
     CombinedFeedback *shm_ptr = mmap(NULL, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if (shm_ptr == MAP_FAILED) {
         perror("mmap");
@@ -122,6 +120,22 @@ int main() {
     }
     printf("Controller: Sent eventfd to feedback.rs\n");
 
+    // Step 1: Write initial parameters to shared memory
+    shm_ptr->timer_resolution = 42;
+    shm_ptr->receive_batch_size = 99;
+    shm_ptr->rto_alpha = 0.456;
+    shm_ptr->num_rx_pkts = 0;
+    shm_ptr->bytes_acked_per_sec = 0.0;
+
+    printf("Controller: Initial parameters written\n");
+    
+    uint64_t init_notify = 1;
+    if (write(efd, &init_notify, sizeof(init_notify)) == -1) {
+        perror("initial notify write");
+        return 1;
+    }
+    printf("Controller: Sent initial notification to feedback.rs\n");
+
     while (1) {
         uint64_t val;
         int res = read(efd, &val, sizeof(val));
@@ -135,7 +149,7 @@ int main() {
             }
         }
 
-        // Print feedback
+        // Step 2: Print feedback written by feedback.rs
         printf("==== FEEDBACK RECEIVED ====\n");
         printf("Parameters:\n");
         printf("  timer_resolution: %zu\n", shm_ptr->timer_resolution);
@@ -146,6 +160,20 @@ int main() {
         printf("  bytes_acked_per_sec: %.2f\n", shm_ptr->bytes_acked_per_sec);
         printf("===========================\n");
 
+        // Step 3: Rewrite the same values back to shared memory
+        shm_ptr->timer_resolution = shm_ptr->timer_resolution;
+        shm_ptr->receive_batch_size = shm_ptr->receive_batch_size;
+        shm_ptr->rto_alpha = shm_ptr->rto_alpha;
+        shm_ptr->num_rx_pkts = shm_ptr->num_rx_pkts;
+        shm_ptr->bytes_acked_per_sec = shm_ptr->bytes_acked_per_sec;
+
+        // Step 4: Notify feedback.rs
+        uint64_t notify = 1;
+        if (write(efd, &notify, sizeof(notify)) == -1) {
+            perror("notify feedback.rs");
+            break;
+        }
+
         sleep(1);
     }
 
@@ -154,7 +182,7 @@ int main() {
     close(sockfd);
     close(shm_fd);
     munmap(shm_ptr, SHM_SIZE);
-    shm_unlink(SHM_NAME); // optional, only if you're shutting down
+    shm_unlink(SHM_NAME);
     unlink(SOCKET_PATH);
 
     return 0;

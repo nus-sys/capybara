@@ -130,25 +130,47 @@ pub fn init_feedback() {
 //==============================================================================
 // Feedback Update
 //==============================================================================
+use libc::eventfd_read;
 
 pub fn write_feedback_and_notify() {
-    let snapshot = CombinedFeedback {
-        parameters: get_param(|p| *p),
-        observations: get_obs_param(|o| *o),
-    };
-
     SHM_PTR.with(|shm_cell| {
         if let Some(ptr) = *shm_cell.borrow() {
-            unsafe {
-                *ptr = snapshot;
-            }
-
             EVENTFD.with(|efd_cell| {
                 if let Some(efd) = *efd_cell.borrow() {
-                    let res = unsafe { eventfd_write(efd, 1) };
+                    let mut val: u64 = 0;
+                    let res = unsafe { eventfd_read(efd, &mut val) };
                     if res < 0 {
-                        panic!("Failed to notify eventfd");
+                        let err = std::io::Error::last_os_error();
+                        if err.raw_os_error() == Some(libc::EAGAIN) {
+                            // No controller write, skip
+                            return;
+                        } else {
+                            panic!("Failed to read from eventfd: {}", err);
+                        }
                     }
+
+                    // Controller wrote something
+                    let controller_snapshot = unsafe { *ptr };
+                    println!("📥 Controller wrote (via eventfd):");
+                    println!("  controller.timer_resolution = {}", controller_snapshot.parameters.timer_resolution);
+                    println!("  controller.receive_batch_size = {}", controller_snapshot.parameters.receive_batch_size);
+                    println!("  controller.num_rx_pkts = {:.2}", controller_snapshot.observations.num_rx_pkts);
+                    println!();
+
+                    let new_snapshot = CombinedFeedback {
+                        parameters: get_param(|p| *p),
+                        observations: get_obs_param(|o| *o),
+                    };
+
+                    unsafe {
+                        *ptr = new_snapshot;
+                    }
+
+                    if unsafe { eventfd_write(efd, 1) } < 0 {
+                        panic!("Failed to write back to eventfd");
+                    }
+
+                    println!("Wrote back snapshot + notified controller.\n");
                 } else {
                     panic!("EVENTFD not initialized");
                 }
