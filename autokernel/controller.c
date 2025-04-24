@@ -9,6 +9,33 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <errno.h>
+#include <stdarg.h>
+
+//======================================================================
+// Logging System
+//======================================================================
+
+static int debug_enabled = -1;
+
+void init_debug() {
+    const char *env = getenv("DEBUG");
+    debug_enabled = (env && strcmp(env, "1") == 0) ? 1 : 0;
+}
+
+void debug_log(const char *fmt, ...) {
+    if (debug_enabled != 1) return;
+
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+}
+
+#define DEBUG_LOG(...) debug_log(__VA_ARGS__)
+
+//======================================================================
+// Shared Memory and EventFD Definitions
+//======================================================================
 
 #define SHM_NAME "/autokernel_feedback_shm"
 #define SOCKET_PATH "/tmp/eventfd_socket"
@@ -65,7 +92,7 @@ int send_fd(int socket, int fd) {
 
 void run_inference(CombinedFeedback* shm_ptr) {
     size_t current_rx = shm_ptr->num_rx_pkts;
-    size_t new_batch_size = shm_ptr->receive_batch_size;
+    size_t new_batch_size;
 
     if (current_rx <= 3) {
         new_batch_size = 4;
@@ -79,10 +106,12 @@ void run_inference(CombinedFeedback* shm_ptr) {
 
     shm_ptr->receive_batch_size = new_batch_size;
 
-    printf("📈 Inference adjusted receive_batch_size to %zu based on num_rx_pkts = %zu\n", new_batch_size, current_rx);
+    DEBUG_LOG("📈 Inference adjusted receive_batch_size to %zu based on num_rx_pkts = %zu\n", new_batch_size, current_rx);
 }
 
 int main() {
+    init_debug(); // Initialize logging system
+
     int sockfd, connfd;
     struct sockaddr_un addr;
 
@@ -107,7 +136,7 @@ int main() {
         return 1;
     }
 
-    printf("Controller: Waiting for feedback.rs to connect...\n");
+    DEBUG_LOG("Controller: Waiting for feedback.rs to connect...\n");
     connfd = accept(sockfd, NULL, NULL);
     if (connfd == -1) {
         perror("accept");
@@ -136,7 +165,7 @@ int main() {
         perror("send_fd");
         return 1;
     }
-    printf("Controller: Sent eventfd to feedback.rs\n");
+    DEBUG_LOG("Controller: Sent eventfd to feedback.rs\n");
 
     // Write initial config
     shm_ptr->timer_resolution = 42;
@@ -150,7 +179,7 @@ int main() {
         perror("initial notify write");
         return 1;
     }
-    printf("Controller: Initial parameters written and notified\n");
+    DEBUG_LOG("Controller: Initial parameters written and notified\n");
 
     while (1) {
         uint64_t val;
@@ -168,22 +197,22 @@ int main() {
                 break;
             }
         }
-    
+
         // At this point, feedback.rs has notified us that new data is ready.
         // Proceed to read from the shared memory.
-        printf("==== FEEDBACK RECEIVED ====\n");
-        printf("Parameters:\n");
-        printf("  timer_resolution: %zu\n", shm_ptr->timer_resolution);
-        printf("  receive_batch_size: %zu\n", shm_ptr->receive_batch_size);
-        printf("  rto_alpha: %.3f\n", shm_ptr->rto_alpha);
-        printf("Observations:\n");
-        printf("  num_rx_pkts: %zu\n", shm_ptr->num_rx_pkts);
-        printf("  bytes_acked_per_sec: %.2f\n", shm_ptr->bytes_acked_per_sec);
-        printf("===========================\n");
-    
+        DEBUG_LOG("==== FEEDBACK RECEIVED ====\n");
+        DEBUG_LOG("Parameters:\n");
+        DEBUG_LOG("  timer_resolution: %zu\n", shm_ptr->timer_resolution);
+        DEBUG_LOG("  receive_batch_size: %zu\n", shm_ptr->receive_batch_size);
+        DEBUG_LOG("  rto_alpha: %.3f\n", shm_ptr->rto_alpha);
+        DEBUG_LOG("Observations:\n");
+        DEBUG_LOG("  num_rx_pkts: %zu\n", shm_ptr->num_rx_pkts);
+        DEBUG_LOG("  bytes_acked_per_sec: %.2f\n", shm_ptr->bytes_acked_per_sec);
+        DEBUG_LOG("===========================\n");
+
         // Apply logic to update parameters based on the feedback
         run_inference(shm_ptr);
-    
+
         // Notify feedback.rs that controller has processed the update
         // and written new values into shared memory
         uint64_t notify = 1;
@@ -195,7 +224,6 @@ int main() {
         // Optional: sleep(1) could be used here to pace interactions if needed
         // sleep(1)
     }
-    
 
     close(efd);
     close(connfd);
