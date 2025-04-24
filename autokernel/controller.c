@@ -124,10 +124,47 @@ void run_inference(CombinedFeedback* shm_ptr) {
     } else {
         new_batch_size = 128;
     }
+    if (shm_ptr->receive_batch_size != new_batch_size) {
+        printf("📈 Inference adjusted receive_batch_size from %zu to %zu (num_rx_pkts = %zu)\n",
+                  shm_ptr->receive_batch_size, new_batch_size, current_rx);
+        shm_ptr->receive_batch_size = new_batch_size;
+    }
+}
 
-    shm_ptr->receive_batch_size = new_batch_size;
+void initialize_parameters_from_env(CombinedFeedback* shm_ptr) {
+    // Helper macro to parse env var or use default
+    #define GET_ENV_SIZE_T(name, def) ({ \
+        const char *val = getenv(name); \
+        val ? strtoull(val, NULL, 10) : (def); \
+    })
+    #define GET_ENV_DOUBLE(name, def) ({ \
+        const char *val = getenv(name); \
+        val ? strtod(val, NULL) : (def); \
+    })
+    #define GET_ENV_FLOAT(name, def) ((float) GET_ENV_DOUBLE(name, def))
+    #define GET_ENV_U32(name, def) ((uint32_t) GET_ENV_SIZE_T(name, def))
 
-    DEBUG_LOG("📈 Inference adjusted receive_batch_size to %zu based on num_rx_pkts = %zu\n", new_batch_size, current_rx);
+    shm_ptr->timer_resolution     = GET_ENV_SIZE_T("TIMER_RESOLUTION", 64);
+    shm_ptr->max_recv_iters       = GET_ENV_SIZE_T("MAX_RECV_ITERS", 2);
+    shm_ptr->max_out_of_order     = GET_ENV_SIZE_T("MAX_OUT_OF_ORDER", 2048);
+    shm_ptr->rto_alpha            = GET_ENV_DOUBLE("RTO_ALPHA", 0.125);
+    shm_ptr->rto_beta             = GET_ENV_DOUBLE("RTO_BETA", 0.25);
+    shm_ptr->rto_granularity      = GET_ENV_DOUBLE("RTO_GRANULARITY", 0.001);
+    shm_ptr->rto_lower_bound_sec  = GET_ENV_DOUBLE("RTO_LOWER_BOUND_SEC", 0.1);
+    shm_ptr->rto_upper_bound_sec  = GET_ENV_DOUBLE("RTO_UPPER_BOUND_SEC", 60.0);
+    shm_ptr->unsent_queue_cutoff  = GET_ENV_SIZE_T("UNSENT_QUEUE_CUTOFF", 1024);
+    shm_ptr->beta_cubic           = GET_ENV_FLOAT("BETA_CUBIC", 0.7f);
+    shm_ptr->cubic_c              = GET_ENV_FLOAT("C", 0.4f);
+    shm_ptr->dup_ack_threshold    = GET_ENV_U32("DUP_ACK_THRESHOLD", 3);
+    shm_ptr->waker_page_size      = GET_ENV_SIZE_T("WAKER_PAGE_SIZE", 64);
+    shm_ptr->first_slot_size      = GET_ENV_SIZE_T("FIRST_SLOT_SIZE", 16);
+    shm_ptr->waker_bit_length_shift = GET_ENV_SIZE_T("WAKER_BIT_LENGTH_SHIFT", 6);
+    shm_ptr->fallback_mss         = GET_ENV_SIZE_T("FALLBACK_MSS", 536);
+    shm_ptr->receive_batch_size   = GET_ENV_SIZE_T("RECEIVE_BATCH_SIZE", 4);
+    shm_ptr->pop_size             = GET_ENV_SIZE_T("POP_SIZE", 1024);
+
+    shm_ptr->num_rx_pkts = 0;
+    shm_ptr->bytes_acked_per_sec = 0.0;
 }
 
 int main() {
@@ -195,12 +232,8 @@ int main() {
     DEBUG_LOG("Controller: Sent eventfd to feedback.rs\n");
 
     // Write initial config
-    shm_ptr->timer_resolution = 42;
-    shm_ptr->receive_batch_size = 4;
-    shm_ptr->rto_alpha = 0.456;
-    shm_ptr->num_rx_pkts = 0;
-    shm_ptr->bytes_acked_per_sec = 0.0;
-
+    initialize_parameters_from_env(shm_ptr);
+    
     uint64_t init_notify = 1;
     if (write(efd, &init_notify, sizeof(init_notify)) == -1) {
         perror("initial notify write");

@@ -3,7 +3,6 @@ use std::cell::RefCell;
 use std::env;
 
 pub const AK_MAX_RECEIVE_BATCH_SIZE: usize = 128;
-pub const POP_SIZE: usize = 9216;
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct AutokernelParameters {
@@ -45,8 +44,8 @@ thread_local! {
         first_slot_size: env::var("FIRST_SLOT_SIZE").ok().and_then(|v| v.parse().ok()).unwrap_or(16),
         waker_bit_length_shift: env::var("WAKER_BIT_LENGTH_SHIFT").ok().and_then(|v| v.parse().ok()).unwrap_or(6),
         fallback_mss: env::var("FALLBACK_MSS").ok().and_then(|v| v.parse().ok()).unwrap_or(536),
-        receive_batch_size: env::var("RECEIVE_BATCH_SIZE").ok().and_then(|v| v.parse().ok()).unwrap_or(100),
-        pop_size: env::var("POP_SIZE").ok().and_then(|v| v.parse().ok()).unwrap_or(POP_SIZE),
+        receive_batch_size: env::var("RECEIVE_BATCH_SIZE").ok().and_then(|v| v.parse().ok()).unwrap_or(4),
+        pop_size: env::var("POP_SIZE").ok().and_then(|v| v.parse().ok()).unwrap_or(1024),
     });
 }
 

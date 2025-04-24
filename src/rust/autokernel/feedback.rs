@@ -1,5 +1,6 @@
-use crate::autokernel::parameters::{get_param, AutokernelParameters};
+use crate::autokernel::parameters::{get_param, set_param, AutokernelParameters};
 use crate::autokernel::observations::{get_obs_param, AutokernelObservations};
+use crate::capy_log;
 
 use libc::{eventfd_write, mmap, shm_open, ftruncate, MAP_FAILED, MAP_SHARED, PROT_READ, PROT_WRITE};
 use nix::fcntl::OFlag;
@@ -151,26 +152,36 @@ pub fn write_feedback_and_notify() {
 
                     // Controller wrote something
                     let controller_snapshot = unsafe { *ptr };
-                    println!("📥 Controller wrote (via eventfd):");
-                    println!("  controller.timer_resolution = {}", controller_snapshot.parameters.timer_resolution);
-                    println!("  controller.receive_batch_size = {}", controller_snapshot.parameters.receive_batch_size);
-                    println!("  controller.num_rx_pkts = {:.2}", controller_snapshot.observations.num_rx_pkts);
-                    println!();
 
+                    // Compare with current thread-local parameter
+                    let current_batch_size = get_param(|p| p.receive_batch_size);
+                    let controller_batch_size = controller_snapshot.parameters.receive_batch_size;
+
+                    if current_batch_size != controller_batch_size {
+                        capy_log!("  Controller wrote (via eventfd):");
+                        capy_log!("  controller.receive_batch_size = {}", controller_batch_size);
+                    }
+
+                    // Apply controller-written values into thread-local parameters
+                    set_param(|p| *p = controller_snapshot.parameters);
+
+                    // Compose the new snapshot (with updated thread-local values + latest observations)
                     let new_snapshot = CombinedFeedback {
                         parameters: get_param(|p| *p),
                         observations: get_obs_param(|o| *o),
                     };
 
+                    // Write updated snapshot to shared memory
                     unsafe {
                         *ptr = new_snapshot;
                     }
 
+                    // Notify controller via eventfd
                     if unsafe { eventfd_write(efd, 1) } < 0 {
                         panic!("Failed to write back to eventfd");
                     }
 
-                    println!("Wrote back snapshot + notified controller.\n");
+                    // capy_log!("Wrote back snapshot + notified controller.\n");
                 } else {
                     panic!("EVENTFD not initialized");
                 }
