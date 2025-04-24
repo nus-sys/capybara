@@ -1,5 +1,5 @@
 use crate::autokernel::parameters::{get_param, set_param, AutokernelParameters};
-use crate::autokernel::observations::{get_obs_param, AutokernelObservations};
+use crate::autokernel::observations::{get_obs, AutokernelObservations};
 use crate::capy_log;
 
 use libc::{eventfd_write, mmap, shm_open, ftruncate, MAP_FAILED, MAP_SHARED, PROT_READ, PROT_WRITE};
@@ -168,7 +168,7 @@ pub fn write_feedback_and_notify() {
                     // Compose the new snapshot (with updated thread-local values + latest observations)
                     let new_snapshot = CombinedFeedback {
                         parameters: get_param(|p| *p),
-                        observations: get_obs_param(|o| *o),
+                        observations: get_obs(|o| *o),
                     };
 
                     // Write updated snapshot to shared memory

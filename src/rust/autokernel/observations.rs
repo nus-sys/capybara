@@ -17,14 +17,14 @@ thread_local! {
     });
 }
 
-pub fn get_obs_param<T, F>(f: F) -> T
+pub fn get_obs<T, F>(f: F) -> T
 where
     F: Fn(&AutokernelObservations) -> T,
 {
     AK_OBS.with(|obs| f(&obs.borrow()))
 }
 
-pub fn set_obs_param<F>(f: F)
+pub fn set_obs<F>(f: F)
 where
     F: Fn(&mut AutokernelObservations),
 {
