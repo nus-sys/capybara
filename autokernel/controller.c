@@ -10,6 +10,7 @@
 #include <sys/un.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <signal.h>
 
 //======================================================================
 // Logging System
@@ -66,6 +67,26 @@ typedef struct {
 
 #define SHM_SIZE sizeof(CombinedFeedback)
 
+int sockfd = -1, connfd = -1, shm_fd = -1, efd = -1;
+CombinedFeedback *shm_ptr = NULL;
+
+void cleanup() {
+    printf("Controller: Cleaning up...\n");
+    if (efd >= 0) close(efd);
+    if (connfd >= 0) close(connfd);
+    if (sockfd >= 0) close(sockfd);
+    if (shm_fd >= 0) close(shm_fd);
+    if (shm_ptr) munmap(shm_ptr, SHM_SIZE);
+    shm_unlink(SHM_NAME);
+    unlink(SOCKET_PATH);
+}
+
+void handle_signal(int sig) {
+    DEBUG_LOG("Controller: Caught signal %d, exiting...\n", sig);
+    cleanup();
+    exit(0);
+}
+
 int send_fd(int socket, int fd) {
     struct msghdr msg = {0};
     struct iovec io;
@@ -112,14 +133,19 @@ void run_inference(CombinedFeedback* shm_ptr) {
 int main() {
     init_debug(); // Initialize logging system
 
-    int sockfd, connfd;
+    // Register signal handlers
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
+
+    int sockfd_local, connfd_local;
     struct sockaddr_un addr;
 
-    sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (sockfd == -1) {
+    sockfd_local = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sockfd_local == -1) {
         perror("socket");
         return 1;
     }
+    sockfd = sockfd_local;
 
     unlink(SOCKET_PATH);
     memset(&addr, 0, sizeof(addr));
@@ -137,25 +163,26 @@ int main() {
     }
 
     DEBUG_LOG("Controller: Waiting for feedback.rs to connect...\n");
-    connfd = accept(sockfd, NULL, NULL);
-    if (connfd == -1) {
+    connfd_local = accept(sockfd, NULL, NULL);
+    if (connfd_local == -1) {
         perror("accept");
         return 1;
     }
+    connfd = connfd_local;
 
-    int shm_fd = shm_open(SHM_NAME, O_RDWR, 0666);
+    shm_fd = shm_open(SHM_NAME, O_RDWR, 0666);
     if (shm_fd == -1) {
         perror("shm_open");
         return 1;
     }
 
-    CombinedFeedback *shm_ptr = mmap(NULL, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    shm_ptr = mmap(NULL, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if (shm_ptr == MAP_FAILED) {
         perror("mmap");
         return 1;
     }
 
-    int efd = eventfd(0, EFD_NONBLOCK);
+    efd = eventfd(0, EFD_NONBLOCK);
     if (efd == -1) {
         perror("eventfd");
         return 1;
@@ -225,13 +252,7 @@ int main() {
         // sleep(1)
     }
 
-    close(efd);
-    close(connfd);
-    close(sockfd);
-    close(shm_fd);
-    munmap(shm_ptr, SHM_SIZE);
-    shm_unlink(SHM_NAME);
-    unlink(SOCKET_PATH);
+    cleanup();
 
     return 0;
 }
