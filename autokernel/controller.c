@@ -13,7 +13,6 @@
 #define SHM_NAME "/autokernel_feedback_shm"
 #define SOCKET_PATH "/tmp/eventfd_socket"
 
-// Struct must match Rust #[repr(C)]
 typedef struct {
     size_t timer_resolution;
     size_t max_recv_iters;
@@ -62,6 +61,25 @@ int send_fd(int socket, int fd) {
 
     memcpy(CMSG_DATA(cmsg), &fd, sizeof(fd));
     return sendmsg(socket, &msg, 0);
+}
+
+void run_inference(CombinedFeedback* shm_ptr) {
+    size_t current_rx = shm_ptr->num_rx_pkts;
+    size_t new_batch_size = shm_ptr->receive_batch_size;
+
+    if (current_rx <= 3) {
+        new_batch_size = 4;
+    } else if (current_rx <= 15) {
+        new_batch_size = 16;
+    } else if (current_rx == 63) {
+        new_batch_size = 64;
+    } else {
+        new_batch_size = 128;
+    }
+
+    shm_ptr->receive_batch_size = new_batch_size;
+
+    printf("📈 Inference adjusted receive_batch_size to %zu based on num_rx_pkts = %zu\n", new_batch_size, current_rx);
 }
 
 int main() {
@@ -120,36 +138,39 @@ int main() {
     }
     printf("Controller: Sent eventfd to feedback.rs\n");
 
-    // Step 1: Write initial parameters to shared memory
+    // Write initial config
     shm_ptr->timer_resolution = 42;
-    shm_ptr->receive_batch_size = 99;
+    shm_ptr->receive_batch_size = 4;
     shm_ptr->rto_alpha = 0.456;
     shm_ptr->num_rx_pkts = 0;
     shm_ptr->bytes_acked_per_sec = 0.0;
 
-    printf("Controller: Initial parameters written\n");
-    
     uint64_t init_notify = 1;
     if (write(efd, &init_notify, sizeof(init_notify)) == -1) {
         perror("initial notify write");
         return 1;
     }
-    printf("Controller: Sent initial notification to feedback.rs\n");
+    printf("Controller: Initial parameters written and notified\n");
 
     while (1) {
         uint64_t val;
+    
+        // Wait for a signal from feedback.rs via eventfd.
+        // This acts as a "new data available" notification.
         int res = read(efd, &val, sizeof(val));
         if (res == -1) {
             if (errno == EAGAIN) {
-                usleep(100000); // retry in 100ms
+                // No signal yet, avoid busy-waiting by sleeping briefly.
+                // usleep(100000);
                 continue;
             } else {
                 perror("read eventfd");
                 break;
             }
         }
-
-        // Step 2: Print feedback written by feedback.rs
+    
+        // At this point, feedback.rs has notified us that new data is ready.
+        // Proceed to read from the shared memory.
         printf("==== FEEDBACK RECEIVED ====\n");
         printf("Parameters:\n");
         printf("  timer_resolution: %zu\n", shm_ptr->timer_resolution);
@@ -159,23 +180,22 @@ int main() {
         printf("  num_rx_pkts: %zu\n", shm_ptr->num_rx_pkts);
         printf("  bytes_acked_per_sec: %.2f\n", shm_ptr->bytes_acked_per_sec);
         printf("===========================\n");
-
-        // Step 3: Rewrite the same values back to shared memory
-        shm_ptr->timer_resolution = shm_ptr->timer_resolution;
-        shm_ptr->receive_batch_size = shm_ptr->receive_batch_size;
-        shm_ptr->rto_alpha = shm_ptr->rto_alpha;
-        shm_ptr->num_rx_pkts = shm_ptr->num_rx_pkts;
-        shm_ptr->bytes_acked_per_sec = shm_ptr->bytes_acked_per_sec;
-
-        // Step 4: Notify feedback.rs
+    
+        // Apply logic to update parameters based on the feedback
+        run_inference(shm_ptr);
+    
+        // Notify feedback.rs that controller has processed the update
+        // and written new values into shared memory
         uint64_t notify = 1;
         if (write(efd, &notify, sizeof(notify)) == -1) {
             perror("notify feedback.rs");
             break;
         }
-
-        sleep(1);
+    
+        // Optional: sleep(1) could be used here to pace interactions if needed
+        // sleep(1)
     }
+    
 
     close(efd);
     close(connfd);
