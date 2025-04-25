@@ -12,6 +12,29 @@
 #include <stdarg.h>
 #include <signal.h>
 
+#ifdef PROFILE_INFERENCE
+#include <time.h>
+static uint64_t total_latency_ns = 0;
+static uint64_t inference_count = 0;
+
+#define PROFILE_INFER_START struct timespec _t0, _t1; clock_gettime(CLOCK_MONOTONIC, &_t0);
+#define PROFILE_INFER_END do { \
+    clock_gettime(CLOCK_MONOTONIC, &_t1); \
+    total_latency_ns += (_t1.tv_sec - _t0.tv_sec) * 1000000000ULL + (_t1.tv_nsec - _t0.tv_nsec); \
+    inference_count++; \
+} while (0)
+
+#define PRINT_PROFILE_SUMMARY() \
+    if (inference_count > 0) { \
+        fprintf(stderr, "run_inference: called %lu times, avg latency = %.2f µs\n", \
+            inference_count, total_latency_ns / (double)inference_count / 1000.0); \
+    }
+#else
+#define PROFILE_INFER_START
+#define PROFILE_INFER_END
+#define PRINT_PROFILE_SUMMARY()
+#endif
+
 //======================================================================
 // Logging System
 //======================================================================
@@ -82,7 +105,8 @@ void cleanup() {
 }
 
 void handle_signal(int sig) {
-    DEBUG_LOG("Controller: Caught signal %d, exiting...\n", sig);
+    printf("Controller: Caught signal %d, exiting...\n", sig);
+    PRINT_PROFILE_SUMMARY();
     cleanup();
     exit(0);
 }
@@ -125,7 +149,7 @@ void run_inference(CombinedFeedback* shm_ptr) {
         new_batch_size = 128;
     }
     if (shm_ptr->receive_batch_size != new_batch_size) {
-        printf("📈 Inference adjusted receive_batch_size from %zu to %zu (num_rx_pkts = %zu)\n",
+        DEBUG_LOG("📈 Inference adjusted receive_batch_size from %zu to %zu (num_rx_pkts = %zu)\n",
                   shm_ptr->receive_batch_size, new_batch_size, current_rx);
         shm_ptr->receive_batch_size = new_batch_size;
     }
@@ -271,7 +295,9 @@ int main() {
         DEBUG_LOG("===========================\n");
 
         // Apply logic to update parameters based on the feedback
+        PROFILE_INFER_START;
         run_inference(shm_ptr);
+        PROFILE_INFER_END;
 
         // Notify feedback.rs that controller has processed the update
         // and written new values into shared memory
