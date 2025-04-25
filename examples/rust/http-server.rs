@@ -34,6 +34,8 @@ use ::demikernel::capy_time_log;
 
 #[cfg(feature = "profiler")]
 use ::demikernel::perftools::profiler;
+use std::sync::atomic::{AtomicBool, Ordering};
+static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 use colored::Colorize;
 
@@ -143,34 +145,6 @@ impl ApplicationState for Buffer {
 }
 
 fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
-    /* let data_str = std::str::from_utf8(data).unwrap();
-    let data_str = String::from_utf8_lossy(data);
-    let data_str = unsafe { std::str::from_utf8_unchecked(&data[..]) };
-
-    let mut file_name = data_str
-            .split_whitespace()
-            .nth(1)
-            .and_then(|file_path| {
-                let mut path_parts = file_path.split('/');
-                path_parts.next().and_then(|_| path_parts.next())
-            })
-            .unwrap_or("index.html");
-    if file_name == "" {
-        file_name = "index.html";
-    }
-    let full_path = format!("{}/{}", ROOT, file_name);
-    
-    let response = match std::fs::read_to_string(full_path.as_str()) {
-        Ok(mut contents) => {
-            // contents.push_str(unsafe { START_TIME.as_ref().unwrap().elapsed() }.as_nanos().to_string().as_str());
-            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", contents.len(), contents)
-        },
-        Err(_) => format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n"),
-    }; 
-
-    server_log!("PUSH: {}", response.lines().next().unwrap_or(""));
-    libos.push2(qd, response.as_bytes()).expect("push success") */    
-
     #[cfg(not(feature = "server-reply-analysis"))]
     {
         lazy_static! {
@@ -367,7 +341,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
         eprintln!("Received Ctrl-C signal.");
         // LibOS::dpdk_print_eth_stats();
         // LibOS::capylog_dump(&mut std::io::stderr().lock());
-        std::process::exit(0);
+        SHUTDOWN.store(true, Ordering::SeqCst);
+
+        // std::process::exit(0);
     }).expect("Error setting Ctrl-C handler");
     // unsafe { START_TIME = Some(Instant::now()); }
 
@@ -394,8 +370,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
     let mut indices: Vec<usize> = Vec::with_capacity(2000);
     indices.resize(2000, 0);
     
-    loop {
-        let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, None).expect("result");
+    while !SHUTDOWN.load(Ordering::SeqCst) {
+        let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, Some(Duration::from_secs(1))).expect("result");
 
         /* let mut pop_count = completed_results.iter().filter(|(_, _, result)| {
             matches!(result, OperationResult::Pop(_, _))
@@ -555,38 +531,13 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 },
             }
         }
-        // #[cfg(feature = "profiler")]
-        // profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
-        
         server_log!("******* APP: Okay, handled the results! *******");
     }
 
     eprintln!("server stopping");
 
-    /* #[cfg(feature = "tcp-migration")]
-    // Get the length of the vector
-    let vec_len = queue_length_vec.len();
-
-    // Calculate the starting index for the last 10,000 elements
-    let start_index = if vec_len >= 5_000 {
-        vec_len - 5_000
-    } else {
-        0 // If the vector has fewer than 10,000 elements, start from the beginning
-    };
-
-    // Create a slice of the last 10,000 elements
-    let last_10_000 = &queue_length_vec[start_index..];
-
-    // Iterate over the slice and print the elements
-    let mut cnt = 0;
-    for (idx, qlen) in last_10_000.iter() {
-        println!("{},{}", cnt, qlen);
-        cnt+=1;
-    } */
     #[cfg(feature = "tcp-migration")]
     demi_print_queue_length_log();
-
-    LibOS::capylog_dump(&mut std::io::stderr().lock());
 
     #[cfg(feature = "profiler")]
     profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");

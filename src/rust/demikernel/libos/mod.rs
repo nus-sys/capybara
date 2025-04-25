@@ -26,8 +26,11 @@ use crate::{
         QDesc,
         QToken,
     },
-    autokernel::feedback::init_feedback, 
 };
+
+#[cfg(feature = "autokernel")]
+use crate::autokernel::feedback::init_feedback;
+
 use std::{cell::RefCell, os::raw::c_void, rc::Rc, time::Duration};
 use ::std::{
     env,
@@ -66,6 +69,7 @@ impl LibOS {
         logging::initialize();
         crate::capylog::init();
 
+        #[cfg(feature = "autokernel")]
         init_feedback();
 
         assert_eq!(unsafe { libc::atexit(exit_dump) }, 0, "atexit() call failed");
