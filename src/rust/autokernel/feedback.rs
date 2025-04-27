@@ -14,6 +14,9 @@ use std::ptr;
 use std::thread;
 use std::time::Duration;
 
+#[cfg(feature = "profiler")]
+use crate::timer;
+
 //==============================================================================
 // Constants and Structs
 //==============================================================================
@@ -134,6 +137,9 @@ pub fn init_feedback() {
 use libc::eventfd_read;
 
 pub fn write_feedback_and_notify() {
+    #[cfg(feature = "profiler")]{
+        timer!("autokernel::write_feedback_and_notify");
+    }
     SHM_PTR.with(|shm_cell| {
         if let Some(ptr) = *shm_cell.borrow() {
             EVENTFD.with(|efd_cell| {

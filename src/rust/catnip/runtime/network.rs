@@ -155,8 +155,6 @@ impl NetworkRuntime for DPDKRuntime {
         assert!(nb_rx as usize <= RECEIVE_BATCH_SIZE);
 
         {
-            #[cfg(feature = "profiler")]
-            timer!("catnip_libos:receive::for");
             for &packet in &packets[..nb_rx as usize] {
                 let mbuf: DPDKBuffer = DPDKBuffer::new(packet);
                 let buf: Buffer = Buffer::DPDK(mbuf);
@@ -172,6 +170,8 @@ impl NetworkRuntime for DPDKRuntime {
         let mut out = ArrayVec::new();
         let mut packets: [*mut rte_mbuf; 4] = unsafe { mem::zeroed() };
         let nb_rx = unsafe {
+            #[cfg(feature = "profiler")]
+            timer!("catnip_libos::receive::rte_eth_rx_burst");
             rte_eth_rx_burst(self.port_id, self.queue_id*2, packets.as_mut_ptr(), 4 as u16)
         };
         assert!(nb_rx as usize <= 4);
@@ -191,6 +191,8 @@ impl NetworkRuntime for DPDKRuntime {
         let mut out = ArrayVec::new();
         let mut packets: [*mut rte_mbuf; 16] = unsafe { mem::zeroed() };
         let nb_rx = unsafe {
+            #[cfg(feature = "profiler")]
+            timer!("catnip_libos::receive::rte_eth_rx_burst");
             rte_eth_rx_burst(self.port_id, self.queue_id*2, packets.as_mut_ptr(), 16 as u16)
         };
         assert!(nb_rx as usize <= 16);
@@ -210,6 +212,8 @@ impl NetworkRuntime for DPDKRuntime {
         let mut out = ArrayVec::new();
         let mut packets: [*mut rte_mbuf; 64] = unsafe { mem::zeroed() };
         let nb_rx = unsafe {
+            #[cfg(feature = "profiler")]
+            timer!("catnip_libos::receive::rte_eth_rx_burst");
             rte_eth_rx_burst(self.port_id, self.queue_id*2, packets.as_mut_ptr(), 64 as u16)
         };
         assert!(nb_rx as usize <= 64);
@@ -229,6 +233,8 @@ impl NetworkRuntime for DPDKRuntime {
         let mut out = ArrayVec::new();
         let mut packets: [*mut rte_mbuf; 128] = unsafe { mem::zeroed() };
         let nb_rx = unsafe {
+            #[cfg(feature = "profiler")]
+            timer!("catnip_libos::receive::rte_eth_rx_burst");
             rte_eth_rx_burst(self.port_id, self.queue_id*2, packets.as_mut_ptr(), 128 as u16)
         };
         assert!(nb_rx as usize <= 128);
@@ -257,8 +263,6 @@ impl NetworkRuntime for DPDKRuntime {
         assert!(nb_rx as usize <= get_param(|p| p.receive_batch_size));
 
         {
-            #[cfg(feature = "profiler")]
-            timer!("catnip_libos:receive::for");
             for &packet in &packets[..nb_rx as usize] {
                 let mbuf: DPDKBuffer = DPDKBuffer::new(packet);
                 let buf: Buffer = Buffer::DPDK(mbuf);
@@ -293,8 +297,6 @@ impl DPDKRuntime {
         assert!(nb_rx as usize <= RECEIVE_BATCH_SIZE);
 
         {
-            #[cfg(feature = "profiler")]
-            timer!("catnip_libos:receive::for");
             for &packet in &packets[..nb_rx as usize] {
                 let mbuf: DPDKBuffer = DPDKBuffer::new(packet);
                 let buf: Buffer = Buffer::DPDK(mbuf);

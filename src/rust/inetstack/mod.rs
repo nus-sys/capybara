@@ -73,7 +73,11 @@ use crate::capy_log;
 use chrono::NaiveTime;
 
 #[cfg(feature = "autokernel")]
-use crate::autokernel::parameters::{get_param, controller_test};
+use crate::autokernel::{
+    parameters::get_param,
+    observations::set_obs,
+    feedback::write_feedback_and_notify,
+};
 
 //==============================================================================
 // Exports
@@ -853,8 +857,10 @@ impl InetStack {
             // if self.is_poll_ok() {
             //     self.scheduler.poll();
             // }
-            // #[cfg(feature = "autokernel")]
-            // controller_test();
+
+            #[cfg(feature = "autokernel")]
+            write_feedback_and_notify();
+            
             self.scheduler.poll();
         }
         // }
@@ -972,7 +978,7 @@ impl InetStack {
             if batch.is_empty() {
                 break;
             }
-
+            let num_rx = batch.len();
             for pkt in batch {
                 capy_log!("[RX] pkt");
                 // self.pkt_received = true;
@@ -980,99 +986,45 @@ impl InetStack {
                     warn!("Dropped packet: {:?}", e);
                 }
             }
-            // capy_time_log!("{}", batch.len());
+            capy_time_log!("{}", num_rx);
         }
 
         #[cfg(feature = "autokernel")]
         for _ in 0..recv_iters {
-            match self.batch_size {
-                4 => {
-                    let batch: ArrayVec<Buffer, 4> = self.rt.receive_4().into_iter().collect();
-        
-                    if self.poll_cnt % self.tune_granularity == 0 {
-                        self.batch_size = self.predict_batch_size(batch.len());
-                        // capy_time_log!("TUNE");
+            macro_rules! handle_batch {
+                ($batch:expr) => {{
+                    let batch = $batch;
+                    
+                    let num_rx = batch.len();
+                    set_obs(|obs| {
+                        obs.num_rx_pkts = num_rx;
+                    });
+
+                    if batch.is_empty() {
+                        break;
                     }
                     
-                    if batch.is_empty() {
-                        break;
-                    }
-                    self.poll_cnt += 1;
-        
-                    // capy_time_log!("{}", batch.len());
-                    for pkt in batch {
-                        capy_log!("[RX] pkt");
-                        if let Err(e) = self.do_receive(pkt) {
-                            warn!("Dropped packet: {:?}", e);
-                        }
-                    }
-                },
-                16 => {
-                    let batch: ArrayVec<Buffer, 16> = self.rt.receive_16().into_iter().collect();
-        
-                    if self.poll_cnt % self.tune_granularity == 0 {
-                        self.batch_size = self.predict_batch_size(batch.len());
-                        // capy_time_log!("TUNE");
-                    }
-        
-                    if batch.is_empty() {
-                        break;
-                    }
+                    capy_time_log!("{}", num_rx);
 
-                    self.poll_cnt += 1;
-                    // capy_time_log!("{}", batch.len());
                     for pkt in batch {
                         capy_log!("[RX] pkt");
                         if let Err(e) = self.do_receive(pkt) {
                             warn!("Dropped packet: {:?}", e);
                         }
                     }
-                },
-                64 => {
-                    let batch: ArrayVec<Buffer, 64> = self.rt.receive_64().into_iter().collect();
-        
-                    if self.poll_cnt % self.tune_granularity == 0 {
-                        self.batch_size = self.predict_batch_size(batch.len());
-                        // capy_time_log!("TUNE");
-                    }
-        
-                    if batch.is_empty() {
-                        break;
-                    }
-
-                    self.poll_cnt += 1;
-                    capy_time_log!("{}", batch.len());
-                    for pkt in batch {
-                        capy_log!("[RX] pkt");
-                        if let Err(e) = self.do_receive(pkt) {
-                            warn!("Dropped packet: {:?}", e);
-                        }
-                    }
-                },
-                128 => {
-                    let batch: ArrayVec<Buffer, 128> = self.rt.receive_128().into_iter().collect();
-        
-                    if self.poll_cnt % self.tune_granularity == 0 {
-                        self.batch_size = self.predict_batch_size(batch.len());
-                        // capy_time_log!("TUNE");
-                    }
-        
-                    if batch.is_empty() {
-                        break;
-                    }
-                    self.poll_cnt += 1;
-                    // capy_time_log!("{}", batch.len());
-                    for pkt in batch {
-                        capy_log!("[RX] pkt");
-                        if let Err(e) = self.do_receive(pkt) {
-                            warn!("Dropped packet: {:?}", e);
-                        }
-                    }
-                },
-                _ => {
-                    unreachable!("Invalid batch size");
-                },
-            };
+                }};
+            }
+            {
+                #[cfg(feature = "profiler")]
+                timer!("inetstack::poll_bg_work::for::receive");
+                match get_param(|p| p.receive_batch_size)  {
+                    4 => handle_batch!(self.rt.receive_4().into_iter().collect::<ArrayVec<_, 4>>()),
+                    16 => handle_batch!(self.rt.receive_16().into_iter().collect::<ArrayVec<_, 16>>()),
+                    64 => handle_batch!(self.rt.receive_64().into_iter().collect::<ArrayVec<_, 64>>()),
+                    128 => handle_batch!(self.rt.receive_128().into_iter().collect::<ArrayVec<_, 128>>()),
+                    _ => unreachable!("Invalid batch size"),
+                };
+            }
         }
         
     }

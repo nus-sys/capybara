@@ -150,11 +150,12 @@ impl Scope {
         }
         writeln!(
             out,
-            "{: <60} {: >6.2}%, {: >18.4} cycles, {: >18.4} ns",
+            "{: <60} {: >6.2}%, {: >18.4} cycles, {: >18.4} ns, {: >10} calls",
             format!(" {}  {}", markers, self.name),
             percent,
             duration_sum_secs / (self.num_calls as f64),
             duration_sum_secs / (self.num_calls as f64) * ns_per_cycle,
+            self.num_calls,
         )?;
 
         // Write children
