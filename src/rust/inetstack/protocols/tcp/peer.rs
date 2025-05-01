@@ -805,6 +805,7 @@ impl Inner {
                             #[cfg(feature = "autokernel")]
                             &mut self.total_bytes_acknowledged,
                         );
+            #[cfg(feature = "autokernel")]
             capy_log!("self.total_bytes_acknowledged: {}", self.total_bytes_acknowledged);
             if s.is_closed() {
                 self.established.remove(&key);

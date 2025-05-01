@@ -110,17 +110,20 @@ impl fmt::Debug for Sender {
 }
 
 impl Sender {
-    pub fn new(seq_no: SeqNumber, send_window: u32, window_scale: u8, mss: usize) -> Self {
+    pub fn new(sender_seq_no: SeqNumber, receiver_seq_no: SeqNumber,  send_window: u32, window_scale: u8, mss: usize) -> Self {
+        eprintln!("Sender::new(), sender_seq_no: {}, receiver_seq_no: {}, send_window: {}, window_scale: {}",
+        sender_seq_no, receiver_seq_no, send_window, window_scale
+        );
         Self {
-            send_unacked: WatchedValue::new(seq_no),
+            send_unacked: WatchedValue::new(sender_seq_no),
             unacked_queue: RefCell::new(VecDeque::new()),
-            send_next: WatchedValue::new(seq_no),
+            send_next: WatchedValue::new(sender_seq_no),
             unsent_queue: RefCell::new(VecDeque::new()),
-            unsent_seq_no: WatchedValue::new(seq_no),
+            unsent_seq_no: WatchedValue::new(sender_seq_no),
 
-            send_window: WatchedValue::new(send_window),
-            send_window_last_update_seq: Cell::new(seq_no),
-            send_window_last_update_ack: Cell::new(seq_no),
+            send_window: WatchedValue::new(send_window*64),
+            send_window_last_update_seq: Cell::new(receiver_seq_no),
+            send_window_last_update_ack: Cell::new(sender_seq_no),
 
             window_scale,
             mss,
@@ -254,7 +257,7 @@ impl Sender {
             header.psh = true;
         }
         trace!("Send immediate");
-        capy_log!("SEND immediate");
+        capy_log!("SEND immediate, mss: {}", self.mss);
         if let Some(remote_link_addr) = cb.arp().try_query(cb.get_remote().ip().clone()) {
             cb.emit(header, Some(segment_data.clone()), remote_link_addr);
         }else{
