@@ -283,7 +283,7 @@ impl ControlBlock {
         congestion_control_options: Option<congestion_control::Options>,
     ) -> Self {
         capy_log!("Creating ControlBlock");
-        let sender = Sender::new(sender_seq_no, sender_window_size, sender_window_scale, sender_mss);
+        let sender = Sender::new(sender_seq_no, receiver_seq_no, sender_window_size, sender_window_scale, sender_mss);
 
         #[cfg(feature = "tcp-migration")]
         let recv_queue_stats = StatsHandle::new((local, remote));
