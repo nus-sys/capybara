@@ -55,7 +55,7 @@ macro_rules! server_log {
 //=====================================================================================
 
 const ROOT: &str = "/var/www/demo";
-const BUFSZ: usize = 4096;
+const BUFSZ: usize = 8192 * 2;
 
 static mut START_TIME: Option<Instant> = None;
 static mut SERVER_PORT: u16 = 0;
