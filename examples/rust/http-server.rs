@@ -57,7 +57,7 @@ macro_rules! server_log {
 //=====================================================================================
 
 const ROOT: &str = "/var/www/demo";
-const BUFSZ: usize = 4096;
+const BUFSZ: usize = 8192 * 2;
 
 static mut START_TIME: Option<Instant> = None;
 static mut SERVER_PORT: u16 = 0;
@@ -160,7 +160,7 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
                     Ok(contents) => {
                         let extra_bytes = "A".repeat((*N).saturating_sub(contents.len()));
                         let full_contents = format!("{}{}", contents, extra_bytes);
-                        // server_log!("full_contents len: {}", full_contents.len());
+                        server_log!("full_contents len: {}", full_contents.len());
                         format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", full_contents.len(), full_contents)
                     },
                     Err(_) => {
