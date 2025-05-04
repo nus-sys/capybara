@@ -38,6 +38,7 @@ use crate::{
             types::MacAddress,
             NetworkRuntime,
         },
+        memory::Buffer,
         timer::TimerRc,
     },
     scheduler::{
@@ -180,10 +181,17 @@ impl PassiveSocket {
         self.ready.borrow_mut().poll(ctx)
     }
 
-    pub fn receive(&mut self, ip_header: &Ipv4Header, header: &TcpHeader) -> Result<(), Fail> {
+    pub fn receive(&mut self, ip_header: &Ipv4Header, header: &mut TcpHeader, data: Buffer) -> Result<(), Fail> {
         let remote = SocketAddrV4::new(ip_header.get_src_addr(), header.src_port);
         if self.ready.borrow().endpoints.contains(&remote) {
-            // TODO: What should we do if a packet shows up for a connection that hasn't been `accept`ed yet?
+            if let Some(Ok(cb)) = self.ready.borrow_mut().ready.front_mut() {
+                cb.receive(
+                    header,
+                    data,
+                    #[cfg(feature = "autokernel")]
+                    total_bytes_acknowledged,
+                );
+            }
             capy_log!("This conn is ready");
             return Ok(());
         }
@@ -250,6 +258,15 @@ impl PassiveSocket {
                 congestion_control::None::new,
                 None,
             );
+            if data.len() > 0 {
+                capy_log!("Received data {} bytes with handshake ACK", data.len());
+                cb.receive(
+                    header,
+                    data,
+                    #[cfg(feature = "autokernel")]
+                    total_bytes_acknowledged,
+                );
+            }
             self.ready.borrow_mut().push_ok(cb);
             return Ok(());
         }
