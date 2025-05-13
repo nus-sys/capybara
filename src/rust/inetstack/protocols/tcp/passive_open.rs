@@ -184,6 +184,7 @@ impl PassiveSocket {
     pub fn receive(&mut self, ip_header: &Ipv4Header, header: &mut TcpHeader, data: Buffer) -> Result<(), Fail> {
         let remote = SocketAddrV4::new(ip_header.get_src_addr(), header.src_port);
         if self.ready.borrow().endpoints.contains(&remote) {
+            capy_log!("This conn is ready (remote: {})", remote);
             if let Some(Ok(cb)) = self.ready.borrow_mut().ready.front_mut() {
                 cb.receive(
                     header,
@@ -192,7 +193,6 @@ impl PassiveSocket {
                     total_bytes_acknowledged,
                 );
             }
-            capy_log!("This conn is ready");
             return Ok(());
         }
         let inflight_len = self.inflight.len();
@@ -238,6 +238,7 @@ impl PassiveSocket {
             );
             capy_log!("Removing PassiveSocket");
             self.inflight.remove(&remote);
+            capy_log!("advertised mss: {}", mss);
             let cb = ControlBlock::new(
                 self.local,
                 remote,
@@ -311,14 +312,15 @@ impl PassiveSocket {
                 get_param(|p| p.fallback_mss)
             }
         };
+        capy_log!("configured mss: {}", mss);
         for option in header.iter_options() {
             match option {
                 TcpOptions2::WindowScale(w) => {
-                    info!("Received window scale: {:?}", w);
+                    capy_log!("Received window scale: {:?}", w);
                     remote_window_scale = Some(*w);
                 },
                 TcpOptions2::MaximumSegmentSize(m) => {
-                    info!("Received advertised MSS: {}", m);
+                    capy_log!("Received advertised MSS: {}", m);
                     mss = *m as usize;
                 },
                 _ => continue,
