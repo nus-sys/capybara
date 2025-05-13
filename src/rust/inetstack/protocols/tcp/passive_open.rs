@@ -76,6 +76,8 @@ use crate::capy_log;
 #[cfg(feature = "autokernel")]
 use crate::autokernel::parameters::get_param;
 
+use indexmap::IndexMap;
+
 struct InflightAccept {
     local_isn: SeqNumber,
     remote_isn: SeqNumber,
@@ -88,39 +90,34 @@ struct InflightAccept {
 }
 
 struct ReadySockets {
-    ready: VecDeque<Result<ControlBlock, Fail>>,
-    endpoints: HashSet<SocketAddrV4>,
+    ready: IndexMap<SocketAddrV4, Result<ControlBlock, Fail>>,
     waker: Option<Waker>,
 }
 
 impl ReadySockets {
     fn push_ok(&mut self, cb: ControlBlock) {
-        assert!(self.endpoints.insert(cb.get_remote()));
-        self.ready.push_back(Ok(cb));
+        let remote = cb.get_remote();
+        let inserted = self.ready.insert(remote, Ok(cb));
+        assert!(inserted.is_none());
         if let Some(w) = self.waker.take() {
-            w.wake()
+            w.wake();
         }
     }
 
-    fn push_err(&mut self, err: Fail) {
-        self.ready.push_back(Err(err));
+    fn push_err(&mut self, remote: SocketAddrV4, err: Fail) {
+        let inserted = self.ready.insert(remote, Err(err));
+        assert!(inserted.is_none()); // optional: detect logic bugs
         if let Some(w) = self.waker.take() {
-            w.wake()
+            w.wake();
         }
     }
 
     fn poll(&mut self, ctx: &mut Context) -> Poll<Result<ControlBlock, Fail>> {
-        let r = match self.ready.pop_front() {
-            Some(r) => r,
-            None => {
-                self.waker.replace(ctx.waker().clone());
-                return Poll::Pending;
-            },
-        };
-        if let Ok(ref cb) = r {
-            assert!(self.endpoints.remove(&cb.get_remote()));
+        if let Some((_addr, r)) = self.ready.shift_remove_index(0) {
+            return Poll::Ready(r);
         }
-        Poll::Ready(r)
+        self.waker.replace(ctx.waker().clone());
+        Poll::Pending
     }
 
     fn len(&self) -> usize {
@@ -157,8 +154,7 @@ impl PassiveSocket {
         nonce: u32,
     ) -> Self {
         let ready = ReadySockets {
-            ready: VecDeque::new(),
-            endpoints: HashSet::new(),
+            ready: IndexMap::new(),
             waker: None,
         };
         let ready = Rc::new(RefCell::new(ready));
@@ -183,9 +179,9 @@ impl PassiveSocket {
 
     pub fn receive(&mut self, ip_header: &Ipv4Header, header: &mut TcpHeader, data: Buffer) -> Result<(), Fail> {
         let remote = SocketAddrV4::new(ip_header.get_src_addr(), header.src_port);
-        if self.ready.borrow().endpoints.contains(&remote) {
+        if self.ready.borrow().ready.contains_key(&remote) {
             capy_log!("This conn is ready (remote: {})", remote);
-            if let Some(Ok(cb)) = self.ready.borrow_mut().ready.front_mut() {
+            if let Some(Ok(cb)) = self.ready.borrow_mut().ready.get_mut(&remote) {
                 cb.receive(
                     header,
                     data,
@@ -392,7 +388,8 @@ impl PassiveSocket {
                 clock.wait(clock.clone(), handshake_timeout).await;
             }
             eprintln!("WARNING: handshake timeout");
-            // ready.borrow_mut().push_err(Fail::new(ETIMEDOUT, "handshake timeout"));
+            ready.borrow_mut().push_err(remote, Fail::new(ETIMEDOUT, "handshake timeout"));
+
         }
     }
 }
