@@ -150,45 +150,23 @@ fn respond_to_request(libos: &mut LibOS, qd: QDesc, data: &[u8]) -> QToken {
         lazy_static! {
             static ref N: usize = {
                 env::var("DATA_SIZE")
-                    .unwrap_or_else(|_| "0".to_string())
+                    .unwrap_or_else(|_| "0".to_string()) // Fallback to 0 if not set
                     .parse()
                     .expect("DATA_SIZE must be a valid number")
             };
-            
             static ref RESPONSE: String = {
-                let mut body = String::new();
-                let mut i = 1;
-            
-                loop {
-                    let next = if body.is_empty() {
-                        format!("{}", i)
-                    } else {
-                        format!(",{}", i)
-                    };
-                    let projected_len = {
-                        let header = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len() + next.len());
-                        header.len() + body.len() + next.len()
-                    };
-            
-                    if projected_len > *N {
-                        break;
-                    }
-            
-                    body.push_str(&next);
-                    i += 1;
+                let file_path = format!("{}/{}", ROOT, "index.html");
+                match std::fs::read_to_string(file_path) {
+                    Ok(contents) => {
+                        let extra_bytes = "A".repeat((*N).saturating_sub(contents.len()));
+                        let full_contents = format!("{}{}", contents, extra_bytes);
+                        server_log!("full_contents len: {}", full_contents.len());
+                        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", full_contents.len(), full_contents)
+                    },
+                    Err(_) => {
+                        format!("HTTP/1.1 404 NOT FOUND\r\n\r\nDebug: Invalid path\n")
+                    },
                 }
-            
-                let header = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
-                let mut response = header + &body;
-            
-                // Pad with spaces if response is a few bytes short
-                if response.len() < *N {
-                    response.push_str(&" ".repeat(*N - response.len()));
-                }
-            
-                server_log!("Final response size: {}", response.len());
-                // server_log!("Final response {:?}", response);
-                response
             };
         }
         
