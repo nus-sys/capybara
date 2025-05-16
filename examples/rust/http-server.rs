@@ -369,6 +369,7 @@ fn server(local: SocketAddrV4) -> Result<()> {
     qrs.resize_with(2000, || (0.into(), OperationResult::Connect));
     let mut indices: Vec<usize> = Vec::with_capacity(2000);
     indices.resize(2000, 0);
+    let mut to_remove: Vec<usize> = Vec::with_capacity(2000);
     
     while !SHUTDOWN.load(Ordering::SeqCst) {
         let result_count = libos.wait_any2(&qts, &mut qrs, &mut indices, Some(Duration::from_secs(1))).expect("result");
@@ -388,10 +389,12 @@ fn server(local: SocketAddrV4) -> Result<()> {
 
         let results = &qrs[..result_count];
         let indices = &indices[..result_count];
+        to_remove.clear();
 
         for (index, (qd, result)) in indices.iter().zip(results.iter()).rev() {
             let (index, qd) = (*index, *qd);
-            qts.swap_remove(index);
+            // qts.swap_remove(index);
+            to_remove.push(index); // Since the scheduler changes the order of qrs the above approach won't work
 
             #[cfg(feature = "manual-tcp-migration")]
             let mut should_migrate_this_qd = false;
@@ -531,6 +534,13 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 },
             }
         }
+        
+        // Remove handled qr's
+        to_remove.sort();
+        for &index in to_remove.iter().rev() {
+            qts.swap_remove(index);
+        }
+
         server_log!("******* APP: Okay, handled the results! *******");
     }
 

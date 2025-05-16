@@ -47,7 +47,7 @@ use ::libc::{
     ENOTSUP,
 };
 
-use std::{cell::RefCell, collections::HashSet, time::Duration};
+use std::{cell::RefCell, collections::HashSet, time::Duration, ops::Fn, cmp::Ordering};
 use ::std::{
     any::Any,
     convert::TryFrom,
@@ -100,6 +100,49 @@ const TIMER_RESOLUTION: usize = 64;
 const MAX_RECV_ITERS: usize = 2;
 
 //==============================================================================
+// Scheduler Policy Parameter
+//==============================================================================
+pub enum SchedulerPolicy {
+    None = 0,
+    PrioritizeMice = 1,
+    PrioritizeElephant = 2,
+}
+
+impl SchedulerPolicy {
+    pub fn get_comparator(&self) -> impl Fn(&(QDesc, OperationResult), &(QDesc, OperationResult)) -> Ordering {
+        match self {
+            SchedulerPolicy::None => {
+                move |_: &(QDesc, OperationResult), _: &(QDesc, OperationResult)| Ordering::Equal
+            }
+            SchedulerPolicy::PrioritizeMice => {
+                move |a: &(QDesc, OperationResult), b: &(QDesc, OperationResult)| {
+                    match (&a.1, &b.1) {
+                        (OperationResult::Pop(_, a_buf), OperationResult::Pop(_, b_buf)) => {
+                            a_buf.len().cmp(&b_buf.len())
+                        }
+                        (OperationResult::Pop(_, _), _) => Ordering::Greater,
+                        (_, OperationResult::Pop(_, _)) => Ordering::Less,
+                        _ => Ordering::Equal
+                    }
+                }
+            },
+            SchedulerPolicy::PrioritizeElephant => {
+                move |a: &(QDesc, OperationResult), b: &(QDesc, OperationResult)| {
+                    match (&a.1, &b.1) {
+                        (OperationResult::Pop(_, a_buf), OperationResult::Pop(_, b_buf)) => {
+                            b_buf.len().cmp(&a_buf.len())
+                        }
+                        (OperationResult::Pop(_, _), _) => Ordering::Less,
+                        (_, OperationResult::Pop(_, _)) => Ordering::Greater,
+                        _ => Ordering::Equal
+                    }
+                }
+            }
+        }
+    }
+}
+
+//==============================================================================
 // InetStack
 //==============================================================================
 
@@ -117,7 +160,8 @@ pub struct InetStack {
     pkt_received: bool,
     #[cfg(feature = "tcp-migration")]
     tcpmig_state: TcpMigState,
-
+    
+    scheduler_policy: SchedulerPolicy,
     batch_size: usize,
     poll_cnt: usize,
     tune_granularity: usize,
@@ -186,6 +230,7 @@ impl InetStack {
             pkt_received: false,
             #[cfg(feature = "tcp-migration")]
             tcpmig_state,
+            scheduler_policy: SchedulerPolicy::None,
             batch_size: 4,
             poll_cnt: 0,
             tune_granularity: std::env::var("TUNE_GRANULARITY").unwrap_or("1".to_string()).parse::<usize>().unwrap(),
@@ -632,6 +677,7 @@ impl InetStack {
             }
 
             if completed > 0 {
+                self.priority_scheduler(qrs, indices, completed);
                 return Ok(completed);
             }
 
@@ -639,6 +685,35 @@ impl InetStack {
                 if timeout <= begin.elapsed() {
                     return Ok(0);
                 }
+            }
+        }
+    }
+
+    fn priority_scheduler(&self, qrs: &mut [(QDesc, OperationResult)], indices: &mut [usize], completed: usize) {
+        if let SchedulerPolicy::None = self.scheduler_policy {
+            return;
+        }
+
+        let qrs_slice = &mut qrs[..completed];
+        let indices_slice = &mut indices[..completed];
+
+        let compare = self.scheduler_policy.get_comparator();
+
+        let mut idx: Vec<usize> = (0..completed).collect();
+        idx.sort_by(|&i, &j| compare(&qrs_slice[i], &qrs_slice[j]));
+
+        let mut inv_idx: Vec<usize> = vec![0; completed];
+        for i in 0..completed {
+            inv_idx[idx[i]] = i;
+        }
+
+        for i in 0..completed {
+            while i != inv_idx[i] {
+                let new_i = inv_idx[i];
+                inv_idx.swap(i, new_i);
+
+                qrs_slice.swap(i, new_i);
+                indices_slice.swap(i, new_i);
             }
         }
     }
