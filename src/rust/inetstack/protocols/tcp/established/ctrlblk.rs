@@ -73,7 +73,7 @@ use rand::rngs::StdRng;
 use crate::inetstack::protocols::tcp::stats::StatsHandle;
 
 #[cfg(feature = "autokernel")]
-use crate::autokernel::parameters::{get_param, POP_SIZE};
+use crate::autokernel::parameters::{get_param};
 
 // ToDo: Review this value (and its purpose).  It (2048 segments) of 8 KB jumbo packets would limit the unread data to
 // just 16 MB.  If we don't want to lie, that is also about the max window size we should ever advertise.  Whereas TCP
@@ -585,9 +585,8 @@ impl ControlBlock {
         if seg_len > 0 {
             seg_end = seg_start + SeqNumber::from(seg_len - 1);
         }
-        capy_log!("seg_len: {}", seg_len);
-            
         let receive_next: SeqNumber = self.receiver.receive_next.get();
+        capy_log!("seg_len: {}, seg_start: {}, seg_end: {}, receive_next: {}", seg_len, seg_start, seg_end, receive_next);
 
         let after_receive_window: SeqNumber = receive_next + SeqNumber::from(self.get_receive_window_size());
         capy_log!("RX WINDOW SIZE: {}", self.get_receive_window_size());

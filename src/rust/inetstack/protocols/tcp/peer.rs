@@ -862,7 +862,13 @@ impl Inner {
         if let Some(s) = self.passive.get_mut(&local) {
             debug!("Routing to passive connection: {:?}", local);
             capy_log!("Routing to passive connection: {:?}", local);
-            return s.receive(ip_hdr, &mut tcp_hdr, data);
+            return s.receive(ip_hdr,
+                 &mut tcp_hdr, 
+                 data,
+                #[cfg(feature = "autokernel")]
+                &mut self.total_bytes_acknowledged
+            );
+            
         }
 
         // The packet isn't for an open port; send a RST segment.

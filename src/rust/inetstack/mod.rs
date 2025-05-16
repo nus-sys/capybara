@@ -986,7 +986,7 @@ impl InetStack {
                     warn!("Dropped packet: {:?}", e);
                 }
             }
-            capy_time_log!("{}", num_rx);
+            // capy_time_log!("num_rx: {}", num_rx);
         }
 
         #[cfg(feature = "autokernel")]

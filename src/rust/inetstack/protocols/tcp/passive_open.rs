@@ -177,7 +177,8 @@ impl PassiveSocket {
         self.ready.borrow_mut().poll(ctx)
     }
 
-    pub fn receive(&mut self, ip_header: &Ipv4Header, header: &mut TcpHeader, data: Buffer) -> Result<(), Fail> {
+    pub fn receive(&mut self, ip_header: &Ipv4Header, header: &mut TcpHeader, data: Buffer,
+                    #[cfg(feature = "autokernel")] total_bytes_acknowledged: &mut usize) -> Result<(), Fail> {
         let remote = SocketAddrV4::new(ip_header.get_src_addr(), header.src_port);
         if self.ready.borrow().ready.contains_key(&remote) {
             capy_log!("This conn is ready (remote: {})", remote);
