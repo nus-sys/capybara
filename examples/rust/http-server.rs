@@ -525,7 +525,9 @@ fn server(local: SocketAddrV4) -> Result<()> {
                     match e.errno {
                         #[cfg(feature = "tcp-migration")]
                         demikernel::ETCPMIG => { server_log!("migrated {:?} polled", qd) },
-                        _ => panic!("operation failed: {}", e),
+                        _ => {
+                            server_log!("operation failed: {}", e);
+                        },
                     }
                 }
 

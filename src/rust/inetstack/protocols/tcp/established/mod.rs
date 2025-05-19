@@ -60,6 +60,8 @@ pub struct EstablishedSocket {
     /// We annotate it as unused because the compiler believes that it is never called which is not the case.
     #[allow(unused)]
     background: SchedulerHandle,
+
+    pub pop_handle: Option<SchedulerHandle>,
 }
 
 impl EstablishedSocket {
@@ -74,6 +76,17 @@ impl EstablishedSocket {
         Self {
             cb: cb.clone(),
             background: handle,
+            pop_handle: None,
+        }
+    }
+    
+    pub fn register_pop_handle(&mut self, handle: SchedulerHandle) {
+        self.pop_handle = Some(handle);
+    }
+
+    pub fn drop_pop_handle(&mut self) {
+        if let Some(handle) = self.pop_handle.take() {
+            drop(handle);
         }
     }
 

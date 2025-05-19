@@ -812,6 +812,7 @@ impl Inner {
                 self.established.remove(&key);
                 
                 let qd = self.qds.remove(&(local, remote)).unwrap();
+                self.scheduler.drop_qdesc(qd);
                 self.sockets.remove(&qd).unwrap();
             }
             /* activate this for recv_queue_len vs mig_lat eval */

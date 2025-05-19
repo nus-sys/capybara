@@ -47,6 +47,10 @@ impl SchedulerHandle {
         self.key.take()
     }
 
+    pub fn peek_key(&self) -> Option<u64> {
+        self.key
+    }
+
     /// Queries whether or not the future associated with the target [SchedulerHandle] has complemented.
     pub fn has_completed(&self) -> bool {
         let subpage_ix: usize = self.key.unwrap() as usize & (WAKER_BIT_LENGTH - 1);

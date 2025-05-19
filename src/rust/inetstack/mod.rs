@@ -500,12 +500,13 @@ impl InetStack {
 
         // Issue operation.
         let future: FutureOperation = self.do_push(qd, buf)?;
-        capy_log!("Scheduling PUSH");
+        
         let handle: SchedulerHandle = match self.scheduler.insert(future) {
             Some(handle) => handle,
             None => return Err(Fail::new(libc::EAGAIN, "cannot schedule co-routine")),
         };
         let qt: QToken = handle.into_raw().into();
+        capy_log!("Scheduling PUSH (qt={:?})", qt);
         trace!("push2() qt={:?}", qt);
         Ok(qt)
     }
@@ -571,12 +572,14 @@ impl InetStack {
                 Err(Fail::new(EBADF, "bad queue descriptor"))
             },
         }?;
-        capy_log!("Scheduling POP");
+        
         let handle: SchedulerHandle = match self.scheduler.insert(future) {
             Some(handle) => handle,
             None => return Err(Fail::new(libc::EAGAIN, "cannot schedule co-routine")),
         };
+        self.scheduler.record_qdesc_key(qd, &handle);
         let qt: QToken = handle.into_raw().into();
+        capy_log!("Scheduled POP (qt={:?})", qt);
         trace!("pop() qt={:?}", qt);
         Ok(qt)
     }
@@ -655,24 +658,20 @@ impl InetStack {
                 if completed == qrs.len() {
                     break;
                 }
-
-                // Retrieve associated schedule handle.
-                // TODO: move this out of the loop.
-                let mut handle: SchedulerHandle = match self.scheduler.from_raw_handle(qt.into()) {
-                    Some(handle) => handle,
-                    None => return Err(Fail::new(libc::EINVAL, "invalid queue token")),
-                };
-
-                // Found one, so extract the result and return.
-                if handle.has_completed() {
-                    let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
-                    qrs[completed] = (qd, r); // Store the completed handle result.
-                    indices[completed] = i; // Store the index of the result.
-                    completed += 1;
+                if let Some(mut handle) = self.scheduler.from_raw_handle(qt.into()) {
+                    if handle.has_completed() {
+                        let (qd, r): (QDesc, OperationResult) = self.take_operation(handle);
+                        qrs[completed] = (qd, r);
+                        indices[completed] = i;
+                        completed += 1;
+                    } else {
+                        handle.take_key(); // keep alive
+                    }
                 } else {
-                    // Return this operation to the scheduling queue by removing the associated key
-                    // (which would otherwise cause the operation to be freed).
-                    handle.take_key();
+                    // future was already removed — (connection was closed)
+                    qrs[completed] = (0.into(), OperationResult::Failed(Fail::new(libc::EINVAL, "invalid queue token (already removed)")));
+                    indices[completed] = i;
+                    completed += 1;
                 }
             }
 
