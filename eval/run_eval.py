@@ -65,6 +65,8 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     print('SETUP SWITCH')
     cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
         /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
+    # cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
+    #     /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/port_forward/port_forward.py"']
     if EVAL_MAINTENANCE == True:
         if 'tcp-migration' in FEATURES:
             cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
@@ -221,8 +223,8 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     server_tasks = []
     for j in range(NUM_BACKENDS):
         if SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'https':
-            host = pyrem.host.RemoteHost(f'node{8 + (j%2)}')
-            run_cmd = f'{CAPYBARA_PATH}/bin/examples/rust/http-server.elf 10.0.1.{8 + (j%2)}:1000{int(j/2)}'
+            host = pyrem.host.RemoteHost(f'node{8 + (j%3)}')
+            run_cmd = f'{CAPYBARA_PATH}/bin/examples/rust/http-server.elf 10.0.1.{8 + (j%3)}:1000{int(j/3)}'
             if SERVER_APP == 'https':
                 run_cmd = f'{CAPYBARA_PATH}/bin/examples/rust/https.elf 10.0.1.9:1000{j}'
             
@@ -230,7 +232,7 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 run_cmd = run_cmd + ' migrate'
             
             cmd = [f'cd {CAPYBARA_PATH} && \
-                {f"taskset --cpu-list {int(j/2) + 1}" if LIBOS == "catnap" else ""} \
+                {f"taskset --cpu-list {int(j/3) + 1}" if LIBOS == "catnap" else ""} \
                 sudo -E \
                 RECV_QUEUE_LEN_THRESHOLD={RECV_QUEUE_LEN_THRESHOLD} \
                 MIG_DELAY={int(mig_delay/10) * 76} \
@@ -241,12 +243,12 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
                 MIN_THRESHOLD={MIN_THRESHOLD} \
                 RPS_THRESHOLD={RPS_THRESHOLD} \
                 THRESHOLD_EPSILON={THRESHOLD_EPSILON} \
-                CORE_ID={int(j/2) + 1} \
-                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node{8 + (j%2)}_config.yaml \
+                CORE_ID={int(j/3) + 1} \
+                CONFIG_PATH={CAPYBARA_CONFIG_PATH}/node{8 + (j%3)}_config.yaml \
                 {ENV} \
                 numactl -m0 \
                 {run_cmd} \
-                > {DATA_PATH}/{experiment_id}.{SERVER_NODES[j%2]}_{int(j/2)} 2>&1']
+                > {DATA_PATH}/{experiment_id}.{SERVER_NODES[j%3]}_{int(j/3)} 2>&1']
         elif SERVER_APP == 'redis-server':
             run_cmd = f'make redis-server-node9-1000{j}'
             cmd = [f'cd {CAPYBARA_PATH} && \

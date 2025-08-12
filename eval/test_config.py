@@ -15,7 +15,7 @@ PCAP_PATH = f'{LOCAL}/capybara-pcap'
 ################## CLUSTER CONFIG #####################
 ALL_NODES = ['node5', 'node6', 'node7', 'node8', 'node9', 'node10']
 CLIENT_NODES = ['node5'] # ['node5'] ['node5', 'node7']
-SERVER_NODES = ['node8', 'node9']
+SERVER_NODES = ['node8', 'node9', 'node10']
 LS_SERVER_NODES = ['node8', 'node9', 'node10']
 FRONTEND_NODE = 'node8'
 BACKEND_NODE = 'node9'
@@ -30,7 +30,7 @@ FE_PORT = '10000' # 55555, 10000
 ################## BUILD CONFIG #####################
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
-    'tcp-migration',
+    # 'tcp-migration',
     # 'manual-tcp-migration',
     # 'capy-log',
     # 'capy-profile',
@@ -39,9 +39,9 @@ FEATURES = [
 ]
 
 ################## TEST CONFIG #####################
-NUM_BACKENDS = 4
-SERVER_APP = 'prism' # 'capy-proxy', 'https', 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
-TLS = 1
+NUM_BACKENDS = 12
+SERVER_APP = 'http-server' # 'capy-proxy', 'https', 'capybara-switch' 'http-server', 'prism', 'redis-server', 'proxy-server'
+TLS = 0
 CLIENT_APP = 'caladan' # 'wrk', 'caladan', 'redis-bench'
 # NUM_THREADS = [1] # for wrk load generator
 REPEAT_NUM = 1
@@ -80,7 +80,7 @@ CONFIGURED_STATE_SIZE = 1024 * 0 # bytes
 MIN_THRESHOLD = 1000000 # K rps
 RPS_THRESHOLD = 0.3
 THRESHOLD_EPSILON = 0.1
-DATA_SIZE = 1024 * 128 #0(index.html), 256, 1024, 8192
+DATA_SIZE = 256 #0(index.html), 256, 1024, 8192
 
 CAPY_LOG = 'all' # 'all', 'mig'
 REDIS_LOG = 1 # 1, 0
