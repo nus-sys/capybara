@@ -257,6 +257,10 @@ pub struct ControlBlock {
 
     // Retransmission Timeout (RTO) calculator.
     rto_calculator: RefCell<RtoCalculator>,
+
+    #[cfg(feature = "tcp-migration")]
+    // Origin address for TCP migration (hardcoded to 10.0.1.8:55555)
+    origin: SocketAddrV4,
 }
 
 //==============================================================================
@@ -317,6 +321,8 @@ impl ControlBlock {
             cc: cc_constructor(sender_mss, sender_seq_no, congestion_control_options),
             retransmit_deadline: WatchedValue::new(None),
             rto_calculator: RefCell::new(RtoCalculator::new()),
+            #[cfg(feature = "tcp-migration")]
+            origin: SocketAddrV4::new("10.0.1.8".parse().unwrap(), 55555),
         }
     }
 
@@ -905,7 +911,12 @@ impl ControlBlock {
     /// Fetch a TCP header filling out various values based on our current state.
     /// ToDo: Fix the "filling out various values based on our current state" part to actually do that correctly.
     pub fn tcp_header(&self) -> TcpHeader {
-        let mut header: TcpHeader = TcpHeader::new(self.local.port(), self.remote.port());
+        #[cfg(feature = "tcp-migration")]
+        let source_port = self.origin.port();
+        #[cfg(not(feature = "tcp-migration"))]
+        let source_port = self.local.port();
+        
+        let mut header: TcpHeader = TcpHeader::new(source_port, self.remote.port());
         header.window_size = self.hdr_window_size();
 
         // Note that once we reach a synchronized state we always include a valid acknowledgement number.
@@ -926,15 +937,13 @@ impl ControlBlock {
 
         // ToDo: Remove this if clause once emit() is fixed to not require the remote hardware addr (this should be
         // left to the ARP layer and not exposed to TCP).
-        if let Some(remote_link_addr) = self.arp().try_query(self.remote.ip().clone()) {
-            capy_log!("Sending ACK");
-            self.emit(header, None, remote_link_addr);
-        }
+        capy_log!("Sending ACK");
+        self.emit(header, None);
     }
 
     /// Transmit this message to our connected peer.
     ///
-    pub fn emit(&self, header: TcpHeader, body: Option<Buffer>, remote_link_addr: MacAddress) {
+    pub fn emit(&self, header: TcpHeader, body: Option<Buffer>) {
         // Only perform this debug print in debug builds.  debug_assertions is compiler set in non-optimized builds.
         #[cfg(debug_assertions)]
         if body.is_some() {
@@ -948,6 +957,33 @@ impl ControlBlock {
 
         let sent_fin: bool = header.fin;
 
+        // Get destination MAC address from ARP (always query remote IP)
+        let Some(remote_link_addr) = self.arp().try_query(self.remote.ip().clone()) else {
+            warn!("Failed to get ARP entry for remote IP {:?}", self.remote.ip());
+            return;
+        };
+
+        // Determine source MAC address based on tcp-migration feature
+        #[cfg(feature = "tcp-migration")]
+        let local_link_addr = {
+            // For TCP migration, get the MAC address for the origin IP
+            match self.arp().try_query(self.origin.ip().clone()) {
+                Some(addr) => addr,
+                None => {
+                    panic!("Failed to get ARP entry for origin IP {:?}", self.origin.ip());
+                    return;
+                }
+            }
+        };
+        #[cfg(not(feature = "tcp-migration"))]
+        let local_link_addr = self.local_link_addr;
+
+        // Determine source IP based on tcp-migration feature
+        #[cfg(feature = "tcp-migration")]
+        let source_ip = self.origin.ip().clone();
+        #[cfg(not(feature = "tcp-migration"))]
+        let source_ip = self.local.ip().clone();
+
         // Prepare description of TCP segment to send.
         // ToDo: Change this to call lower levels to fill in their header information, handle routing, ARPing, etc.
         {
@@ -956,12 +992,17 @@ impl ControlBlock {
             } else {
                 0
             };
+            #[cfg(feature = "tcp-migration")]
+            capy_log!("[TX] {}:{} => {}: // {} bytes", 
+                                        source_ip, self.origin.port(), self.remote, len);
+            #[cfg(not(feature = "tcp-migration"))]
             capy_log!("[TX] {} => {}: // {} bytes", 
                                         self.local, self.remote, len);
         }
+        
         let segment = TcpSegment {
-            ethernet2_hdr: Ethernet2Header::new(remote_link_addr, self.local_link_addr, EtherType2::Ipv4),
-            ipv4_hdr: Ipv4Header::new(self.local.ip().clone(), self.remote.ip().clone(), IpProtocol::TCP),
+            ethernet2_hdr: Ethernet2Header::new(remote_link_addr, local_link_addr, EtherType2::Ipv4),
+            ipv4_hdr: Ipv4Header::new(source_ip, self.remote.ip().clone(), IpProtocol::TCP),
             tcp_hdr: header,
             data: body,
             tx_checksum_offload: self.tcp_config.get_tx_checksum_offload(),
@@ -1626,6 +1667,8 @@ pub mod state {
 				cc: congestion_control::None::new(mss, seq_no, None),
 				retransmit_deadline: WatchedValue::new(None),
                 rto_calculator: RefCell::new(RtoCalculator::new()), // Check
+                #[cfg(feature = "tcp-migration")]
+                origin: SocketAddrV4::new("10.0.1.8".parse().unwrap(), 55555),
             }
         }
     }

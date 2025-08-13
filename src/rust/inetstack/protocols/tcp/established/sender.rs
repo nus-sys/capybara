@@ -259,12 +259,7 @@ impl Sender {
         }
         trace!("Send immediate");
         capy_log!("SEND immediate");
-        if let Some(remote_link_addr) = cb.arp().try_query(cb.get_remote().ip().clone()) {
-            cb.emit(header, Some(segment_data.clone()), remote_link_addr);
-        }else{
-            warn!("no ARP cache entry for send");
-            capy_log!("ARP issue in send()");
-        }
+        cb.emit(header, Some(segment_data.clone()));
 
         // Update SND.NXT.
         self.send_next.modify(|s| s + SeqNumber::from(segment_data_len));
@@ -333,18 +328,16 @@ impl Sender {
             // ToDo: Issue #198 Repacketization - we should send a full MSS (and set the FIN flag if applicable).
 
             // Prepare and send the segment.
-            if let Some(first_hop_link_addr) = cb.arp().try_query(cb.get_remote().ip().clone()) {
-                let mut header: TcpHeader = cb.tcp_header();
-                header.seq_num = self.send_unacked.get();
-                if data.len() == 0 {
-                    // This buffer is the end-of-send marker.  Retransmit the FIN.
-                    header.fin = true;
-                }else{
-                    header.psh = true;
-                }
-                // capy_time_log!("RETRANSMIT seq_num {}", header.seq_num); 
-                cb.emit(header, Some(data), first_hop_link_addr);
+            let mut header: TcpHeader = cb.tcp_header();
+            header.seq_num = self.send_unacked.get();
+            if data.len() == 0 {
+                // This buffer is the end-of-send marker.  Retransmit the FIN.
+                header.fin = true;
+            }else{
+                header.psh = true;
             }
+            // capy_time_log!("RETRANSMIT seq_num {}", header.seq_num); 
+            cb.emit(header, Some(data));
         } else {
             // We shouldn't enter the retransmit routine with an empty unacknowledged queue.  So maybe we should assert
             // here?  But this is relatively benign if it happens, and could be the result of a race-condition or a

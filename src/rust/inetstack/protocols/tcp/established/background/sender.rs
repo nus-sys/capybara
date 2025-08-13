@@ -69,7 +69,7 @@ pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
 
             let mut header: TcpHeader = cb.tcp_header();
             header.seq_num = send_next;
-            cb.emit(header, Some(buf.clone()), remote_link_addr);
+            cb.emit(header, Some(buf.clone()));
 
             // Note that we loop here *forever*, exponentially backing off.
             // TODO: Use the correct PERSIST mode timer here.
@@ -84,7 +84,7 @@ pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
                 // Retransmit our window probe.
                 let mut header: TcpHeader = cb.tcp_header();
                 header.seq_num = send_next;
-                cb.emit(header, Some(buf.clone()), remote_link_addr);
+                cb.emit(header, Some(buf.clone()));
             }
         }
 
@@ -155,7 +155,7 @@ pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
         } else if do_push {
             header.psh = true;
         }
-        cb.emit(header, Some(segment_data.clone()), remote_link_addr);
+        cb.emit(header, Some(segment_data.clone()));
 
         // Update SND.NXT.
         cb.modify_send_next(|s| s + SeqNumber::from(segment_data_len));

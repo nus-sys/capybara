@@ -138,6 +138,10 @@ pub struct PassiveSocket {
     tcp_config: TcpConfig,
     local_link_addr: MacAddress,
     arp: ArpPeer,
+
+    #[cfg(feature = "tcp-migration")]
+    // Origin address for TCP migration (hardcoded to 10.0.1.8:55555)
+    origin: SocketAddrV4,
 }
 
 impl PassiveSocket {
@@ -170,6 +174,8 @@ impl PassiveSocket {
             clock,
             tcp_config,
             arp,
+            #[cfg(feature = "tcp-migration")]
+            origin: SocketAddrV4::new("10.0.1.8".parse().unwrap(), 55555),
         }
     }
 
@@ -275,6 +281,8 @@ impl PassiveSocket {
             self.local_link_addr,
             self.arp.clone(),
             self.ready.clone(),
+            #[cfg(feature = "tcp-migration")]
+            self.origin,
         );
         capy_log!("Scheduling PassiveSocket background");
         let handle: SchedulerHandle = match self.scheduler.insert(FutureOperation::Background(future.boxed_local())) {
@@ -322,12 +330,15 @@ impl PassiveSocket {
         local_link_addr: MacAddress,
         arp: ArpPeer,
         ready: Rc<RefCell<ReadySockets>>,
+        #[cfg(feature = "tcp-migration")]
+        origin: SocketAddrV4,
     ) -> impl Future<Output = ()> {
         let handshake_retries: usize = tcp_config.get_handshake_retries();
         let handshake_timeout: Duration = tcp_config.get_handshake_timeout();
 
         async move {
             for _ in 0..handshake_retries {
+                // Get destination MAC address (always query remote IP)
                 let remote_link_addr = match arp.query(remote.ip().clone()).await {
                     Ok(r) => r,
                     Err(e) => {
@@ -336,7 +347,27 @@ impl PassiveSocket {
                         continue;
                     },
                 };
-                let mut tcp_hdr = TcpHeader::new(local.port(), remote.port());
+
+                // Determine source addresses based on tcp-migration feature
+                #[cfg(feature = "tcp-migration")]
+                let (source_port, source_ip) = (origin.port(), origin.ip().clone());
+                #[cfg(not(feature = "tcp-migration"))]
+                let (source_port, source_ip) = (local.port(), local.ip().clone());
+
+                // Get source MAC address based on tcp-migration feature
+                #[cfg(feature = "tcp-migration")]
+                let source_link_addr = match arp.query(origin.ip().clone()).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        capy_log!("ARP query for origin failed: {:?}", e);
+                        warn!("ARP query for origin failed: {:?}", e);
+                        continue;
+                    },
+                };
+                #[cfg(not(feature = "tcp-migration"))]
+                let source_link_addr = local_link_addr;
+
+                let mut tcp_hdr = TcpHeader::new(source_port, remote.port());
                 tcp_hdr.syn = true;
                 tcp_hdr.seq_num = local_isn;
                 tcp_hdr.ack = true;
@@ -351,10 +382,14 @@ impl PassiveSocket {
                 info!("Advertising window scale: {}", tcp_config.get_window_scale());
 
                 debug!("Sending SYN+ACK: {:?}", tcp_hdr);
+                #[cfg(feature = "tcp-migration")]
+                capy_log!("\n\n[TX] {:?} => {:?}: SYN+ACK (using FE addr)", origin, remote);
+                #[cfg(not(feature = "tcp-migration"))]
                 capy_log!("\n\n[TX] {:?} => {:?}: SYN+ACK", local, remote);
+
                 let segment = TcpSegment {
-                    ethernet2_hdr: Ethernet2Header::new(remote_link_addr, local_link_addr, EtherType2::Ipv4),
-                    ipv4_hdr: Ipv4Header::new(local.ip().clone(), remote.ip().clone(), IpProtocol::TCP),
+                    ethernet2_hdr: Ethernet2Header::new(remote_link_addr, source_link_addr, EtherType2::Ipv4),
+                    ipv4_hdr: Ipv4Header::new(source_ip, remote.ip().clone(), IpProtocol::TCP),
                     tcp_hdr,
                     data: None,
                     tx_checksum_offload: tcp_config.get_rx_checksum_offload(),
