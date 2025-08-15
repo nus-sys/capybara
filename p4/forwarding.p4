@@ -52,3 +52,18 @@ table l2_forwarding {
     default_action = drop();
     size = 16;
 }
+
+action rewrite_dst_mac(bit<48> dstmac, PortId_t port) {
+    hdr.ethernet.dst_mac = dstmac;
+    ig_tm_md.ucast_egress_port = port;
+}
+table tbl_rewrite_dst_mac {
+    key = {
+        hdr.ipv4.dst_ip     : exact;
+    }
+    actions = {
+        rewrite_dst_mac;
+        NoAction;
+    }
+    size = 16;
+}
