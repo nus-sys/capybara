@@ -346,7 +346,7 @@ http-server-fe:
 	sudo -E \
 	IS_FRONTEND=1 \
 	NUM_CORES=4 \
-	DATA_SIZE=131072 \
+	DATA_SIZE=256 \
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
@@ -423,7 +423,7 @@ http-server-node2:
 	sudo -E \
 	NUM_CORES=4 \
 	CORE_ID=1 \
-	DATA_SIZE=131072 \
+	DATA_SIZE=256 \
 	CONFIG_PATH=$(CONFIG_DIR)/node2_0_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
@@ -446,7 +446,7 @@ http-server-node81:
 	sudo -E \
 	NUM_CORES=4 \
 	CORE_ID=2 \
-	DATA_SIZE=131072 \
+	DATA_SIZE=256 \
 	CONFIG_PATH=$(CONFIG_DIR)/node8_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
@@ -457,7 +457,7 @@ http-server-node90:
 	sudo -E \
 	NUM_CORES=4 \
 	CORE_ID=1 \
-	DATA_SIZE=131072 \
+	DATA_SIZE=256 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
@@ -468,7 +468,7 @@ http-server-node91:
 	sudo -E \
 	NUM_CORES=4 \
 	CORE_ID=2 \
-	DATA_SIZE=131072 \
+	DATA_SIZE=256 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
@@ -479,7 +479,7 @@ http-server-node92:
 	sudo -E \
 	NUM_CORES=4 \
 	CORE_ID=3 \
-	DATA_SIZE=131072 \
+	DATA_SIZE=256 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
@@ -490,7 +490,7 @@ http-server-node93:
 	sudo -E \
 	NUM_CORES=4 \
 	CORE_ID=4 \
-	DATA_SIZE=131072 \
+	DATA_SIZE=256 \
 	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
@@ -502,7 +502,7 @@ http-server-node7:
 	sudo -E \
 	NUM_CORES=4 \
 	CORE_ID=1 \
-	DATA_SIZE=131072 \
+	DATA_SIZE=256 \
 	CONFIG_PATH=$(CONFIG_DIR)/node7_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
@@ -514,7 +514,7 @@ http-server-node10:
 	sudo -E \
 	NUM_CORES=4 \
 	CORE_ID=1 \
-	DATA_SIZE=131072 \
+	DATA_SIZE=256 \
 	CONFIG_PATH=$(CONFIG_DIR)/node10_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	$(ENV) \
@@ -601,6 +601,16 @@ tcpmig-multi-target3:
 client-dpdk-ctrl:
 	sudo -E RUST_LOG="debug" \
 	CONFIG_PATH=$(CONFIG_DIR)/client_dpdk_ctrl_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 4 \
+	$(ELF_DIR)/dpdk-ctrl.elf
+
+dpdk-ctrl-node7:
+	sudo -E RUST_LOG="debug" \
+	NUM_CORES=4 \
+	CORE_ID=5 \
+	$(ENV) \
+	CONFIG_PATH=$(CONFIG_DIR)/node7_config.yaml \
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	taskset --cpu-list 4 \
 	$(ELF_DIR)/dpdk-ctrl.elf

@@ -35,7 +35,7 @@ final_result = ''
 def kill_procs():
     cmd = ['sudo pkill -INT -e dpdk-ctrl.elf ; \
             sudo pkill -INT -f http-server ; \
-            ps aux | grep /wrk/wrk | grep -v grep | awk \'{print $2}\' | xargs --no-run-if-empty sudo kill -9 ']
+            ps aux | grep wrk | grep -v grep | awk \'{print $2}\' | xargs --no-run-if-empty sudo kill -9 ']
     # print(cmd)
     # exit(1)
     for node in ALL_NODES:
@@ -57,8 +57,8 @@ def run_server():
     cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
         /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/port_forward/port_forward.py"']  
     
-    # cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
-    #     /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
+    cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
+        /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_src_rewriting_by_server_setup.py"'] 
     
     result = subprocess.run(
         cmd,
@@ -68,12 +68,12 @@ def run_server():
         check=True,
     ).stdout.decode()
     # print(result + '\n\n')
-
+    # time.sleep(1)
     
     print('RUNNING BACKENDS')
 
     dpdk_ctrl_task = []
-    for server in LS_SERVER_NODES:
+    for server in SERVER_NODES:
         host = pyrem.host.RemoteHost(server)
         cmd = [f'cd {CAPYBARA_PATH} && make dpdk-ctrl-{server}'] 
         task = host.run(cmd, quiet=True)
@@ -98,7 +98,7 @@ def run_server():
             {ENV} \
             numactl -m0 \
             {run_cmd} \
-            > {DATA_PATH}/{experiment_id}.{LS_SERVER_NODES[j%3]}_{int(j/3)} 2>&1']
+            > {DATA_PATH}/{experiment_id}.{SERVER_NODES[j%3]}_{int(j/3)} 2>&1']
             
         task = host.run(cmd, quiet=False)
         server_tasks.append(task)
@@ -217,7 +217,10 @@ def run_eval():
     global final_result
     
     for repeat in range(0, REPEAT_NUM):
-        for conn in [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 16384 * 2, 16384 * 4]:
+        # for conn in [256]:#[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]:
+        # for conn in [1, 2, 4, 8, 16, 24, 48, 96]:# , 192, 384, 768, 1536, 3072, 5000, 6144, 10000, 11000, 12288]:
+        for conn in [12]:#, 120, 240, 600, 1200, 2400, 3600, 4800, 6000, 7200, 8400, 9600, 10800, 12000, 13200, 14400, 15600, 16128]:
+            # conn = conn * 12
             kill_procs()
             experiment_id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S.%f')
             print(f'================ RUNNING TEST =================')
@@ -225,7 +228,7 @@ def run_eval():
             run_server()
 
             arp_task = []
-            for client in CLIENT_NODES:
+            for client in ALL_NODES:
                 host = pyrem.host.RemoteHost(client)
                 cmd = [f'sudo arp -f {CAPYBARA_HOME}/arp_table']
                 task = host.run(cmd, quiet=True)
@@ -235,32 +238,37 @@ def run_eval():
             
             client_task = []
             servers_idx = [8, 9, 10]
-            for client_idx in range(1):
+            for client_idx in range(3):
                 client = CLIENT_NODES[client_idx]
                 server_idx = servers_idx[client_idx]
                 host = pyrem.host.RemoteHost(client)
                 t_val = conn if conn <= 10 else 10
                  
                 for i in range(4):  # 4 wrk processes
+                    src_port = 1024 + (16128 * i)
                     port = 10000 + i
                     start_core = i * 10
                     end_core = start_core + 9
                     core_range = f'{start_core}-{end_core}'
 
-                    cmd = [f'taskset -c {core_range} sudo numactl -m0 {HOME}/wrk-tools/wrk/wrk \
+                    cmd = [f'taskset -c {core_range} sudo numactl -m0 {WRK_PATH}/wrk \
                         -t{t_val} \
                         -c{conn} \
+                        -P{src_port}-{src_port+conn-1} \
                         -d20s \
+                        -R200000 \
                         --latency \
-                        http://10.0.1.{server_idx}:{port}/get \
+                        http://round-robin/get \
                         > {DATA_PATH}/{experiment_id}.{client}.p{port}']
-                    # cmd = [f'taskset -c {core_range} sudo numactl -m0 {HOME}/wrk-tools/wrk/wrk \
-                    #     -t{t_val} \
-                    #     -c{conn} \
-                    #     -d20s \
-                    #     --latency \
-                    #     http://10.0.1.8:55555/get \
-                    #     > {DATA_PATH}/{experiment_id}.{client}.p{port}']
+                    cmd = [f'taskset -c {core_range} sudo numactl -m0 {WRK_PATH}/wrk \
+                        -t{t_val} \
+                        -c{conn} \
+                        -P{src_port}-{src_port+conn-1} \
+                        -d20s \
+                        -R200000 \
+                        --latency \
+                        http://10.0.1.8:55555/get \
+                        > {DATA_PATH}/{experiment_id}.{client}.p{port}']
                     
                     
                     # print(cmd)

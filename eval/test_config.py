@@ -9,12 +9,13 @@ CAPYBARA_HOME = f'{HOME}/Capybara'
 CAPYBARA_PATH = f'{HOME}/Capybara/capybara'
 CAPYBARA_CONFIG_PATH = f'{CAPYBARA_PATH}/scripts/config'
 CALADAN_PATH = f'{HOME}/Capybara/caladan'
-DATA_PATH = f'{HOME}/capybara-sosp25'
+DATA_PATH = f'{HOME}/capybara_conn_scalability'
 PCAP_PATH = f'{LOCAL}/capybara-pcap'
+WRK_PATH = f'{HOME}/wrk-tools/wrk2' # {HOME}/wrk-tools/wrk
 
 ################## CLUSTER CONFIG #####################
 ALL_NODES = ['node5', 'node6', 'node7', 'node8', 'node9', 'node10']
-CLIENT_NODES = ['node5'] # ['node5'] ['node5', 'node7']
+CLIENT_NODES = ['node5', 'node6', 'node7'] # ['node5'] ['node5', 'node7']
 SERVER_NODES = ['node8', 'node9', 'node10']
 LS_SERVER_NODES = ['node8', 'node9', 'node10']
 FRONTEND_NODE = 'node8'
@@ -31,6 +32,7 @@ FE_PORT = '10000' # 55555, 10000
 LIBOS = 'catnip'#'catnap', 'catnip'
 FEATURES = [
     # 'tcp-migration',
+    'server-rewriting',
     # 'manual-tcp-migration',
     # 'capy-log',
     # 'capy-profile',
@@ -71,7 +73,7 @@ RAND_SEED = 2402271237
 
 ################## ENV VARS #####################
 ### SERVER ###
-RECV_QUEUE_LEN_THRESHOLD = 10
+RECV_QUEUE_LEN_THRESHOLD = 10000
 MIG_DELAYS = [0]
 MAX_PROACTIVE_MIGS = [0] # set element to '' if you don't want to set this env var
 MAX_REACTIVE_MIGS = [100000] # set element to '' if you don't want to set this env var

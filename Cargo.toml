@@ -199,6 +199,7 @@ mlx5 = [ "dpdk-rs/mlx5" ]
 profiler = [ ]
 
 tcp-migration = [ ]
+server-rewriting = [ ]
 manual-tcp-migration = [ "tcp-migration" ]
 capy-profile = [ ]
 capy-log = [ ]
