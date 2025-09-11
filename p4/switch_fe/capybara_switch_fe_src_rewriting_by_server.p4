@@ -36,7 +36,7 @@ struct my_ingress_metadata_t { // client ip and port in meta
     bit<16> l4_payload_checksum;
     
     bit<16> hash1;
-    bit<16> hash2;
+    // bit<16> hash2;
     // bit<16> hash3;
     
     bit<8> flag;
@@ -282,6 +282,20 @@ control Ingress(
     MigrationRequest32b0() owner_ip_0;
     MigrationRequest16b0() owner_port_0;
 
+
+    MigrationRequestIdentifier32b() request_client_ip_1;
+    MigrationRequestIdentifier16b() request_client_port_1;
+
+    MigrationRequest32b0() owner_ip_1;
+    MigrationRequest16b0() owner_port_1;
+
+
+    MigrationRequestIdentifier32b() request_client_ip_2;
+    MigrationRequestIdentifier16b() request_client_port_2;
+
+    MigrationRequest32b0() owner_ip_2;
+    MigrationRequest16b0() owner_port_2;
+
     MinimumWorkload() min_workload;
     MinimumWorkload32b() min_workload_ip;
     MinimumWorkload16b() min_workload_port;
@@ -335,7 +349,7 @@ control Ingress(
         }
         else if(hdr.ipv4.isValid()){
             bit<16> hash1;
-            bit<16> hash2;
+            // bit<16> hash2;
             bit<1> holder_1b_00;
             bit<1> holder_1b_01;
             // bit<1> holder_1b_02;
@@ -345,7 +359,7 @@ control Ingress(
                 // hash.apply(hdr.ipv4.src_ip, hdr.tcp.src_port, hash1);
                 // hash.apply(hdr.ipv4.dst_ip, hdr.tcp.dst_port, hash2);
                 hash1 = hdr.tcp.src_port;
-                hash2 = hdr.tcp.dst_port;
+                // hash2 = hdr.tcp.dst_port;
                 if(hdr.tcp.flags == 0b00000010 && hdr.ipv4.dst_ip == FE_IP){ // SYN to FE
                     // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
 
@@ -357,7 +371,7 @@ control Ingress(
                     exec_read_backend_ip();
                     exec_read_backend_port();
                     
-                    hash2 = hash1;
+                    // hash2 = hash1;
                     meta.initial_distribution = 1; // initial migration from FE (switch) to a BE
 
                     hdr.ipv4.dst_ip = meta.owner_ip;
@@ -365,8 +379,8 @@ control Ingress(
                 }
             }
             else if(hdr.tcpmig.isValid()){
-                hash.apply(meta.client_ip, meta.client_port, hash1);
-                hash2 = hash1;
+                // hash.apply(meta.client_ip, meta.client_port, hash1);
+                // hash2 = hash1;
 
                 // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
                 hdr.udp.checksum = 0;
@@ -379,15 +393,36 @@ control Ingress(
             }
 
             // When the owner is changed? 1) SYN; 2) migration;
-            request_client_ip_0.apply(hash1, hdr, meta, holder_1b_00);
-            request_client_port_0.apply(hash1, hdr, meta, holder_1b_01);
-            
-            meta.result00 = holder_1b_00;
-            meta.result01 = holder_1b_01;
+            if(hdr.ipv4.src_ip == 0x0a000105){
+                request_client_ip_0.apply(hash1, hdr, meta, holder_1b_00);
+                request_client_port_0.apply(hash1, hdr, meta, holder_1b_01);
+                
+                meta.result00 = holder_1b_00;
+                meta.result01 = holder_1b_01;
 
-            owner_ip_0.apply(hash1, meta.owner_ip, meta, hdr.ipv4.dst_ip);
-            owner_port_0.apply(hash1, meta.owner_port, meta, hdr.tcp.dst_port);
-            
+                owner_ip_0.apply(hash1, meta.owner_ip, meta, hdr.ipv4.dst_ip);
+                owner_port_0.apply(hash1, meta.owner_port, meta, hdr.tcp.dst_port);
+            }
+            else if(hdr.ipv4.src_ip == 0x0a000106){
+                request_client_ip_1.apply(hash1, hdr, meta, holder_1b_00);
+                request_client_port_1.apply(hash1, hdr, meta, holder_1b_01);
+
+                meta.result00 = holder_1b_00;
+                meta.result01 = holder_1b_01;
+
+                owner_ip_1.apply(hash1, meta.owner_ip, meta, hdr.ipv4.dst_ip);
+                owner_port_1.apply(hash1, meta.owner_port, meta, hdr.tcp.dst_port);
+            }
+            else if(hdr.ipv4.src_ip == 0x0a000107){
+                request_client_ip_2.apply(hash1, hdr, meta, holder_1b_00);
+                request_client_port_2.apply(hash1, hdr, meta, holder_1b_01);
+
+                meta.result00 = holder_1b_00;
+                meta.result01 = holder_1b_01;
+
+                owner_ip_2.apply(hash1, meta.owner_ip, meta, hdr.ipv4.dst_ip);
+                owner_port_2.apply(hash1, meta.owner_port, meta, hdr.tcp.dst_port);
+            }
             // dst_mac_rewrite.apply();
             // ipv4_host.apply();
             // l2_forwarding.apply();

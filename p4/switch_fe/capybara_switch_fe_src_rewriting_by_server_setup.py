@@ -278,27 +278,27 @@ bfrt.pre.mgid.entry(MGID=2, MULTICAST_NODE_ID=mcast_node_ids,
 # p4.Ingress.min_workload_ip.reg.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.9'))
 # p4.Ingress.min_workload_port.reg.mod(REGISTER_INDEX=0, f1=10001)
 
-# p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=0, f1 = 0)
+p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=0, f1 = 0)
 
 for i in range(65536):
     # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = 0)
     p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = i % num_backends)
     # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = (i/2) % 4) // for redis-benchmark distribution
   
-# for i in range(4):
-#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3, f1=IPAddress('10.0.1.8'))
-#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3, f1=10000 + i)
-#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 1, f1=IPAddress('10.0.1.9'))
-#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 1, f1=10000 + i)
-#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 2, f1=IPAddress('10.0.1.10'))
-#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 2, f1=10000 + i)
+for i in range(4):
+    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3, f1=IPAddress('10.0.1.8'))
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3, f1=10000 + i)
+    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 1, f1=IPAddress('10.0.1.9'))
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 1, f1=10000 + i)
+    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 2, f1=IPAddress('10.0.1.10'))
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 2, f1=10000 + i)
 
 # for i in range(num_backends):
 #     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.8'))
 #     p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000)
-for i in range(num_backends):
-    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.9'))
-    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000)
+# for i in range(num_backends):
+#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.10'))
+#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000)
     
 # dst_mac_rewrite = p4.Ingress.dst_mac_rewrite
 # dst_mac_rewrite.entry_with_exec_dst_mac_rewrite(dst_ip = IPAddress('10.0.1.1'), mac_addr = EUI('ff:ff:ff:ff:ff:ff')).push()
