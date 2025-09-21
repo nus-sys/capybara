@@ -281,17 +281,48 @@ bfrt.pre.mgid.entry(MGID=2, MULTICAST_NODE_ID=mcast_node_ids,
 p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=0, f1 = 0)
 
 for i in range(65536):
-    # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = 0)
-    p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = i % num_backends)
+    p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = 0)
+    # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = i % num_backends)
     # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = (i/2) % 4) // for redis-benchmark distribution
-  
-for i in range(4):
-    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3, f1=IPAddress('10.0.1.8'))
-    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3, f1=10000 + i)
-    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 1, f1=IPAddress('10.0.1.9'))
-    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 1, f1=10000 + i)
-    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 2, f1=IPAddress('10.0.1.10'))
-    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 2, f1=10000 + i)
+
+
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.8'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=0, f1=10000)
+
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=1, f1=IPAddress('10.0.1.9'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=1, f1=10000)
+
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=2, f1=IPAddress('10.0.1.10'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=2, f1=10000)
+
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=3, f1=IPAddress('10.0.1.8'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=3, f1=10001)
+
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=4, f1=IPAddress('10.0.1.9'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=4, f1=10001)
+
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=5, f1=IPAddress('10.0.1.10'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=5, f1=10001)
+
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=6, f1=IPAddress('10.0.1.8'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=6, f1=10002)
+
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=7, f1=IPAddress('10.0.1.9'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=7, f1=10002)
+
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=8, f1=IPAddress('10.0.1.10'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=8, f1=10002)
+
+p4.Ingress.backend_ip.mod(REGISTER_INDEX=9, f1=IPAddress('10.0.1.8'))
+p4.Ingress.backend_port.mod(REGISTER_INDEX=9, f1=10003)
+        
+# for i in range(4):
+#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3, f1=IPAddress('10.0.1.8'))
+#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3, f1=10000 + i)
+#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 1, f1=IPAddress('10.0.1.9'))
+#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 1, f1=10000 + i)
+#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 2, f1=IPAddress('10.0.1.10'))
+#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 2, f1=10000 + i)
 
 # for i in range(num_backends):
 #     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.8'))

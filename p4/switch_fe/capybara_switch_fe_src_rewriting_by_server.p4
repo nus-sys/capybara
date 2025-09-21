@@ -225,11 +225,11 @@ control Ingress(
     RegisterAction<index_t, _, index_t>(reg_be_idx) get_be_idx = {
         void apply(inout index_t val, out index_t rv) {
             rv = val;
-            // if(val == NUM_BACKENDS-1){
-            //     val = 0;
-            // }else{
-            //     val = val + 1;    
-            // }
+            if(val == 10-1){
+                val = 0;
+            }else{
+                val = val + 1;    
+            }
         }
     };
 
@@ -366,8 +366,8 @@ control Ingress(
                     meta.client_ip = hdr.ipv4.src_ip;
                     meta.client_port = hdr.tcp.src_port;
 
-                    meta.backend_idx = get_be_idx.execute(meta.client_port);
-                    // meta.backend_idx = get_be_idx.execute(0);
+                    // meta.backend_idx = get_be_idx.execute(meta.client_port);
+                    meta.backend_idx = get_be_idx.execute(0);
                     exec_read_backend_ip();
                     exec_read_backend_port();
                     
