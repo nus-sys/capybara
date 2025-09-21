@@ -139,7 +139,7 @@ pub struct PassiveSocket {
     local_link_addr: MacAddress,
     arp: ArpPeer,
 
-    #[cfg(feature = "tcp-migration")]
+    #[cfg(feature = "server-rewriting")]
     // Origin address for TCP migration (hardcoded to 10.0.1.8:55555)
     origin: SocketAddrV4,
 }
@@ -174,7 +174,7 @@ impl PassiveSocket {
             clock,
             tcp_config,
             arp,
-            #[cfg(feature = "tcp-migration")]
+            #[cfg(feature = "server-rewriting")]
             origin: SocketAddrV4::new("10.0.1.8".parse().unwrap(), 55555),
         }
     }
@@ -281,7 +281,7 @@ impl PassiveSocket {
             self.local_link_addr,
             self.arp.clone(),
             self.ready.clone(),
-            #[cfg(feature = "tcp-migration")]
+            #[cfg(feature = "server-rewriting")]
             self.origin,
         );
         capy_log!("Scheduling PassiveSocket background");
@@ -330,10 +330,11 @@ impl PassiveSocket {
         local_link_addr: MacAddress,
         arp: ArpPeer,
         ready: Rc<RefCell<ReadySockets>>,
-        #[cfg(feature = "tcp-migration")]
+        #[cfg(feature = "server-rewriting")]
         origin: SocketAddrV4,
     ) -> impl Future<Output = ()> {
-        let handshake_retries: usize = tcp_config.get_handshake_retries();
+        // let handshake_retries: usize = tcp_config.get_handshake_retries();
+        let handshake_retries: usize = 1; // Disable retransmission - send only once
         let handshake_timeout: Duration = tcp_config.get_handshake_timeout();
 
         async move {
@@ -348,14 +349,14 @@ impl PassiveSocket {
                     },
                 };
 
-                // Determine source addresses based on tcp-migration feature
-                #[cfg(feature = "tcp-migration")]
+                // Determine source addresses based on server-rewriting feature
+                #[cfg(feature = "server-rewriting")]
                 let (source_port, source_ip) = (origin.port(), origin.ip().clone());
-                #[cfg(not(feature = "tcp-migration"))]
+                #[cfg(not(feature = "server-rewriting"))]
                 let (source_port, source_ip) = (local.port(), local.ip().clone());
 
-                // Get source MAC address based on tcp-migration feature
-                #[cfg(feature = "tcp-migration")]
+                // Get source MAC address based on server-rewriting feature
+                #[cfg(feature = "server-rewriting")]
                 let source_link_addr = match arp.query(origin.ip().clone()).await {
                     Ok(r) => r,
                     Err(e) => {
@@ -364,7 +365,7 @@ impl PassiveSocket {
                         continue;
                     },
                 };
-                #[cfg(not(feature = "tcp-migration"))]
+                #[cfg(not(feature = "server-rewriting"))]
                 let source_link_addr = local_link_addr;
 
                 let mut tcp_hdr = TcpHeader::new(source_port, remote.port());
@@ -382,9 +383,9 @@ impl PassiveSocket {
                 info!("Advertising window scale: {}", tcp_config.get_window_scale());
 
                 debug!("Sending SYN+ACK: {:?}", tcp_hdr);
-                #[cfg(feature = "tcp-migration")]
+                #[cfg(feature = "server-rewriting")]
                 capy_log!("\n\n[TX] {:?} => {:?}: SYN+ACK (using FE addr)", origin, remote);
-                #[cfg(not(feature = "tcp-migration"))]
+                #[cfg(not(feature = "server-rewriting"))]
                 capy_log!("\n\n[TX] {:?} => {:?}: SYN+ACK", local, remote);
 
                 let segment = TcpSegment {
@@ -397,7 +398,7 @@ impl PassiveSocket {
                 rt.transmit(Box::new(segment));
                 clock.wait(clock.clone(), handshake_timeout).await;
             }
-            eprintln!("WARNING: handshake timeout");
+            // eprintln!("WARNING: handshake timeout");
             // ready.borrow_mut().push_err(Fail::new(ETIMEDOUT, "handshake timeout"));
         }
     }

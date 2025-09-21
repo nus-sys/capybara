@@ -67,6 +67,8 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
         /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
     # cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
     #     /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/port_forward/port_forward.py"']
+    cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
+        /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_src_rewriting_by_server_setup.py"']
     if EVAL_MAINTENANCE == True:
         if 'tcp-migration' in FEATURES:
             cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \

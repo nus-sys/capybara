@@ -258,7 +258,7 @@ pub struct ControlBlock {
     // Retransmission Timeout (RTO) calculator.
     rto_calculator: RefCell<RtoCalculator>,
 
-    #[cfg(feature = "tcp-migration")]
+    #[cfg(feature = "server-rewriting")]
     // Origin address for TCP migration (hardcoded to 10.0.1.8:55555)
     origin: SocketAddrV4,
 }
@@ -321,7 +321,7 @@ impl ControlBlock {
             cc: cc_constructor(sender_mss, sender_seq_no, congestion_control_options),
             retransmit_deadline: WatchedValue::new(None),
             rto_calculator: RefCell::new(RtoCalculator::new()),
-            #[cfg(feature = "tcp-migration")]
+            #[cfg(feature = "server-rewriting")]
             origin: SocketAddrV4::new("10.0.1.8".parse().unwrap(), 55555),
         }
     }
@@ -640,7 +640,7 @@ impl ControlBlock {
                 // which results in more RST pkts from the client. 
                 // So, it should not panic here.  
                 s => { 
-                    eprintln!("Bad TCP state {:?}", s);
+                    // eprintln!("Bad TCP state {:?}", s);
                     return;
                 },
             }
@@ -911,9 +911,9 @@ impl ControlBlock {
     /// Fetch a TCP header filling out various values based on our current state.
     /// ToDo: Fix the "filling out various values based on our current state" part to actually do that correctly.
     pub fn tcp_header(&self) -> TcpHeader {
-        #[cfg(feature = "tcp-migration")]
+        #[cfg(feature = "server-rewriting")]
         let source_port = self.origin.port();
-        #[cfg(not(feature = "tcp-migration"))]
+        #[cfg(not(feature = "server-rewriting"))]
         let source_port = self.local.port();
         
         let mut header: TcpHeader = TcpHeader::new(source_port, self.remote.port());
@@ -963,8 +963,8 @@ impl ControlBlock {
             return;
         };
 
-        // Determine source MAC address based on tcp-migration feature
-        #[cfg(feature = "tcp-migration")]
+        // Determine source MAC address based on server-rewriting feature
+        #[cfg(feature = "server-rewriting")]
         let local_link_addr = {
             // For TCP migration, get the MAC address for the origin IP
             match self.arp().try_query(self.origin.ip().clone()) {
@@ -975,13 +975,13 @@ impl ControlBlock {
                 }
             }
         };
-        #[cfg(not(feature = "tcp-migration"))]
+        #[cfg(not(feature = "server-rewriting"))]
         let local_link_addr = self.local_link_addr;
 
-        // Determine source IP based on tcp-migration feature
-        #[cfg(feature = "tcp-migration")]
+        // Determine source IP based on server-rewriting feature
+        #[cfg(feature = "server-rewriting")]
         let source_ip = self.origin.ip().clone();
-        #[cfg(not(feature = "tcp-migration"))]
+        #[cfg(not(feature = "server-rewriting"))]
         let source_ip = self.local.ip().clone();
 
         // Prepare description of TCP segment to send.
@@ -992,10 +992,10 @@ impl ControlBlock {
             } else {
                 0
             };
-            #[cfg(feature = "tcp-migration")]
+            #[cfg(feature = "server-rewriting")]
             capy_log!("[TX] {}:{} => {}: // {} bytes", 
                                         source_ip, self.origin.port(), self.remote, len);
-            #[cfg(not(feature = "tcp-migration"))]
+            #[cfg(not(feature = "server-rewriting"))]
             capy_log!("[TX] {} => {}: // {} bytes", 
                                         self.local, self.remote, len);
         }
@@ -1667,7 +1667,7 @@ pub mod state {
 				cc: congestion_control::None::new(mss, seq_no, None),
 				retransmit_deadline: WatchedValue::new(None),
                 rto_calculator: RefCell::new(RtoCalculator::new()), // Check
-                #[cfg(feature = "tcp-migration")]
+                #[cfg(feature = "server-rewriting")]
                 origin: SocketAddrV4::new("10.0.1.8".parse().unwrap(), 55555),
             }
         }

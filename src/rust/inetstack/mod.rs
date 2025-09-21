@@ -873,16 +873,16 @@ impl InetStack {
             self.ipv4.tcp.poll_stats();
 
             // Perform RPS Signal reception action.
-            self.ipv4.tcp.rps_signal_action();
+            // self.ipv4.tcp.rps_signal_action();
         
             // If overloaded, start migrations.
             /* comment out this for recv_queue_len vs mig_lat eval */
-            #[cfg(not(feature = "manual-tcp-migration"))]
-            if let Some(conns_to_migrate) = self.ipv4.tcp.connections_to_reactively_migrate() {
-                for conn in conns_to_migrate {
-                    self.ipv4.tcp.initiate_migration_by_addr(conn);
-                }
-            }
+            // #[cfg(not(feature = "manual-tcp-migration"))]
+            // if let Some(conns_to_migrate) = self.ipv4.tcp.connections_to_reactively_migrate() {
+            //     for conn in conns_to_migrate {
+            //         self.ipv4.tcp.initiate_migration_by_addr(conn);
+            //     }
+            // }
             /* comment out this for recv_queue_len vs mig_lat eval */
 
             // self.ipv4.tcp.large_scale_migrate();

@@ -563,8 +563,8 @@ fn server(local: SocketAddrV4) -> Result<()> {
                 },
             }
         }
-        #[cfg(feature = "tcp-migration")]
-        libos.large_scale_migrate();
+        // #[cfg(feature = "tcp-migration")]
+        // libos.large_scale_migrate();
         // #[cfg(feature = "profiler")]
         // profiler::write(&mut std::io::stdout(), None).expect("failed to write to stdout");
         
