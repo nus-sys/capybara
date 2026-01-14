@@ -786,7 +786,16 @@ impl Inner {
         }
         let key = (local, remote);
 
+        // Check if there's an established connection and if it's closed
+        // If closed and receiving a new SYN, clean up the old connection and route to passive socket
         if let Some(s) = self.established.get(&key) {
+            if tcp_hdr.syn && !tcp_hdr.ack && s.cb.is_closed() {
+                // This is a new SYN for a closed connection - clean up and route to passive
+                capy_log!("New SYN on closed connection {:?}, cleaning up", key);
+                self.established.remove(&key);
+                self.qds.remove(&key);
+                // Fall through to passive socket handling below
+            } else {
             /* activate this for recv_queue_len vs mig_lat eval */
             // let is_data_empty = data.is_empty();
             /* activate this for recv_queue_len vs mig_lat eval */
@@ -848,6 +857,7 @@ impl Inner {
             // }
 
             return Ok(());
+            }  // end of else block for non-SYN or non-closed connection
         }
         if let Some(s) = self.connecting.get_mut(&key) {
             debug!("Routing to connecting connection: {:?}", key);

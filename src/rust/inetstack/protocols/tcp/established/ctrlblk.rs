@@ -334,6 +334,10 @@ impl ControlBlock {
         self.remote
     }
 
+    pub fn is_closed(&self) -> bool {
+        self.state.get() == State::Closed
+    }
+
     // ToDo: Remove this.  ARP doesn't belong at this layer.
     pub fn arp(&self) -> Rc<ArpPeer> {
         self.arp.clone()
