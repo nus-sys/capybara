@@ -2,17 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 import pyrem.host
-
-################## PATHS #####################
-HOME = os.path.expanduser("~")
-LOCAL = HOME.replace("/homes", "/local")
-CAPYBARA_HOME = f'{HOME}/Capybara'
-CAPYBARA_PATH = f'{HOME}/Capybara/capybara'
-CAPYBARA_CONFIG_PATH = f'{CAPYBARA_PATH}/scripts/config'
-CALADAN_PATH = f'{HOME}/Capybara/caladan'
-DATA_PATH = f'{HOME}/capybara_conn_scalability'
-PCAP_PATH = f'{LOCAL}/capybara-pcap'
-WRK_PATH = f'{HOME}/wrk-tools/wrk2' # {HOME}/wrk-tools/wrk
+from shared_config import *
 
 ################## CLUSTER CONFIG #####################
 ALL_NODES = ['node5', 'node6', 'node7', 'node8', 'node9', 'node10']
