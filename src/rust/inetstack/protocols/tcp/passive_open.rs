@@ -71,6 +71,7 @@ use ::std::{
 };
 
 use crate::capy_log;
+use crate::runtime::memory::Buffer;
 
 struct InflightAccept {
     local_isn: SeqNumber,
@@ -121,6 +122,19 @@ impl ReadySockets {
 
     fn len(&self) -> usize {
         self.ready.len()
+    }
+
+    fn route_packet_to_ready(&self, remote: &SocketAddrV4, header: &mut TcpHeader, data: Buffer) -> bool {
+        for result in self.ready.iter() {
+            if let Ok(cb) = result {
+                if &cb.get_remote() == remote {
+                    capy_log!("Routing packet to ready connection {:?}", remote);
+                    cb.receive(header, data);
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
@@ -183,11 +197,12 @@ impl PassiveSocket {
         self.ready.borrow_mut().poll(ctx)
     }
 
-    pub fn receive(&mut self, ip_header: &Ipv4Header, header: &TcpHeader) -> Result<(), Fail> {
+    pub fn receive(&mut self, ip_header: &Ipv4Header, header: &mut TcpHeader, data: Buffer) -> Result<(), Fail> {
         let remote = SocketAddrV4::new(ip_header.get_src_addr(), header.src_port);
         if self.ready.borrow().endpoints.contains(&remote) {
-            // TODO: What should we do if a packet shows up for a connection that hasn't been `accept`ed yet?
-            capy_log!("This conn is ready");
+            // Route packet to ready connection that hasn't been accepted yet
+            capy_log!("This conn is ready, routing packet to it");
+            self.ready.borrow().route_packet_to_ready(&remote, header, data);
             return Ok(());
         }
         let inflight_len = self.inflight.len();
@@ -253,6 +268,11 @@ impl PassiveSocket {
                 congestion_control::None::new,
                 None,
             );
+            // If ACK comes with piggybacked data, process it before pushing to ready
+            if !data.is_empty() {
+                capy_log!("ACK has piggybacked data ({} bytes), processing it", data.len());
+                cb.receive(header, data);
+            }
             self.ready.borrow_mut().push_ok(cb);
             return Ok(());
         }

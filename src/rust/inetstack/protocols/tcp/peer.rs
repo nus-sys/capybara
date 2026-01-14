@@ -441,7 +441,7 @@ impl TcpPeer {
 
         let socket: Socket = Socket::Established { local, remote };
 
-        // eprintln!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
+        capy_log!("CONNECTION ESTABLISHED (REMOTE: {:?}, new_qd: {:?})", remote, new_qd);
 
         // TODO: Reset the connection if the following following check fails, instead of panicking.
         match inner.sockets.insert(new_qd, socket) {
@@ -451,6 +451,15 @@ impl TcpPeer {
                 capy_log_mig!("migrated socket QD overwritten");
             },
             _ => panic!("duplicate queue descriptor in sockets table"),
+        }
+
+        // Clean up old closed connection if it exists (for port reuse scenarios)
+        if let Some(old_socket) = inner.established.get(&key) {
+            if old_socket.cb.is_closed() {
+                capy_log!("Removing old closed connection {:?} for port reuse", key);
+                inner.established.remove(&key);
+                inner.qds.remove(&key);
+            }
         }
 
         assert!(
@@ -786,16 +795,22 @@ impl Inner {
         }
         let key = (local, remote);
 
-        // Check if there's an established connection and if it's closed
-        // If closed and receiving a new SYN, clean up the old connection and route to passive socket
-        if let Some(s) = self.established.get(&key) {
-            if tcp_hdr.syn && !tcp_hdr.ack && s.cb.is_closed() {
-                // This is a new SYN for a closed connection - clean up and route to passive
-                capy_log!("New SYN on closed connection {:?}, cleaning up", key);
-                self.established.remove(&key);
-                self.qds.remove(&key);
-                // Fall through to passive socket handling below
+        // Check if there's an established connection
+        // If it's closed, skip to passive socket (don't remove - app may still have pending ops)
+        let should_route_to_established = if let Some(s) = self.established.get(&key) {
+            if s.cb.is_closed() {
+                // Connection is closed - let packets fall through to passive socket for new connection
+                capy_log!("Packet on closed connection {:?}, routing to passive socket", key);
+                false
             } else {
+                true
+            }
+        } else {
+            false
+        };
+
+        if should_route_to_established {
+            let s = self.established.get(&key).unwrap();
             /* activate this for recv_queue_len vs mig_lat eval */
             // let is_data_empty = data.is_empty();
             /* activate this for recv_queue_len vs mig_lat eval */
@@ -857,7 +872,6 @@ impl Inner {
             // }
 
             return Ok(());
-            }  // end of else block for non-SYN or non-closed connection
         }
         if let Some(s) = self.connecting.get_mut(&key) {
             debug!("Routing to connecting connection: {:?}", key);
@@ -884,7 +898,7 @@ impl Inner {
         if let Some(s) = self.passive.get_mut(&local) {
             debug!("Routing to passive connection: {:?}", local);
             capy_log!("Routing to passive connection: {:?}", local);
-            return s.receive(ip_hdr, &tcp_hdr);
+            return s.receive(ip_hdr, &mut tcp_hdr, data);
         }
 
         // The packet isn't for an open port; send a RST segment.

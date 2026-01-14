@@ -25,7 +25,7 @@ FEATURES = [
     # 'tcp-migration',
     'server-rewriting',
     # 'manual-tcp-migration',
-    'capy-log',
+    # 'capy-log',
     # 'capy-profile',
     # 'capy-time-log',
     # 'server-reply-analysis',
