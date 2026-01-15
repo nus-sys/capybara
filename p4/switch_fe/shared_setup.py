@@ -1,9 +1,10 @@
+from netaddr import EUI, IPAddress
+
 def setup_tbl_rewrite_dst_mac(p4):
     """
     Common MAC rewrite table setup for all switch_fe programs.
     Maps destination IP to MAC address and egress port.
     """
-    from netaddr import EUI, IPAddress
     tbl_rewrite_dst_mac = p4.Ingress.tbl_rewrite_dst_mac
     tbl_rewrite_dst_mac.entry_with_rewrite_dst_mac(
         dst_ip   = IPAddress('10.0.1.5'),

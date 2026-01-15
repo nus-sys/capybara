@@ -1,6 +1,5 @@
 from bfrtcli import *
 from netaddr import EUI, IPAddress
-import select
 
 
 class main_eval():
@@ -336,20 +335,10 @@ for i in range(4):
 # dst_mac_rewrite.entry_with_exec_dst_mac_rewrite(dst_ip = IPAddress('10.0.1.1'), mac_addr = EUI('ff:ff:ff:ff:ff:ff')).push()
 
 # Load shared MAC rewrite table setup
-exec(open("/home/singtel/inho/Capybara/capybara/p4/switch_fe/shared_setup.py").read())
+import sys
+sys.path.insert(0, "/home/singtel/inho/Capybara/capybara/p4/switch_fe")
+from shared_setup import setup_tbl_rewrite_dst_mac
 setup_tbl_rewrite_dst_mac(p4)
-# p4.Ingress.backend_ip.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.8'))
-# p4.Ingress.backend_port.mod(REGISTER_INDEX=0, f1=10000)
-
-# p4.Ingress.backend_ip.mod(REGISTER_INDEX=1, f1=IPAddress('10.0.1.9'))
-# p4.Ingress.backend_port.mod(REGISTER_INDEX=1, f1=10000)
-
-# p4.Ingress.backend_ip.mod(REGISTER_INDEX=2, f1=IPAddress('10.0.1.8'))
-# p4.Ingress.backend_port.mod(REGISTER_INDEX=2, f1=10001)
-
-# p4.Ingress.backend_ip.mod(REGISTER_INDEX=3, f1=IPAddress('10.0.1.9'))
-# p4.Ingress.backend_port.mod(REGISTER_INDEX=3, f1=10001)
-
 
 
 # p4.Egress.reg_min_rps_server_port.mod(REGISTER_INDEX=0, f1=0)
@@ -359,50 +348,3 @@ setup_tbl_rewrite_dst_mac(p4)
 # exec(open(port_mirror_setup_file).read()) # <== To Add
 
 bfrt.complete_operations()
-try:
-    count = 0
-    prev_values = None
-    while True:
-        count += 1
-
-        # Read all values
-        sum_vals = []
-        for i in range(2):
-            entry = p4.Egress.reg_sum_rps.get(REGISTER_INDEX=i, from_hw=True, print_ents=False, return_ents=True)
-            sum_vals.append(entry.data[b'Egress.reg_sum_rps.f1'][0])
-
-        individual_vals = []
-        for i in range(10000, 10004):
-            node8_entry = p4.Egress.reg_individual_rps_node8_0.get(REGISTER_INDEX=i, from_hw=True, print_ents=False, return_ents=True)
-            node9_entry = p4.Egress.reg_individual_rps_node9_0.get(REGISTER_INDEX=i, from_hw=True, print_ents=False, return_ents=True)
-            node10_entry = p4.Egress.reg_individual_rps_node10_0.get(REGISTER_INDEX=i, from_hw=True, print_ents=False, return_ents=True)
-            individual_vals.append((
-                node8_entry.data[b'Egress.reg_individual_rps_node8_0.f1'][0],
-                node9_entry.data[b'Egress.reg_individual_rps_node9_0.f1'][0],
-                node10_entry.data[b'Egress.reg_individual_rps_node10_0.f1'][0]
-            ))
-
-        curr_values = (sum_vals, individual_vals)
-
-        # Only print if values changed
-        if curr_values != prev_values:
-            print("\n" + "="*60)
-            print("RPS Status (count: {})".format(count))
-            print("="*60)
-
-            print("\n[reg_sum_rps]")
-            for i in range(2):
-                print("  idx[{}] : {}".format(i, sum_vals[i]))
-
-            print("\n[reg_individual_rps] (index 10000-10003)")
-            print("  {:>8}  {:>10}  {:>10}  {:>10}".format("Index", "Node8", "Node9", "Node10"))
-            print("  " + "-"*44)
-            for idx, i in enumerate(range(10000, 10004)):
-                print("  {:>8}  {:>10}  {:>10}  {:>10}".format(i, individual_vals[idx][0], individual_vals[idx][1], individual_vals[idx][2]))
-
-            print("\n" + "="*60)
-            prev_values = curr_values
-
-        select.select([], [], [], 1)
-except KeyboardInterrupt:
-    print("\nStopped.")
