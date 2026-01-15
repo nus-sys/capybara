@@ -4,9 +4,12 @@ import numpy as np
 import pyrem.host
 from shared_config import *
 
+################## PATHS #####################
+DATA_PATH = f'{HOME}/capybara-sigcomm26'
+
 ################## CLUSTER CONFIG #####################
 ALL_NODES = ['node5', 'node6', 'node7', 'node8', 'node9', 'node10']
-CLIENT_NODES = ['node7'] # ['node5'] ['node5', 'node7']
+CLIENT_NODES = ['node5'] # ['node5'] ['node5', 'node7']
 SERVER_NODES = ['node8', 'node9', 'node10']
 LS_SERVER_NODES = ['node8', 'node9', 'node10']
 FRONTEND_NODE = 'node8'
@@ -93,45 +96,16 @@ ENV = f'MTU=9000 MSS=9000 \
 
 
 ### CALADAN ###
-CLIENT_PPS = [i for i in range(1950000, 2000000 + 1, 50000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(2000000, 2000000 + 1, 50000)]#[i for i in range(100000, 1_300_001, 100000)]
 import workload_spec_generator
 # LOADSHIFTS = workload_spec_generator.main()
 # LOADSHIFTS = workload_spec_generator.zipf_for_12_servers(1000000)
 # LOADSHIFTS = '90000:10000,270000:10000,450000:10000,630000:10000,810000:10000/90000:50000/90000:50000/90000:50000'
 LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
-ZIPF_ALPHA = '1.2' # 0, 0.9, 1.2
+ZIPF_ALPHA = '' # 0, 0.9, 1.2
 ONOFF = '' # '0', '1'
 NUM_CONNECTIONS = [720] #[i for i in range(100, 100 + 1, 5)]
 RUNTIME = 10
-
-
-
-def kill_procs():
-    cmd = [f'sudo pkill -INT -e iokerneld ; \
-            sudo pkill -INT -f synthetic ; \
-            sudo pkill -INT -e dpdk-ctrl.elf ; \
-            sudo pkill -INT -e phttp-bench ; \
-            sudo pkill -INT -f tcpdump ; \
-            sudo pkill -INT -f http-server ; \
-            sudo pkill -INT -f curl ; \
-            sudo pkill -INT -f {SERVER_APP}']
-    # print(cmd)
-    if TCPDUMP:
-        cmd[0] += ' ; sudo pkill -INT -f -e tcpdump'
-    # cmd = [f'sudo pkill -INT -f Capybara && sleep 2 && sudo pkill -f Capybara && sudo pkill -f caladan']
-    
-    # print(cmd)
-    for node in ALL_NODES:
-        # kill_tasks = []
-        # print(node)
-        host = pyrem.host.RemoteHost(node)
-        task = host.run(cmd, quiet=False)
-        # print(task)
-        # kill_tasks.append(task)
-        pyrem.task.Parallel([task], aggregate=True).start(wait=True)
-    
-    # print(kill_tasks)
-    print('KILLED CAPYBARA PROCESSES')
 
 
 #####################

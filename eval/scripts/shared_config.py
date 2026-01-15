@@ -139,7 +139,11 @@ def kill_procs():
         # print(task)
         # kill_tasks.append(task)
         pyrem.task.Parallel([task], aggregate=True).start(wait=True)
-    
+
+    # Kill bfshell on switch
+    import subprocess
+    subprocess.run(['ssh', 'sw1', 'pkill -f run_bfshell'], capture_output=True)
+
     # print(kill_tasks)
     print('KILLED CAPYBARA PROCESSES')
 

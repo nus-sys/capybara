@@ -34,20 +34,20 @@ final_result = ''
 
 def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     global experiment_id
-    print('SETUP SWITCH')
+    # print('SETUP SWITCH')
     cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
         /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
     # cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
     #     /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/port_forward/port_forward.py"']
     cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
         /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_src_rewriting_by_server_setup.py"']
-    result = subprocess.run(
-        cmd,
-        shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=True,
-    ).stdout.decode()
+    # result = subprocess.run(
+    #     cmd,
+    #     shell=True,
+    #     stdout=subprocess.PIPE,
+    #     stderr=subprocess.STDOUT,
+    #     check=True,
+    # ).stdout.decode()
     # print(result + '\n\n')
 
     
@@ -621,7 +621,48 @@ def parse_rps_signal(experiment_id):
         print("ERROR: " + result + '\n\n')
     else:
         print("DONE")
-    
+
+def calc_99p_latency(experiment_id):
+    """Calculate 99th percentile latency from latency_count file.
+    File format: latency_value,count (one per line)
+    """
+    latency_file = f'{DATA_PATH}/{experiment_id}.latency_count'
+    try:
+        latencies = []
+        counts = []
+        with open(latency_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split(',')
+                if len(parts) >= 2:
+                    latencies.append(float(parts[0]))
+                    counts.append(int(parts[1]))
+
+        if not latencies:
+            return 'N/A'
+
+        total_count = sum(counts)
+        target_count = total_count * 0.99
+
+        # Sort by latency value
+        sorted_pairs = sorted(zip(latencies, counts), key=lambda x: x[0])
+
+        cumulative = 0
+        for latency, count in sorted_pairs:
+            cumulative += count
+            if cumulative >= target_count:
+                return f'{latency:.2f}'
+
+        # Return the max latency if we didn't find it
+        return f'{sorted_pairs[-1][0]:.2f}'
+    except FileNotFoundError:
+        return 'N/A'
+    except Exception as e:
+        print(f'Error calculating 99p latency: {e}')
+        return 'N/A'
+
 def run_eval():
     global experiment_id
     global final_result
@@ -814,8 +855,11 @@ def run_eval():
                                             ).stdout.decode()
                                             if result == '':
                                                 result = '[RESULT] N/A\n'
-                                            print('[RESULT]' + f'{SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n},{result[len("[RESULT]"):]}' + '\n\n')
-                                            final_result = final_result + f'{SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n},{result[len("[RESULT]"):]}'
+                                            # Calculate 99p latency from latency_count file
+                                            latency_99p = calc_99p_latency(experiment_id)
+                                            result_base = result[len("[RESULT]"):].strip()
+                                            print('[RESULT]' + f'{SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n},{result_base}, {latency_99p}' + '\n\n')
+                                            final_result = final_result + f'{SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n},{result_base}, {latency_99p}\n'
                                     except subprocess.CalledProcessError as e:
                                         # Handle the exception for a failed command execution
                                         print("EXPERIMENT FAILED\n\n")
@@ -866,7 +910,7 @@ def run_eval():
 def exiting():
     global final_result
     print('EXITING')
-    result_header = "SERVER_APP, ID, #BE, #CONN, DATA_SIZE, MIG_DELAY, MAX_REACTIVE_MIG, MAX_PROACTIVE_MIG, MIG_PER_N, RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th"
+    result_header = "SERVER_APP, ID, #BE, #CONN, DATA_SIZE, MIG_DELAY, MAX_REACTIVE_MIG, MAX_PROACTIVE_MIG, MIG_PER_N, RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, 99p_file"
     if CLIENT_APP == 'wrk':
         result_header = "SERVER_APP, ID, #BE, #CONN, #THREAD, DATA_SIZE, req/sec, datasize/sec, AVG, p50, p75, p90, p99"
         
