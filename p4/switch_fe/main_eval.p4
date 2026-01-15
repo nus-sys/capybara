@@ -225,11 +225,11 @@ control Ingress(
     RegisterAction<index_t, _, index_t>(reg_be_idx) get_be_idx = {
         void apply(inout index_t val, out index_t rv) {
             rv = val;
-            // if(val == 10-1){
-            //     val = 0;
-            // }else{
-            //     val = val + 1;    
-            // }
+            if(val == 12-1){
+                val = 0;
+            }else{
+                val = val + 1;    
+            }
         }
     };
 

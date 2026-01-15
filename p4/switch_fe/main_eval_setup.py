@@ -3,7 +3,7 @@ from netaddr import EUI, IPAddress
 import select
 
 
-class capybara_switch_fe_src_rewriting_by_server():
+class main_eval():
     #
     # Helper Functions to deal with ports
     #
@@ -118,7 +118,7 @@ class capybara_switch_fe_src_rewriting_by_server():
         bfrt.complete_operations()
 
     def __init__(self, default_ttl=60000):
-        self.p4 = bfrt.capybara_switch_fe_src_rewriting_by_server.pipe
+        self.p4 = bfrt.main_eval.pipe
         self.all_ports  = [port.key[b'$DEV_PORT']
                            for port in bfrt.port.port.get(regex=1,
                                                           return_ents=True,
@@ -162,8 +162,8 @@ class capybara_switch_fe_src_rewriting_by_server():
 
     @staticmethod
     def aging_cb(dev_id, pipe_id, direction, parser_id, entry):
-        smac = bfrt.capybara_switch_fe_src_rewriting_by_server.pipe.Ingress.smac
-        dmac = bfrt.capybara_switch_fe_src_rewriting_by_server.pipe.Ingress.dmac
+        smac = bfrt.main_eval.pipe.Ingress.smac
+        dmac = bfrt.main_eval.pipe.Ingress.dmac
 
         mac_addr = entry.key[b'hdr.ethernet.src_mac']
 
@@ -177,8 +177,8 @@ class capybara_switch_fe_src_rewriting_by_server():
 
     @staticmethod
     def learning_cb(dev_id, pipe_id, direction, parser_id, session, msg):
-        smac = bfrt.capybara_switch_fe_src_rewriting_by_server.pipe.Ingress.smac
-        dmac = bfrt.capybara_switch_fe_src_rewriting_by_server.pipe.Ingress.dmac
+        smac = bfrt.main_eval.pipe.Ingress.smac
+        dmac = bfrt.main_eval.pipe.Ingress.dmac
 
         for digest in msg:
             port     = digest["ingress_port"]
@@ -207,8 +207,8 @@ class capybara_switch_fe_src_rewriting_by_server():
 
     @staticmethod
     def learning_migration(dev_id, pipe_id, direction, parser_id, session, msg):
-        # migrate_request = bfrt.capybara_switch_fe_src_rewriting_by_server.pipe.Ingress.migrate_request
-        # migrate_reply = bfrt.capybara_switch_fe_src_rewriting_by_server.pipe.Ingress.migrate_reply
+        # migrate_request = bfrt.main_eval.pipe.Ingress.migrate_request
+        # migrate_reply = bfrt.main_eval.pipe.Ingress.migrate_reply
         
         for digest in msg:
             src_mac     = digest["src_mac"]
@@ -252,11 +252,11 @@ def set_bcast(ports):
                 MULTICAST_NODE_L1_XID=[0]).push()
 
 
-p4 = bfrt.capybara_switch_fe_src_rewriting_by_server.pipe
+p4 = bfrt.main_eval.pipe
 num_backends = 12
 
 ### Setup L2 learning
-sl2 = capybara_switch_fe_src_rewriting_by_server(default_ttl=10000)
+sl2 = main_eval(default_ttl=10000)
 sl2.setup()
 set_bcast([24, 32, 36, 28, 16, 20])
 
@@ -281,49 +281,49 @@ bfrt.pre.mgid.entry(MGID=2, MULTICAST_NODE_ID=mcast_node_ids,
 
 p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=0, f1 = 0)
 
-for i in range(65536):
-    p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = 0)
+# for i in range(65536):
+#     p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = 0)
     # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = i % num_backends)
     # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = (i/2) % 4) // for redis-benchmark distribution
 
 
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.8'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=0, f1=10000)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.8'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=0, f1=10000)
 
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=1, f1=IPAddress('10.0.1.9'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=1, f1=10000)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=1, f1=IPAddress('10.0.1.9'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=1, f1=10000)
 
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=2, f1=IPAddress('10.0.1.10'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=2, f1=10000)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=2, f1=IPAddress('10.0.1.10'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=2, f1=10000)
 
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=3, f1=IPAddress('10.0.1.8'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=3, f1=10001)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=3, f1=IPAddress('10.0.1.8'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=3, f1=10001)
 
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=4, f1=IPAddress('10.0.1.9'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=4, f1=10001)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=4, f1=IPAddress('10.0.1.9'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=4, f1=10001)
 
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=5, f1=IPAddress('10.0.1.10'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=5, f1=10001)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=5, f1=IPAddress('10.0.1.10'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=5, f1=10001)
 
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=6, f1=IPAddress('10.0.1.8'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=6, f1=10002)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=6, f1=IPAddress('10.0.1.8'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=6, f1=10002)
 
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=7, f1=IPAddress('10.0.1.9'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=7, f1=10002)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=7, f1=IPAddress('10.0.1.9'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=7, f1=10002)
 
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=8, f1=IPAddress('10.0.1.10'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=8, f1=10002)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=8, f1=IPAddress('10.0.1.10'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=8, f1=10002)
 
-p4.Ingress.backend_ip.mod(REGISTER_INDEX=9, f1=IPAddress('10.0.1.8'))
-p4.Ingress.backend_port.mod(REGISTER_INDEX=9, f1=10003)
+# p4.Ingress.backend_ip.mod(REGISTER_INDEX=9, f1=IPAddress('10.0.1.8'))
+# p4.Ingress.backend_port.mod(REGISTER_INDEX=9, f1=10003)
         
-# for i in range(4):
-#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3, f1=IPAddress('10.0.1.8'))
-#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3, f1=10000 + i)
-#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 1, f1=IPAddress('10.0.1.9'))
-#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 1, f1=10000 + i)
-#     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 2, f1=IPAddress('10.0.1.10'))
-#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 2, f1=10000 + i)
+for i in range(4):
+    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3, f1=IPAddress('10.0.1.8'))
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3, f1=10000 + i)
+    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 1, f1=IPAddress('10.0.1.9'))
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 1, f1=10000 + i)
+    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i*3 + 2, f1=IPAddress('10.0.1.10'))
+    p4.Ingress.backend_port.mod(REGISTER_INDEX=i*3 + 2, f1=10000 + i)
 
 # for i in range(num_backends):
 #     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.8'))
@@ -335,37 +335,9 @@ p4.Ingress.backend_port.mod(REGISTER_INDEX=9, f1=10003)
 # dst_mac_rewrite = p4.Ingress.dst_mac_rewrite
 # dst_mac_rewrite.entry_with_exec_dst_mac_rewrite(dst_ip = IPAddress('10.0.1.1'), mac_addr = EUI('ff:ff:ff:ff:ff:ff')).push()
 
-tbl_rewrite_dst_mac = p4.Ingress.tbl_rewrite_dst_mac
-tbl_rewrite_dst_mac.entry_with_rewrite_dst_mac(
-    dst_ip   = IPAddress('10.0.1.5'),
-    dstmac    = EUI('1c:34:da:5e:0e:d8'),
-    port      = 16
-).push()
-tbl_rewrite_dst_mac.entry_with_rewrite_dst_mac(
-    dst_ip   = IPAddress('10.0.1.6'),
-    dstmac    = EUI('1c:34:da:5e:0e:d4'),
-    port      = 20
-).push()
-tbl_rewrite_dst_mac.entry_with_rewrite_dst_mac(
-    dst_ip   = IPAddress('10.0.1.7'),
-    dstmac    = EUI('08:c0:eb:b6:cd:5d'),
-    port      = 32
-).push()
-tbl_rewrite_dst_mac.entry_with_rewrite_dst_mac(
-    dst_ip   = IPAddress('10.0.1.8'),
-    dstmac    = EUI('08:c0:eb:b6:e8:05'),
-    port      = 36
-).push()
-tbl_rewrite_dst_mac.entry_with_rewrite_dst_mac(
-    dst_ip   = IPAddress('10.0.1.9'),
-    dstmac    = EUI('08:c0:eb:b6:c5:ad'),
-    port      = 24
-).push()
-tbl_rewrite_dst_mac.entry_with_rewrite_dst_mac(
-    dst_ip   = IPAddress('10.0.1.10'),
-    dstmac    = EUI('08:c0:eb:b6:e7:e5'),
-    port      = 28
-).push()
+# Load shared MAC rewrite table setup
+exec(open("/home/singtel/inho/Capybara/capybara/p4/switch_fe/shared_setup.py").read())
+setup_tbl_rewrite_dst_mac(p4)
 # p4.Ingress.backend_ip.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.8'))
 # p4.Ingress.backend_port.mod(REGISTER_INDEX=0, f1=10000)
 
@@ -387,3 +359,50 @@ tbl_rewrite_dst_mac.entry_with_rewrite_dst_mac(
 # exec(open(port_mirror_setup_file).read()) # <== To Add
 
 bfrt.complete_operations()
+try:
+    count = 0
+    prev_values = None
+    while True:
+        count += 1
+
+        # Read all values
+        sum_vals = []
+        for i in range(2):
+            entry = p4.Egress.reg_sum_rps.get(REGISTER_INDEX=i, from_hw=True, print_ents=False, return_ents=True)
+            sum_vals.append(entry.data[b'Egress.reg_sum_rps.f1'][0])
+
+        individual_vals = []
+        for i in range(10000, 10004):
+            node8_entry = p4.Egress.reg_individual_rps_node8_0.get(REGISTER_INDEX=i, from_hw=True, print_ents=False, return_ents=True)
+            node9_entry = p4.Egress.reg_individual_rps_node9_0.get(REGISTER_INDEX=i, from_hw=True, print_ents=False, return_ents=True)
+            node10_entry = p4.Egress.reg_individual_rps_node10_0.get(REGISTER_INDEX=i, from_hw=True, print_ents=False, return_ents=True)
+            individual_vals.append((
+                node8_entry.data[b'Egress.reg_individual_rps_node8_0.f1'][0],
+                node9_entry.data[b'Egress.reg_individual_rps_node9_0.f1'][0],
+                node10_entry.data[b'Egress.reg_individual_rps_node10_0.f1'][0]
+            ))
+
+        curr_values = (sum_vals, individual_vals)
+
+        # Only print if values changed
+        if curr_values != prev_values:
+            print("\n" + "="*60)
+            print("RPS Status (count: {})".format(count))
+            print("="*60)
+
+            print("\n[reg_sum_rps]")
+            for i in range(2):
+                print("  idx[{}] : {}".format(i, sum_vals[i]))
+
+            print("\n[reg_individual_rps] (index 10000-10003)")
+            print("  {:>8}  {:>10}  {:>10}  {:>10}".format("Index", "Node8", "Node9", "Node10"))
+            print("  " + "-"*44)
+            for idx, i in enumerate(range(10000, 10004)):
+                print("  {:>8}  {:>10}  {:>10}  {:>10}".format(i, individual_vals[idx][0], individual_vals[idx][1], individual_vals[idx][2]))
+
+            print("\n" + "="*60)
+            prev_values = curr_values
+
+        select.select([], [], [], 1)
+except KeyboardInterrupt:
+    print("\nStopped.")
