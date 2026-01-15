@@ -1,5 +1,6 @@
 from bfrtcli import *
 from netaddr import EUI, IPAddress
+import select
 
 
 class capybara_switch_fe_src_rewriting_by_server():
@@ -385,5 +386,19 @@ tbl_rewrite_dst_mac.entry_with_rewrite_dst_mac(
 # port_mirror_setup_file="/home/singtel/inho/Capybara/capybara/p4/includes/setup_port_mirror.py" # <== To Modify and Add
 # exec(open(port_mirror_setup_file).read()) # <== To Add
 
-
 bfrt.complete_operations()
+try:
+    count = 0
+    while True:
+        count += 1
+        print("\n" + "="*50)
+        print("reg_sum_rps Status (count: {})".format(count))
+        print("="*50)
+        for i in range(2):
+            entry = p4.Egress.reg_sum_rps.get(REGISTER_INDEX=i, from_hw=True, print_ents=False, return_ents=True)
+            val = entry.data[b'Egress.reg_sum_rps.f1'][0]
+            print("  [{}] : {}".format(i, val))
+        print("="*50)
+        select.select([], [], [], 1)
+except KeyboardInterrupt:
+    print("\nStopped.")

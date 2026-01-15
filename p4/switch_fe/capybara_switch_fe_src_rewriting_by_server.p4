@@ -225,11 +225,11 @@ control Ingress(
     RegisterAction<index_t, _, index_t>(reg_be_idx) get_be_idx = {
         void apply(inout index_t val, out index_t rv) {
             rv = val;
-            if(val == 10-1){
-                val = 0;
-            }else{
-                val = val + 1;    
-            }
+            // if(val == 10-1){
+            //     val = 0;
+            // }else{
+            //     val = val + 1;    
+            // }
         }
     };
 
@@ -892,7 +892,7 @@ control Egress(
                 drop();
             }
             // tbl_individual_rps.apply();
-        }else if(hdr.tcp.isValid() && hdr.tcp.flags[1:1] != 1 && hdr.ipv4.total_len != 40 && eg_intr_md.egress_port == 24){
+        }else if(hdr.tcp.isValid() && hdr.tcp.flags[1:1] != 1 && hdr.ipv4.total_len != 40 && eg_intr_md.egress_port == 36){
             
             exec_read_active_reg_idx();
             exec_add_reg_sum_rps();
