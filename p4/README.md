@@ -81,6 +81,14 @@ ssh sw1 "source /home/singtel/tools/set_sde.bash && \
 - `capybara_msr/`: Migration state replication
 - `resource_utilization/`: Resource monitoring
 
+## Check Stage Usage
+
+To check the number of stages used by a P4 program:
+
+```bash
+cat ~/bf-sde-9.4.0/build/p4-build/tofino/capybara_switch_fe_src_rewriting_by_server/tofino/capybara_switch_fe_src_rewriting_by_server/pipe/capybara_switch_fe_src_rewriting_by_server.bfa | grep stage
+```
+
 ## Backend Configuration
 
 `capybara_switch_fe_src_rewriting_by_server_setup.py` configures:

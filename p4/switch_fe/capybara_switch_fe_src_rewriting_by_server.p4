@@ -892,14 +892,16 @@ control Egress(
                 drop();
             }
             // tbl_individual_rps.apply();
-        }else if(hdr.tcp.isValid() && hdr.tcp.flags[1:1] != 1 && hdr.ipv4.total_len != 40 && eg_intr_md.egress_port == 36){
-            
-            exec_read_active_reg_idx();
-            exec_add_reg_sum_rps();
-            if(meta.active_reg_idx == 0){
-                exec_add_reg_individual_rps_0();
-            }else{
-                exec_add_reg_individual_rps_1();
+        }else if(hdr.tcp.isValid() && hdr.tcp.flags[1:1] != 1 && hdr.ipv4.total_len != 40){
+            if(hdr.ipv4.dst_ip == 0x0a000108)
+            {
+                exec_read_active_reg_idx();
+                exec_add_reg_sum_rps();
+                if(meta.active_reg_idx == 0){
+                    exec_add_reg_individual_rps_0();
+                }else{
+                    exec_add_reg_individual_rps_1();
+                }
             }
         }else if(hdr.tcpmig.isValid() && meta.flag == 0b00100000) { // PREPARE_MIG
             // exec_read_reg_min_rps_server_port(); 
