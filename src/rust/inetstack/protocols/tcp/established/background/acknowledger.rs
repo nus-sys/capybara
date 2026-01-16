@@ -12,8 +12,15 @@ use ::futures::{
 };
 use ::std::rc::Rc;
 
+use crate::capy_log;
+
 pub async fn acknowledger(cb: Rc<ControlBlock>) -> Result<!, Fail> {
     loop {
+        // Stop acknowledging if connection is closed
+        if cb.is_closed() {
+            capy_log!("acknowledger: connection closed, stopping");
+            futures::future::pending::<()>().await;
+        }
         // TODO: Implement TCP delayed ACKs, subject to restrictions from RFC 1122
         // - TCP should implement a delayed ACK
         // - The delay must be less than 500ms

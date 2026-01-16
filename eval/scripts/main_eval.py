@@ -34,20 +34,20 @@ final_result = ''
 
 def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     global experiment_id
-    # print('SETUP SWITCH')
+    print('SETUP SWITCH')
     cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
         /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
     # cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
     #     /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/port_forward/port_forward.py"']
     cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
-        /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_src_rewriting_by_server_setup.py"']
-    # result = subprocess.run(
-    #     cmd,
-    #     shell=True,
-    #     stdout=subprocess.PIPE,
-    #     stderr=subprocess.STDOUT,
-    #     check=True,
-    # ).stdout.decode()
+        /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/main_eval_setup.py"']
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=True,
+    ).stdout.decode()
     # print(result + '\n\n')
 
     
@@ -623,31 +623,42 @@ def parse_rps_signal(experiment_id):
         print("DONE")
 
 def calc_99p_latency(experiment_id):
-    """Calculate 99th percentile latency from latency_count file.
+    """Calculate 99th percentile latency from latency_count files.
+    Combines data from both long-lived and shortflow clients.
     File format: latency_value,count (one per line)
     """
-    latency_file = f'{DATA_PATH}/{experiment_id}.latency_count'
-    try:
-        latencies = []
-        counts = []
-        with open(latency_file, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split(',')
-                if len(parts) >= 2:
-                    latencies.append(float(parts[0]))
-                    counts.append(int(parts[1]))
+    latency_files = [
+        f'{DATA_PATH}/{experiment_id}.latency_count',           # long-lived
+        f'{DATA_PATH}/{experiment_id}_shortflow.latency_count'  # shortflow
+    ]
 
-        if not latencies:
+    try:
+        # Use dict to combine counts for same latency values
+        latency_counts = {}
+
+        for latency_file in latency_files:
+            try:
+                with open(latency_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        parts = line.split(',')
+                        if len(parts) >= 2:
+                            latency = float(parts[0])
+                            count = int(parts[1])
+                            latency_counts[latency] = latency_counts.get(latency, 0) + count
+            except FileNotFoundError:
+                continue  # Skip if file doesn't exist
+
+        if not latency_counts:
             return 'N/A'
 
-        total_count = sum(counts)
+        total_count = sum(latency_counts.values())
         target_count = total_count * 0.99
 
         # Sort by latency value
-        sorted_pairs = sorted(zip(latencies, counts), key=lambda x: x[0])
+        sorted_pairs = sorted(latency_counts.items(), key=lambda x: x[0])
 
         cumulative = 0
         for latency, count in sorted_pairs:
@@ -657,8 +668,6 @@ def calc_99p_latency(experiment_id):
 
         # Return the max latency if we didn't find it
         return f'{sorted_pairs[-1][0]:.2f}'
-    except FileNotFoundError:
-        return 'N/A'
     except Exception as e:
         print(f'Error calculating 99p latency: {e}')
         return 'N/A'
@@ -747,17 +756,27 @@ def run_eval():
                                 iokernel_task = []
                                 if CLIENT_APP == 'caladan':
                                     cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nobw']
-                                    
+
+                                    # Start iokernel for long-lived connection clients
                                     for client in CLIENT_NODES:
                                         if client == 'node7':
                                             cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
                                         host = pyrem.host.RemoteHost(client)
                                         task = host.run(cmd, quiet=True)
                                         iokernel_task.append(task)
+
+                                    # Start iokernel for shortflow client (node6)
+                                    if SHORTFLOW_CLIENT_NODE:
+                                        cmd_shortflow = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nobw']
+                                        host = pyrem.host.RemoteHost(SHORTFLOW_CLIENT_NODE)
+                                        task = host.run(cmd_shortflow, quiet=True)
+                                        iokernel_task.append(task)
+
                                     pyrem.task.Parallel(iokernel_task, aggregate=True).start(wait=False)
                                     time.sleep(2)
                                     print('iokerneld is running')
                                 client_task = []
+                                # Long-lived connection clients
                                 for client in CLIENT_NODES:
                                     host = pyrem.host.RemoteHost(client)
                                     if SERVER_APP == 'capy-proxy' or SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'prism' or SERVER_APP == 'proxy-server':
@@ -769,7 +788,7 @@ def run_eval():
                                                 --latency \
                                                 http://{FE_IP}:{FE_PORT}/get \
                                                 > {DATA_PATH}/{experiment_id}.{client}']
-                                        else:    
+                                        else:
                                             cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                                 {FE_IP}:{FE_PORT} \
                                                 --config {CALADAN_PATH}/client_{client}.config \
@@ -835,6 +854,32 @@ def run_eval():
                                     #         > {DATA_PATH}/{experiment_id}.stats 2>&1']
                                     task = host.run(cmd, quiet=False)
                                     client_task.append(task)
+
+                                # Shortflow client (node6) - 9x connections with --shortflow
+                                if SHORTFLOW_CLIENT_NODE and CLIENT_APP == 'caladan' and (SERVER_APP == 'capy-proxy' or SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'prism' or SERVER_APP == 'proxy-server'):
+                                # if False:
+                                    shortflow_conn = 1
+                                    host = pyrem.host.RemoteHost(SHORTFLOW_CLIENT_NODE)
+                                    cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
+                                        {FE_IP}:{FE_PORT} \
+                                        --config {CALADAN_PATH}/client_{SHORTFLOW_CLIENT_NODE}.config \
+                                        --mode runtime-client \
+                                        --protocol=http \
+                                        --transport=tcp \
+                                        --samples=1 \
+                                        --threads={shortflow_conn} \
+                                        --runtime={RUNTIME} \
+                                        --discard_pct=0 \
+                                        --output=trace \
+                                        --rampup=0 \
+                                        --shortflow \
+                                        {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
+                                        --exptid={DATA_PATH}/{experiment_id}_shortflow \
+                                        > {DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}']
+                                    task = host.run(cmd, quiet=False)
+                                    client_task.append(task)
+                                    print(f'Running shortflow client on {SHORTFLOW_CLIENT_NODE} with {shortflow_conn} connections')
+
                                 pyrem.task.Parallel(client_task, aggregate=True).start(wait=True)
 
                                 print('================ TEST COMPLETE =================\n')

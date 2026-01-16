@@ -22,6 +22,11 @@ use crate::capy_log;
 
 pub async fn retransmitter(cb: Rc<ControlBlock>) -> Result<!, Fail> {
     loop {
+        // Stop retransmitting if connection is closed
+        if cb.is_closed() {
+            capy_log!("retransmitter: connection closed, stopping");
+            futures::future::pending::<()>().await;
+        }
         capy_log!("retransmitter polled");
         // Pin future for timeout retransmission.
         let (rtx_deadline, rtx_deadline_changed) = cb.watch_retransmit_deadline();

@@ -26,6 +26,11 @@ use crate::capy_log;
 
 pub async fn sender(cb: Rc<ControlBlock>) -> Result<!, Fail> {
     'top: loop {
+        // Stop sending if connection is closed
+        if cb.is_closed() {
+            capy_log!("sender: connection closed, stopping");
+            futures::future::pending::<()>().await;
+        }
         // First, check to see if there's any unsent data.
         // ToDo: Change this to just look at the unsent queue to see if it is empty or not.
         let (unsent_seq, unsent_seq_changed) = cb.get_unsent_seq_no();

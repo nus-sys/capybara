@@ -9,7 +9,8 @@ DATA_PATH = f'{HOME}/capybara-sigcomm26'
 
 ################## CLUSTER CONFIG #####################
 ALL_NODES = ['node5', 'node6', 'node7', 'node8', 'node9', 'node10']
-CLIENT_NODES = ['node5'] # ['node5'] ['node5', 'node7']
+CLIENT_NODES = ['node6'] # Long-lived connections client
+SHORTFLOW_CLIENT_NODE = 'node5'  # Short-lived connections client
 SERVER_NODES = ['node8', 'node9', 'node10']
 LS_SERVER_NODES = ['node8', 'node9', 'node10']
 FRONTEND_NODE = 'node8'
@@ -104,7 +105,7 @@ import workload_spec_generator
 LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
 ZIPF_ALPHA = '' # 0, 0.9, 1.2
 ONOFF = '' # '0', '1'
-NUM_CONNECTIONS = [720] #[i for i in range(100, 100 + 1, 5)]
+NUM_CONNECTIONS = [1000] #[i for i in range(100, 100 + 1, 5)]
 RUNTIME = 10
 
 
