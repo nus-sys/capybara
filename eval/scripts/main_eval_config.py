@@ -9,8 +9,8 @@ DATA_PATH = f'{HOME}/capybara-sigcomm26'
 
 ################## CLUSTER CONFIG #####################
 ALL_NODES = ['node5', 'node6', 'node7', 'node8', 'node9', 'node10']
-CLIENT_NODES = ['node6'] # Long-lived connections client
-SHORTFLOW_CLIENT_NODE = 'node5'  # Short-lived connections client
+LONGFLOW_CLIENT_NODES = ['node5', 'node6']  # Long-lived connections clients
+SHORTFLOW_CLIENT_NODE = 'node7'  # Short-lived connections client
 SERVER_NODES = ['node8', 'node9', 'node10']
 LS_SERVER_NODES = ['node8', 'node9', 'node10']
 FRONTEND_NODE = 'node8'
@@ -97,7 +97,7 @@ ENV = f'MTU=9000 MSS=9000 \
 
 
 ### CALADAN ###
-CLIENT_PPS = [i for i in range(2000000, 2000000 + 1, 50000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(3500000, 3600000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
 import workload_spec_generator
 # LOADSHIFTS = workload_spec_generator.main()
 # LOADSHIFTS = workload_spec_generator.zipf_for_12_servers(1000000)
@@ -105,7 +105,7 @@ import workload_spec_generator
 LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
 ZIPF_ALPHA = '' # 0, 0.9, 1.2
 ONOFF = '' # '0', '1'
-NUM_CONNECTIONS = [1000] #[i for i in range(100, 100 + 1, 5)]
+NUM_CONNECTIONS = [500] #[i for i in range(100, 100 + 1, 5)]
 RUNTIME = 10
 
 

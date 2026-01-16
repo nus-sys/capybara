@@ -503,7 +503,7 @@ def parse_latency_trace(experiment_id):
 def parse_wrk_result(experiment_id):
     import re
     result_str = ''
-    for client in CLIENT_NODES:
+    for client in LONGFLOW_CLIENT_NODES:
         # Read the text file
         with open(f'{DATA_PATH}/{experiment_id}.{client}', "r") as file:
             text = file.read()
@@ -622,15 +622,19 @@ def parse_rps_signal(experiment_id):
     else:
         print("DONE")
 
-def calc_99p_latency(experiment_id):
-    """Calculate 99th percentile latency from latency_count files.
-    Combines data from both long-lived and shortflow clients.
+def calc_latency_percentiles(experiment_id):
+    """Calculate latency percentiles from all latency_count files.
+    Combines data from all longflow and shortflow clients.
     File format: latency_value,count (one per line)
+    Returns: dict with median, 90th, 99th, 99.9th, 99.99th percentiles
     """
-    latency_files = [
-        f'{DATA_PATH}/{experiment_id}.latency_count',           # long-lived
-        f'{DATA_PATH}/{experiment_id}_shortflow.latency_count'  # shortflow
-    ]
+    latency_files = []
+    # Longflow clients (node5, node6)
+    for client in LONGFLOW_CLIENT_NODES:
+        latency_files.append(f'{DATA_PATH}/{experiment_id}.{client}.latency_count')
+    # Shortflow client (node7)
+    if SHORTFLOW_CLIENT_NODE:
+        latency_files.append(f'{DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}_shortflow.latency_count')
 
     try:
         # Use dict to combine counts for same latency values
@@ -652,25 +656,30 @@ def calc_99p_latency(experiment_id):
                 continue  # Skip if file doesn't exist
 
         if not latency_counts:
-            return 'N/A'
+            return {'median': 'N/A', 'p90': 'N/A', 'p99': 'N/A', 'p999': 'N/A', 'p9999': 'N/A'}
 
         total_count = sum(latency_counts.values())
-        target_count = total_count * 0.99
-
-        # Sort by latency value
         sorted_pairs = sorted(latency_counts.items(), key=lambda x: x[0])
 
-        cumulative = 0
-        for latency, count in sorted_pairs:
-            cumulative += count
-            if cumulative >= target_count:
-                return f'{latency:.2f}'
+        # Calculate percentiles: median(50), 90, 99, 99.9, 99.99
+        percentiles = {'median': 0.5, 'p90': 0.9, 'p99': 0.99, 'p999': 0.999, 'p9999': 0.9999}
+        results = {}
 
-        # Return the max latency if we didn't find it
-        return f'{sorted_pairs[-1][0]:.2f}'
+        for name, pct in percentiles.items():
+            target_count = total_count * pct
+            cumulative = 0
+            for latency, count in sorted_pairs:
+                cumulative += count
+                if cumulative >= target_count:
+                    results[name] = f'{latency:.1f}'
+                    break
+            else:
+                results[name] = f'{sorted_pairs[-1][0]:.1f}'
+
+        return results
     except Exception as e:
-        print(f'Error calculating 99p latency: {e}')
-        return 'N/A'
+        print(f'Error calculating latency percentiles: {e}')
+        return {'median': 'N/A', 'p90': 'N/A', 'p99': 'N/A', 'p999': 'N/A', 'p9999': 'N/A'}
 
 def run_eval():
     global experiment_id
@@ -746,8 +755,15 @@ def run_eval():
                                     exit()
                                 
                                 arp_task = []
-                                for client in CLIENT_NODES:
+                                # ARP for longflow clients
+                                for client in LONGFLOW_CLIENT_NODES:
                                     host = pyrem.host.RemoteHost(client)
+                                    cmd = [f'sudo arp -f {CAPYBARA_HOME}/arp_table']
+                                    task = host.run(cmd, quiet=True)
+                                    arp_task.append(task)
+                                # ARP for shortflow client
+                                if SHORTFLOW_CLIENT_NODE:
+                                    host = pyrem.host.RemoteHost(SHORTFLOW_CLIENT_NODE)
                                     cmd = [f'sudo arp -f {CAPYBARA_HOME}/arp_table']
                                     task = host.run(cmd, quiet=True)
                                     arp_task.append(task)
@@ -755,29 +771,26 @@ def run_eval():
                                 
                                 iokernel_task = []
                                 if CLIENT_APP == 'caladan':
-                                    cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nobw']
-
-                                    # Start iokernel for long-lived connection clients
-                                    for client in CLIENT_NODES:
-                                        if client == 'node7':
-                                            cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nicpci 0000:31:00.1']
+                                    # Start iokernel for longflow clients (node5, node6)
+                                    for client in LONGFLOW_CLIENT_NODES:
+                                        cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld_{client} ias nobw']
                                         host = pyrem.host.RemoteHost(client)
                                         task = host.run(cmd, quiet=True)
                                         iokernel_task.append(task)
 
-                                    # Start iokernel for shortflow client (node6)
+                                    # Start iokernel for shortflow client (node7)
                                     if SHORTFLOW_CLIENT_NODE:
-                                        cmd_shortflow = [f'cd {CALADAN_PATH} && sudo ./iokerneld ias nobw']
+                                        cmd = [f'cd {CALADAN_PATH} && sudo ./iokerneld_{SHORTFLOW_CLIENT_NODE} ias nicpci 0000:31:00.1']
                                         host = pyrem.host.RemoteHost(SHORTFLOW_CLIENT_NODE)
-                                        task = host.run(cmd_shortflow, quiet=True)
+                                        task = host.run(cmd, quiet=True)
                                         iokernel_task.append(task)
 
                                     pyrem.task.Parallel(iokernel_task, aggregate=True).start(wait=False)
                                     time.sleep(2)
                                     print('iokerneld is running')
                                 client_task = []
-                                # Long-lived connection clients
-                                for client in CLIENT_NODES:
+                                # Long-lived connection clients (node5 and node6)
+                                for client in LONGFLOW_CLIENT_NODES:
                                     host = pyrem.host.RemoteHost(client)
                                     if SERVER_APP == 'capy-proxy' or SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'prism' or SERVER_APP == 'proxy-server':
                                         if CLIENT_APP == 'wrk':
@@ -805,7 +818,7 @@ def run_eval():
                                                 {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
                                                 {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
                                                 {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
-                                                --exptid={DATA_PATH}/{experiment_id} \
+                                                --exptid={DATA_PATH}/{experiment_id}.{client} \
                                                 > {DATA_PATH}/{experiment_id}.{client}']
                                     elif SERVER_APP == 'redis-server':
                                         if CLIENT_APP == 'caladan':
@@ -822,7 +835,7 @@ def run_eval():
                                                     --runtime={RUNTIME} \
                                                     --discard_pct=10 \
                                                     --output=trace \
-                                                    --rampup=0 \
+                                                    -ㅑ-rampup=0 \
                                                     {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
                                                     {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
                                                     {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
@@ -855,7 +868,7 @@ def run_eval():
                                     task = host.run(cmd, quiet=False)
                                     client_task.append(task)
 
-                                # Shortflow client (node6) - 9x connections with --shortflow
+                                # Shortflow client (node5) - runs on same node as one of the longflow clients
                                 if SHORTFLOW_CLIENT_NODE and CLIENT_APP == 'caladan' and (SERVER_APP == 'capy-proxy' or SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'prism' or SERVER_APP == 'proxy-server'):
                                 # if False:
                                     shortflow_conn = 1
@@ -873,9 +886,10 @@ def run_eval():
                                         --output=trace \
                                         --rampup=0 \
                                         --shortflow \
+                                        --shortflow-duration=1111 \
                                         {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
-                                        --exptid={DATA_PATH}/{experiment_id}_shortflow \
-                                        > {DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}']
+                                        --exptid={DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}_shortflow \
+                                        > {DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}_shortflow']
                                     task = host.run(cmd, quiet=False)
                                     client_task.append(task)
                                     print(f'Running shortflow client on {SHORTFLOW_CLIENT_NODE} with {shortflow_conn} connections')
@@ -886,10 +900,17 @@ def run_eval():
                                 if CLIENT_APP == 'wrk':
                                     result_str = parse_wrk_result(experiment_id)
                                     print(result_str + '\n\n')
-                                    final_result = final_result + result_str 
+                                    final_result = final_result + result_str
                                 else:
                                     try:
-                                        for client in CLIENT_NODES:
+                                        # Collect individual results and aggregate
+                                        total_conn = 0
+                                        total_rps = 0
+                                        total_actual = 0
+                                        total_dropped = 0
+                                        total_never_sent = 0
+
+                                        for client in LONGFLOW_CLIENT_NODES:
                                             cmd = f'cat {DATA_PATH}/{experiment_id}.{client} | grep "\[RESULT\]" | tail -1'
                                             result = subprocess.run(
                                                 cmd,
@@ -900,18 +921,59 @@ def run_eval():
                                             ).stdout.decode()
                                             if result == '':
                                                 result = '[RESULT] N/A\n'
-                                            # Calculate 99p latency from latency_count file
-                                            latency_99p = calc_99p_latency(experiment_id)
                                             result_base = result[len("[RESULT]"):].strip()
-                                            print('[RESULT]' + f'{SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n},{result_base}, {latency_99p}' + '\n\n')
-                                            final_result = final_result + f'{SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n},{result_base}, {latency_99p}\n'
+                                            # Print intermediate result per client
+                                            print(f'[RESULT] {client}: {SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n},{result_base}\n')
+
+                                            # Parse and aggregate: RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th
+                                            try:
+                                                parts = result_base.split(',')
+                                                if len(parts) >= 5:
+                                                    total_rps += int(parts[0].strip())
+                                                    total_actual += int(parts[1].strip())
+                                                    total_dropped += int(parts[2].strip())
+                                                    total_never_sent += int(parts[3].strip())
+                                                total_conn += conn
+                                            except:
+                                                pass
+
+                                        # Print shortflow results from node7 and extract total connections
+                                        shortflow_total_conn = 0
+                                        if SHORTFLOW_CLIENT_NODE:
+                                            try:
+                                                shortflow_log = f'{DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}_shortflow'
+                                                cmd = f'cat {shortflow_log} | grep -A3 "\\[ShortFlow Results\\]"'
+                                                sf_result = subprocess.run(
+                                                    cmd,
+                                                    shell=True,
+                                                    stdout=subprocess.PIPE,
+                                                    stderr=subprocess.STDOUT,
+                                                ).stdout.decode()
+                                                if sf_result:
+                                                    print(f'[RESULT] {SHORTFLOW_CLIENT_NODE} (shortflow):\n{sf_result}')
+                                                    # Extract Total connections value
+                                                    import re
+                                                    match = re.search(r'Total connections:\s*(\d+)', sf_result)
+                                                    if match:
+                                                        shortflow_total_conn = int(match.group(1))
+                                            except:
+                                                pass
+
+                                        # Calculate combined percentiles from all latency_count files
+                                        percentiles = calc_latency_percentiles(experiment_id)
+
+                                        # Print and save combined final result
+                                        combined_result = f'{SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {total_conn}, {shortflow_total_conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n}, {total_rps}, {total_actual}, {total_dropped}, {total_never_sent}, {percentiles["median"]}, {percentiles["p90"]}, {percentiles["p99"]}, {percentiles["p999"]}, {percentiles["p9999"]}'
+                                        print(f'\n[COMBINED RESULT] {combined_result}\n\n')
+                                        final_result = final_result + combined_result + '\n'
+
                                     except subprocess.CalledProcessError as e:
                                         # Handle the exception for a failed command execution
                                         print("EXPERIMENT FAILED\n\n")
 
                                     except Exception as e:
                                         # Handle any other unexpected exceptions
-                                        print("EXPERIMENT FAILED\n\n")
+                                        print(f"EXPERIMENT FAILED: {e}\n\n")
                                 
                                 kill_procs()
                                 time.sleep(7)
@@ -955,7 +1017,7 @@ def run_eval():
 def exiting():
     global final_result
     print('EXITING')
-    result_header = "SERVER_APP, ID, #BE, #CONN, DATA_SIZE, MIG_DELAY, MAX_REACTIVE_MIG, MAX_PROACTIVE_MIG, MIG_PER_N, RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, 99p_file"
+    result_header = "SERVER_APP, ID, #BE, #CONN, #SHORT_CONN, DATA_SIZE, MIG_DELAY, MAX_REACTIVE_MIG, MAX_PROACTIVE_MIG, MIG_PER_N, RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th"
     if CLIENT_APP == 'wrk':
         result_header = "SERVER_APP, ID, #BE, #CONN, #THREAD, DATA_SIZE, req/sec, datasize/sec, AVG, p50, p75, p90, p99"
         
