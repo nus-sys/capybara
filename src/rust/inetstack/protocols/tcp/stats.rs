@@ -225,7 +225,7 @@ impl Stats {
     /// Returns `None` if no connections need to be migrated.
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_reactively_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
-        return None;
+        // return None;
         if let Some(val) = self.max_reactive_migrations {
             if val <= 0 {
                 return None;

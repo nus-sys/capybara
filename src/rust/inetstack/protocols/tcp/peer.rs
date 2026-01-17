@@ -883,7 +883,7 @@ impl Inner {
 
         #[cfg(feature = "tcp-migration")]
         // Check if migrating queue exists. If yes, push buffer to queue and return, else continue normally.
-        let (tcp_hdr, data) = match self.tcpmig.try_buffer_packet(remote, tcp_hdr, data) {
+        let (mut tcp_hdr, data) = match self.tcpmig.try_buffer_packet(remote, tcp_hdr, data) {
             Ok(()) => return Ok(()),
             Err(val) => val,
         };
