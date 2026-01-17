@@ -383,6 +383,7 @@ control Ingress(
                 // hash2 = hash1;
 
                 // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+                hash1 = meta.client_port;
                 hdr.udp.checksum = 0;
                 // hdr.ipv4.dst_ip = BE_IP;
             }
@@ -393,7 +394,7 @@ control Ingress(
             }
 
             // When the owner is changed? 1) SYN; 2) migration;
-            if(hdr.ipv4.src_ip == 0x0a000105){
+            if(hdr.ipv4.src_ip == 0x0a000105 || meta.client_ip == 0x0a000105){
                 request_client_ip_0.apply(hash1, hdr, meta, holder_1b_00);
                 request_client_port_0.apply(hash1, hdr, meta, holder_1b_01);
                 
@@ -403,7 +404,7 @@ control Ingress(
                 owner_ip_0.apply(hash1, meta.owner_ip, meta, hdr.ipv4.dst_ip);
                 owner_port_0.apply(hash1, meta.owner_port, meta, hdr.tcp.dst_port);
             }
-            else if(hdr.ipv4.src_ip == 0x0a000106){
+            else if(hdr.ipv4.src_ip == 0x0a000106 || meta.client_ip == 0x0a000106){
                 request_client_ip_1.apply(hash1, hdr, meta, holder_1b_00);
                 request_client_port_1.apply(hash1, hdr, meta, holder_1b_01);
 
@@ -413,7 +414,7 @@ control Ingress(
                 owner_ip_1.apply(hash1, meta.owner_ip, meta, hdr.ipv4.dst_ip);
                 owner_port_1.apply(hash1, meta.owner_port, meta, hdr.tcp.dst_port);
             }
-            else if(hdr.ipv4.src_ip == 0x0a000107){
+            else if(hdr.ipv4.src_ip == 0x0a000107 || meta.client_ip == 0x0a000107){
                 request_client_ip_2.apply(hash1, hdr, meta, holder_1b_00);
                 request_client_port_2.apply(hash1, hdr, meta, holder_1b_01);
 
