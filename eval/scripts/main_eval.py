@@ -32,13 +32,13 @@ from main_eval_config import *
 final_result = ''
 
 
-def generate_per_conn_workload(total_pps, num_conn_per_node, zipf_alpha):
+def generate_per_conn_workload(total_pps, total_conn, zipf_alpha):
     """
     Generate per-connection workload distribution.
     Returns two lists of RPS values for node5 and node6.
     Balances load between nodes by alternating assignment from heaviest connections.
+    total_conn: total number of connections (split between node5 and node6)
     """
-    total_conn = num_conn_per_node * 2  # node5 + node6
 
     if zipf_alpha == 0 or zipf_alpha == '':
         # Uniform distribution
@@ -543,69 +543,6 @@ def parse_latency_trace(experiment_id):
 
 
 
-def parse_wrk_result(experiment_id):
-    import re
-    result_str = ''
-    for client in LONGFLOW_CLIENT_NODES:
-        # Read the text file
-        with open(f'{DATA_PATH}/{experiment_id}.{client}', "r") as file:
-            text = file.read()
-
-        # Use regular expressions to extract relevant values
-        avg_latency_match = re.search(r"(\d+\.\d+)(us|ms|s)\s", text)
-        threads_match = re.search(r"(\d+)\s+threads", text)
-        connections_match = re.search(r"(\d+)\s+connections", text)
-        requests_sec_match = re.search(r"Requests/sec:\s+(\d+\.\d+)", text)
-        transfer_sec_match = re.search(r"Transfer/sec:\s+(\d+\.\d+)(KB|MB|GB)", text)
-        # print(avg_latency_match)
-        # Check if all necessary values were found
-        if not (avg_latency_match and threads_match and connections_match and requests_sec_match and transfer_sec_match):
-            print("Failed to parse the text file")
-        else:
-            threads = threads_match.group(1)
-            connections = connections_match.group(1)
-            requests_per_sec = requests_sec_match.group(1)
-            transfer_per_sec = transfer_sec_match.group(1) + transfer_sec_match.group(2)
-            
-            avg_lat = float(avg_latency_match.group(1)) * {'us': 1, 'ms': 1000, 's': 1000000}.get(avg_latency_match.group(2), 1)
-            
-            result_str = result_str + f'{experiment_id}, {NUM_BACKENDS}, {int(connections)}, {threads}, {DATA_SIZE}, {requests_per_sec}, {transfer_per_sec}, {int(avg_lat)}'
-
-            # Define a regular expression pattern to match the percentages and values
-            pattern = r'(\d+%)\s+(\d+\.\d+(?:us|ms|s))'
-            # Find all matches in the text using the regular expression pattern
-            matches = re.findall(pattern, text)
-
-            # Create a dictionary to store the parsed data
-            latency_data = {}
-
-            # Iterate through the matches and populate the dictionary
-            for match in matches:
-                percentile, value = match
-                latency_data[percentile] = value
-                pattern = r"(\d+\.\d+)(us|ms|s)"
-                matches = re.search(pattern, value)
-                if matches:
-                    percentiile_lat = float(matches.group(1)) * {'us': 1, 'ms': 1000, 's': 1000000}.get(matches.group(2), 1)
-                else:
-                    print("PANIC: cannot find percentile latency")
-                    exit(1)
-
-                result_str = result_str + f', {int(percentiile_lat)}'
-            result_str = result_str + '\n'
-            # Print the parsed data
-            # for percentile, value in latency_data.items():
-            #     print(f"{percentile}: {value}")
-
-            # # Create a CSV-style string
-            # csv_data = f"{threads},{connections},{requests_per_sec}"
-
-            # # Print the CSV-style string
-            # print(csv_data)
-        # print(result_str)
-    return result_str
-        
-
 def parse_server_reply(experiment_id):
     print(f'PARSING {experiment_id} server reply') 
     cmd = f"cd {CAPYBARA_PATH}/eval && sh parse_server_reply.sh {experiment_id}"
@@ -727,10 +664,6 @@ def calc_latency_percentiles(experiment_id):
 def run_eval():
     global experiment_id
     global final_result
-    # if CLIENT_APP != 'wrk' and len(NUM_THREADS) > 1:
-    #     print("Error: NUM_THREADS is used only for wrk generator")
-    #     kill_procs()
-    #     exit(1)
     if CLIENT_APP == 'caladan' and LOADSHIFTS.count('/') != 0 and LOADSHIFTS.count('/') != NUM_BACKENDS - 1:
         print(f"Error: LOADSHIFT configuration is wrong (check '/')")
         kill_procs()
@@ -836,44 +769,37 @@ def run_eval():
                                     print('iokerneld is running')
                                 client_task = []
                                 # Generate per-connection workload distribution for longflow clients
+                                # conn = total connections, split between node5 and node6
                                 node5_workload, node6_workload = generate_per_conn_workload(pps, conn, ZIPF_ALPHA)
                                 per_conn_workloads = {
-                                    'node5': ','.join(map(str, node5_workload)),
-                                    'node6': ','.join(map(str, node6_workload))
+                                    'node5': (node5_workload, ','.join(map(str, node5_workload))),
+                                    'node6': (node6_workload, ','.join(map(str, node6_workload)))
                                 }
-                                print(f'Workload distribution (ZIPF_ALPHA={ZIPF_ALPHA}):')
-                                print(f'  node5: {len(node5_workload)} conns, total={sum(node5_workload)} rps')
-                                print(f'  node6: {len(node6_workload)} conns, total={sum(node6_workload)} rps')
+                                print(f'Workload distribution (ZIPF_ALPHA={ZIPF_ALPHA}, total_conn={conn}):')
+                                print(f'  node5: {len(node5_workload)} conns, RPS range=[{max(node5_workload)}~{min(node5_workload)}], total={sum(node5_workload)} rps')
+                                print(f'  node6: {len(node6_workload)} conns, RPS range=[{max(node6_workload)}~{min(node6_workload)}], total={sum(node6_workload)} rps')
 
                                 # Long-lived connection clients (node5 and node6)
                                 for client in LONGFLOW_CLIENT_NODES:
                                     host = pyrem.host.RemoteHost(client)
                                     if SERVER_APP == 'capy-proxy' or SERVER_APP == 'http-server' or SERVER_APP == 'capybara-switch' or SERVER_APP == 'prism' or SERVER_APP == 'proxy-server':
-                                        if CLIENT_APP == 'wrk':
-                                            cmd = [f'sudo numactl -m0 {HOME}/wrk-tools/wrk/wrk \
-                                                -t{conn} \
-                                                -c{conn} \
-                                                -d{RUNTIME}s \
-                                                --latency \
-                                                http://{FE_IP}:{FE_PORT}/get \
-                                                > {DATA_PATH}/{experiment_id}.{client}']
-                                        else:
-                                            workload_str = per_conn_workloads.get(client, '')
-                                            cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
-                                                {FE_IP}:{FE_PORT} \
-                                                --config {CALADAN_PATH}/client_{client}.config \
-                                                --mode runtime-client \
-                                                --protocol=http \
-                                                --transport=tcp \
-                                                --samples=1 \
-                                                --threads={conn} \
-                                                --runtime={RUNTIME} \
-                                                --discard_pct=0 \
-                                                --output=trace \
-                                                --rampup=0 \
-                                                --per-conn-workload={workload_str} \
-                                                --exptid={DATA_PATH}/{experiment_id}.{client} \
-                                                > {DATA_PATH}/{experiment_id}.{client}']
+                                        workload_list, workload_str = per_conn_workloads.get(client, ([], ''))
+                                        num_threads = len(workload_list)
+                                        cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
+                                            {FE_IP}:{FE_PORT} \
+                                            --config {CALADAN_PATH}/client_{client}.config \
+                                            --mode runtime-client \
+                                            --protocol=http \
+                                            --transport=tcp \
+                                            --samples=1 \
+                                            --threads={num_threads} \
+                                            --runtime={RUNTIME} \
+                                            --discard_pct=0 \
+                                            --output=trace \
+                                            --rampup=0 \
+                                            --per-conn-workload={workload_str} \
+                                            --exptid={DATA_PATH}/{experiment_id}.{client} \
+                                            > {DATA_PATH}/{experiment_id}.{client}']
                                     elif SERVER_APP == 'redis-server':
                                         if CLIENT_APP == 'caladan':
                                             cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
@@ -947,83 +873,77 @@ def run_eval():
                                 pyrem.task.Parallel(client_task, aggregate=True).start(wait=True)
 
                                 print('================ TEST COMPLETE =================\n')
-                                if CLIENT_APP == 'wrk':
-                                    result_str = parse_wrk_result(experiment_id)
-                                    print(result_str + '\n\n')
-                                    final_result = final_result + result_str
-                                else:
-                                    try:
-                                        # Collect individual results and aggregate
-                                        total_conn = 0
-                                        total_rps = 0
-                                        total_actual = 0
-                                        total_dropped = 0
-                                        total_never_sent = 0
+                                try:
+                                    # Collect individual results and aggregate
+                                    total_rps = 0
+                                    total_actual = 0
+                                    total_dropped = 0
+                                    total_never_sent = 0
 
-                                        for client in LONGFLOW_CLIENT_NODES:
-                                            cmd = f'cat {DATA_PATH}/{experiment_id}.{client} | grep "\[RESULT\]" | tail -1'
-                                            result = subprocess.run(
+                                    for client in LONGFLOW_CLIENT_NODES:
+                                        cmd = f'cat {DATA_PATH}/{experiment_id}.{client} | grep "\[RESULT\]" | tail -1'
+                                        result = subprocess.run(
+                                            cmd,
+                                            shell=True,
+                                            stdout=subprocess.PIPE,
+                                            stderr=subprocess.STDOUT,
+                                            check=True,
+                                        ).stdout.decode()
+                                        if result == '':
+                                            result = '[RESULT] N/A\n'
+                                        result_base = result[len("[RESULT]"):].strip()
+                                        # Print intermediate result per client (use actual connection count per node)
+                                        node_conn = len(per_conn_workloads[client][0])
+                                        print(f'[RESULT] {client}: {SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {node_conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n},{result_base}\n')
+
+                                        # Parse and aggregate: RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th
+                                        try:
+                                            parts = result_base.split(',')
+                                            if len(parts) >= 5:
+                                                total_rps += int(parts[0].strip())
+                                                total_actual += int(parts[1].strip())
+                                                total_dropped += int(parts[2].strip())
+                                                total_never_sent += int(parts[3].strip())
+                                        except:
+                                            pass
+
+                                    # Print shortflow results from node7 and extract total connections
+                                    shortflow_total_conn = 0
+                                    if SHORTFLOW_CLIENT_NODE:
+                                        try:
+                                            shortflow_log = f'{DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}_shortflow'
+                                            cmd = f'cat {shortflow_log} | grep -A3 "\\[ShortFlow Results\\]"'
+                                            sf_result = subprocess.run(
                                                 cmd,
                                                 shell=True,
                                                 stdout=subprocess.PIPE,
                                                 stderr=subprocess.STDOUT,
-                                                check=True,
                                             ).stdout.decode()
-                                            if result == '':
-                                                result = '[RESULT] N/A\n'
-                                            result_base = result[len("[RESULT]"):].strip()
-                                            # Print intermediate result per client
-                                            print(f'[RESULT] {client}: {SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n},{result_base}\n')
+                                            if sf_result:
+                                                print(f'[RESULT] {SHORTFLOW_CLIENT_NODE} (shortflow):\n{sf_result}')
+                                                # Extract Total connections value
+                                                import re
+                                                match = re.search(r'Total connections:\s*(\d+)', sf_result)
+                                                if match:
+                                                    shortflow_total_conn = int(match.group(1))
+                                        except:
+                                            pass
 
-                                            # Parse and aggregate: RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th
-                                            try:
-                                                parts = result_base.split(',')
-                                                if len(parts) >= 5:
-                                                    total_rps += int(parts[0].strip())
-                                                    total_actual += int(parts[1].strip())
-                                                    total_dropped += int(parts[2].strip())
-                                                    total_never_sent += int(parts[3].strip())
-                                                total_conn += conn
-                                            except:
-                                                pass
+                                    # Calculate combined percentiles from all latency_count files
+                                    percentiles = calc_latency_percentiles(experiment_id)
 
-                                        # Print shortflow results from node7 and extract total connections
-                                        shortflow_total_conn = 0
-                                        if SHORTFLOW_CLIENT_NODE:
-                                            try:
-                                                shortflow_log = f'{DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}_shortflow'
-                                                cmd = f'cat {shortflow_log} | grep -A3 "\\[ShortFlow Results\\]"'
-                                                sf_result = subprocess.run(
-                                                    cmd,
-                                                    shell=True,
-                                                    stdout=subprocess.PIPE,
-                                                    stderr=subprocess.STDOUT,
-                                                ).stdout.decode()
-                                                if sf_result:
-                                                    print(f'[RESULT] {SHORTFLOW_CLIENT_NODE} (shortflow):\n{sf_result}')
-                                                    # Extract Total connections value
-                                                    import re
-                                                    match = re.search(r'Total connections:\s*(\d+)', sf_result)
-                                                    if match:
-                                                        shortflow_total_conn = int(match.group(1))
-                                            except:
-                                                pass
+                                    # Print and save combined final result
+                                    combined_result = f'{SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {conn}, {shortflow_total_conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n}, {total_rps}, {total_actual}, {total_dropped}, {total_never_sent}, {percentiles["median"]}, {percentiles["p90"]}, {percentiles["p99"]}, {percentiles["p999"]}, {percentiles["p9999"]}'
+                                    print(f'\n[COMBINED RESULT] {combined_result}\n\n')
+                                    final_result = final_result + combined_result + '\n'
 
-                                        # Calculate combined percentiles from all latency_count files
-                                        percentiles = calc_latency_percentiles(experiment_id)
+                                except subprocess.CalledProcessError as e:
+                                    # Handle the exception for a failed command execution
+                                    print("EXPERIMENT FAILED\n\n")
 
-                                        # Print and save combined final result
-                                        combined_result = f'{SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {total_conn}, {shortflow_total_conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n}, {total_rps}, {total_actual}, {total_dropped}, {total_never_sent}, {percentiles["median"]}, {percentiles["p90"]}, {percentiles["p99"]}, {percentiles["p999"]}, {percentiles["p9999"]}'
-                                        print(f'\n[COMBINED RESULT] {combined_result}\n\n')
-                                        final_result = final_result + combined_result + '\n'
-
-                                    except subprocess.CalledProcessError as e:
-                                        # Handle the exception for a failed command execution
-                                        print("EXPERIMENT FAILED\n\n")
-
-                                    except Exception as e:
-                                        # Handle any other unexpected exceptions
-                                        print(f"EXPERIMENT FAILED: {e}\n\n")
+                                except Exception as e:
+                                    # Handle any other unexpected exceptions
+                                    print(f"EXPERIMENT FAILED: {e}\n\n")
                                 
                                 kill_procs()
                                 time.sleep(7)
@@ -1068,9 +988,6 @@ def exiting():
     global final_result
     print('EXITING')
     result_header = "SERVER_APP, ID, #BE, #CONN, #SHORT_CONN, DATA_SIZE, MIG_DELAY, MAX_REACTIVE_MIG, MAX_PROACTIVE_MIG, MIG_PER_N, RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th"
-    if CLIENT_APP == 'wrk':
-        result_header = "SERVER_APP, ID, #BE, #CONN, #THREAD, DATA_SIZE, req/sec, datasize/sec, AVG, p50, p75, p90, p99"
-        
     print(f'\n\n\n\n\n{result_header}')
     print(final_result)
     with open(f'{DATA_PATH}/result.txt', "w") as file:
