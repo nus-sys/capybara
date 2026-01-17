@@ -97,13 +97,13 @@ ENV = f'MTU=9000 MSS=9000 \
 
 
 ### CALADAN ###
-CLIENT_PPS = [i for i in range(3500000, 3600000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(1000000, 1000000 + 1, 500000)]#[i for i in range(100000, 1_300_001, 100000)]
 import workload_spec_generator
 # LOADSHIFTS = workload_spec_generator.main()
 # LOADSHIFTS = workload_spec_generator.zipf_for_12_servers(1000000)
 # LOADSHIFTS = '90000:10000,270000:10000,450000:10000,630000:10000,810000:10000/90000:50000/90000:50000/90000:50000'
 LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
-ZIPF_ALPHA = '' # 0, 0.9, 1.2
+ZIPF_ALPHA = '1.2' # 0, 0.9, 1.2
 ONOFF = '' # '0', '1'
 NUM_CONNECTIONS = [500] #[i for i in range(100, 100 + 1, 5)]
 RUNTIME = 10

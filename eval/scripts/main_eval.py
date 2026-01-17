@@ -32,6 +32,49 @@ from main_eval_config import *
 final_result = ''
 
 
+def generate_per_conn_workload(total_pps, num_conn_per_node, zipf_alpha):
+    """
+    Generate per-connection workload distribution.
+    Returns two lists of RPS values for node5 and node6.
+    Balances load between nodes by alternating assignment from heaviest connections.
+    """
+    total_conn = num_conn_per_node * 2  # node5 + node6
+
+    if zipf_alpha == 0 or zipf_alpha == '':
+        # Uniform distribution
+        rps_per_conn = total_pps // total_conn
+        remainder = total_pps % total_conn
+        conn_rps = [rps_per_conn] * total_conn
+        # Distribute remainder
+        for i in range(remainder):
+            conn_rps[i] += 1
+    else:
+        # Zipf distribution
+        alpha = float(zipf_alpha)
+        ranks = np.arange(1, total_conn + 1)
+        weights = 1.0 / np.power(ranks, alpha)
+        weights = weights / weights.sum()  # Normalize
+        conn_rps = (weights * total_pps).astype(int).tolist()
+        # Adjust for rounding errors
+        diff = total_pps - sum(conn_rps)
+        for i in range(abs(diff)):
+            conn_rps[i] += 1 if diff > 0 else -1
+
+    # Sort by RPS descending
+    conn_rps_sorted = sorted(conn_rps, reverse=True)
+
+    # Alternate assignment to balance load between nodes
+    node5_rps = []
+    node6_rps = []
+    for i, rps in enumerate(conn_rps_sorted):
+        if i % 2 == 0:
+            node5_rps.append(rps)
+        else:
+            node6_rps.append(rps)
+
+    return node5_rps, node6_rps
+
+
 def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
     global experiment_id
     print('SETUP SWITCH')
@@ -708,6 +751,9 @@ def run_eval():
                                     print(f'\n\nEXPTID: {experiment_id}')
                                     with open(f'{DATA_PATH}/{experiment_id}.test_config', 'w') as output_file:
                                         output_file.write(file.read())
+                                with open(f'{CAPYBARA_PATH}/eval/scripts/main_eval_config.py', 'r') as file:
+                                    with open(f'{DATA_PATH}/{experiment_id}.main_eval_config', 'w') as output_file:
+                                        output_file.write(file.read())
                                 if TCPDUMP == True:
                                     run_tcpdump(experiment_id)
                                 
@@ -789,6 +835,16 @@ def run_eval():
                                     time.sleep(2)
                                     print('iokerneld is running')
                                 client_task = []
+                                # Generate per-connection workload distribution for longflow clients
+                                node5_workload, node6_workload = generate_per_conn_workload(pps, conn, ZIPF_ALPHA)
+                                per_conn_workloads = {
+                                    'node5': ','.join(map(str, node5_workload)),
+                                    'node6': ','.join(map(str, node6_workload))
+                                }
+                                print(f'Workload distribution (ZIPF_ALPHA={ZIPF_ALPHA}):')
+                                print(f'  node5: {len(node5_workload)} conns, total={sum(node5_workload)} rps')
+                                print(f'  node6: {len(node6_workload)} conns, total={sum(node6_workload)} rps')
+
                                 # Long-lived connection clients (node5 and node6)
                                 for client in LONGFLOW_CLIENT_NODES:
                                     host = pyrem.host.RemoteHost(client)
@@ -802,6 +858,7 @@ def run_eval():
                                                 http://{FE_IP}:{FE_PORT}/get \
                                                 > {DATA_PATH}/{experiment_id}.{client}']
                                         else:
+                                            workload_str = per_conn_workloads.get(client, '')
                                             cmd = [f'sudo numactl -m0 {CALADAN_PATH}/apps/synthetic/target/release/synthetic \
                                                 {FE_IP}:{FE_PORT} \
                                                 --config {CALADAN_PATH}/client_{client}.config \
@@ -809,15 +866,12 @@ def run_eval():
                                                 --protocol=http \
                                                 --transport=tcp \
                                                 --samples=1 \
-                                                --pps={pps} \
                                                 --threads={conn} \
                                                 --runtime={RUNTIME} \
                                                 --discard_pct=0 \
                                                 --output=trace \
                                                 --rampup=0 \
-                                                {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
-                                                {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
-                                                {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
+                                                --per-conn-workload={workload_str} \
                                                 --exptid={DATA_PATH}/{experiment_id}.{client} \
                                                 > {DATA_PATH}/{experiment_id}.{client}']
                                     elif SERVER_APP == 'redis-server':
@@ -835,10 +889,7 @@ def run_eval():
                                                     --runtime={RUNTIME} \
                                                     --discard_pct=10 \
                                                     --output=trace \
-                                                    -ㅑ-rampup=0 \
-                                                    {f"--loadshift={LOADSHIFTS}" if LOADSHIFTS != "" else ""} \
-                                                    {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
-                                                    {f"--onoff={ONOFF}" if ONOFF == "1" else ""} \
+                                                    --rampup=0 \
                                                     --exptid={DATA_PATH}/{experiment_id} \
                                                     > {DATA_PATH}/{experiment_id}.client']
                                         else: # redis-benchmark
@@ -887,7 +938,6 @@ def run_eval():
                                         --rampup=0 \
                                         --shortflow \
                                         --shortflow-duration=1111 \
-                                        {f"--zipf={ZIPF_ALPHA}" if ZIPF_ALPHA != "" else ""} \
                                         --exptid={DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}_shortflow \
                                         > {DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}_shortflow']
                                     task = host.run(cmd, quiet=False)
