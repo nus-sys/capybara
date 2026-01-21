@@ -635,6 +635,16 @@ dpdk-ctrl-node8-core13:
 	taskset --cpu-list 12 \
 	$(ELF_DIR)/dpdk-ctrl.elf
 
+dpdk-ctrl-node9-core13:
+	sudo -E RUST_LOG="debug" \
+	NUM_CORES=12 \
+	CORE_ID=13 \
+	$(ENV) \
+	CONFIG_PATH=$(CONFIG_DIR)/node9_config.yaml \
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
+	taskset --cpu-list 12 \
+	$(ELF_DIR)/dpdk-ctrl.elf
+
 dpdk-ctrl-node9:
 	sudo -E RUST_LOG="debug" \
 	NUM_CORES=4 \

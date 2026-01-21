@@ -165,6 +165,19 @@ impl Stats {
         self.threshold = threshold;
     }
 
+    /// Returns all connection stats as a vector of ((local, remote), stat_value).
+    pub fn get_all_connection_stats(&self) -> Vec<((SocketAddrV4, SocketAddrV4), usize)> {
+        self.handles.iter()
+            .filter_map(|h| {
+                if let Stat::Enabled(val) = h.inner.stat.get() {
+                    Some((h.inner.conn, val))  // ((local, remote), stat_value)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     /// Extracts connections so that the global stat goes below the threshold.
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_proactively_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
@@ -218,14 +231,13 @@ impl Stats {
                 stat.inner.stat_to_update.set(Some(0));
             }
         }
-        capy_log!("reset stat");
     }
 
     /// Extracts connections so that the global recv stat goes below the threshold.
     /// Returns `None` if no connections need to be migrated.
     #[cfg(not(feature = "manual-tcp-migration"))]
     pub fn connections_to_reactively_migrate(&mut self) -> Option<ArrayVec<(SocketAddrV4, SocketAddrV4), MAX_EXTRACTED_CONNECTIONS>> {
-        // return None;
+        return None;
         if let Some(val) = self.max_reactive_migrations {
             if val <= 0 {
                 return None;

@@ -71,7 +71,7 @@ RAND_SEED = 2402271237
 RECV_QUEUE_LEN_THRESHOLD = 20
 MIG_DELAYS = [0]
 MAX_PROACTIVE_MIGS = [0] # set element to '' if you don't want to set this env var
-MAX_REACTIVE_MIGS = [100000] # set element to '' if you don't want to set this env var
+MAX_REACTIVE_MIGS = [20] # set element to '' if you don't want to set this env var
 MIG_PER_N = [0]# 1000000, 100000, 10000
 CONFIGURED_STATE_SIZE = 1024 * 0 # bytes
 MIN_THRESHOLD = 1000000 # K rps
@@ -97,13 +97,13 @@ ENV = f'MTU=9000 MSS=9000 \
 
 
 ### CALADAN ###
-CLIENT_PPS = [i for i in range(1700000, 1700000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
+CLIENT_PPS = [i for i in range(1000000, 1000000 + 1, 100000)]#[i for i in range(100000, 1_300_001, 100000)]
 import workload_spec_generator
 # LOADSHIFTS = workload_spec_generator.main()
 # LOADSHIFTS = workload_spec_generator.zipf_for_12_servers(1000000)
 # LOADSHIFTS = '90000:10000,270000:10000,450000:10000,630000:10000,810000:10000/90000:50000/90000:50000/90000:50000'
 LOADSHIFTS = ''#'10000:10000/10000:10000/10000:10000/10000:10000'
-ZIPF_ALPHA = '0.9' # 0, 0.9, 1.2
+ZIPF_ALPHA = '1.2' # 0, 0.9, 1.2
 ONOFF = '' # '0', '1'
 NUM_CONNECTIONS = [1000] #[i for i in range(100, 100 + 1, 5)]
 RUNTIME = 10

@@ -15,7 +15,7 @@ use super::{
     ApplicationState,
 };
 use crate::{
-    capy_log, capy_profile, capy_profile_merge_previous, capy_time_log, inetstack::protocols::{
+    capy_log, capy_log_mig, capy_profile, capy_profile_merge_previous, capy_time_log, inetstack::protocols::{
         ethernet2::{
             EtherType2,
             Ethernet2Header,
@@ -72,8 +72,6 @@ use std::{
 #[cfg(feature = "profiler")]
 use crate::timer;
 
-use crate::capy_log_mig;
-
 //======================================================================================================================
 // Structures
 //======================================================================================================================
@@ -124,8 +122,12 @@ pub struct TcpMigPeer {
     num_be: u16,
 
     mtu: usize,
-    
-    backend_servers: arrayvec::ArrayVec<(MacAddress, SocketAddrV4), 12>,
+
+    #[allow(dead_code)]  // Kept for potential future use
+    backend_servers: arrayvec::ArrayVec<(MacAddress, SocketAddrV4), 2>,
+
+    /// Min workload server address (updated by rps_signal from switch)
+    min_workload_server: Option<SocketAddrV4>,
 }
 
 #[derive(Default)]
@@ -150,18 +152,9 @@ impl TcpMigPeer {
             .parse::<usize>()
             .expect("Invalid MTU value");
         
+        // TEMP: 2 servers for migration test (node8:10000 -> node9:10000)
         let backend_servers = arrayvec::ArrayVec::from([
-            (NODE10_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10003)),
-            (NODE10_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10002)),
-            (NODE10_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10001)),
-            (NODE10_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 10), 10000)),
-            (NODE9_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10003)),
-            (NODE9_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10002)),
-            (NODE9_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10001)),
             (NODE9_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 9), 10000)),
-            (NODE8_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10003)),
-            (NODE8_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10002)),
-            (NODE8_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10001)),
             (NODE8_MAC, SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 8), 10000)),
         ]);
         
@@ -205,6 +198,16 @@ impl TcpMigPeer {
 
             mtu,
             backend_servers,
+            // Initial default based on local IP: 8->9, 9->10, 10->8
+            min_workload_server: Some(SocketAddrV4::new(
+                match local_ipv4_addr.octets()[3] {
+                    8 => Ipv4Addr::new(10, 0, 1, 9),
+                    9 => Ipv4Addr::new(10, 0, 1, 10),
+                    10 => Ipv4Addr::new(10, 0, 1, 8),
+                    _ => Ipv4Addr::new(10, 0, 1, 9),  // fallback
+                },
+                10000,
+            )),
         }
     }
 
@@ -248,6 +251,17 @@ impl TcpMigPeer {
         self.self_udp_port = port;
     }
 
+    /// Updates the min workload server address from rps_signal packet
+    pub fn update_min_workload_server(&mut self, ip: Ipv4Addr, port: u16) {
+        let addr = SocketAddrV4::new(ip, port);
+        self.min_workload_server = Some(addr);
+    }
+
+    /// Returns the current min workload server address
+    pub fn get_min_workload_server(&self) -> Option<SocketAddrV4> {
+        self.min_workload_server
+    }
+
     /// Consumes the payload from a buffer.
     pub fn receive(
         &mut self,
@@ -273,12 +287,32 @@ impl TcpMigPeer {
         if hdr.stage == MigrationStage::PrepareMigration {
             // capy_profile!("prepare_ack");
 
+            // Ignore if destination IP doesn't match local IP
+            let dst_ip = ipv4_hdr.get_dest_addr();
+            let src_ip = ipv4_hdr.get_src_addr();
+            if dst_ip != self.local_ipv4_addr {
+                // eprintln!("[PREPARE_MIG] IGNORE: {}:{} -> {}:{} (local={}:{})",
+                //     src_ip, hdr.get_source_udp_port(), dst_ip, hdr.get_dest_udp_port(),
+                //     self.local_ipv4_addr, self.self_udp_port);
+                return Ok(TcpmigReceiveStatus::Ok);
+            }
+            // eprintln!("[PREPARE_MIG] ACCEPT: {}:{} -> {}:{} (origin={}, client={})",
+            //     src_ip, hdr.get_source_udp_port(), dst_ip, hdr.get_dest_udp_port(),
+            //     hdr.origin, hdr.client);
+
+            // Reject if this server is already overloaded (would trigger reactive migration itself)
+            // if ctx.is_under_load {
+            //     capy_time_log!("REJECT_PREPARE_MIG: server overloaded, ({}),[{}->{}]", remote, hdr.origin, self.local_ipv4_addr);
+            //     // TODO: Send reject message back to origin
+            //     return Ok(TcpmigReceiveStatus::SentReject);
+            // }
+
             capy_log_mig!("******* MIGRATION REQUESTED *******");
             capy_log_mig!("PREPARE_MIG {}", remote);
             let target = SocketAddrV4::new(self.local_ipv4_addr, self.self_udp_port);
             capy_log_mig!("I'm target {}", target);
 
-            capy_time_log!("RECV_PREPARE_MIG,({})", remote);
+            capy_time_log!("RECV_PREPARE_MIG,({}),[{}->{}]", remote, hdr.origin, target);
 
             let active = ActiveMigration::new(
                 self.rt.clone(),
@@ -392,68 +426,24 @@ impl TcpMigPeer {
     }
 
     pub fn initiate_migration(&mut self, conn: (SocketAddrV4, SocketAddrV4), qd: QDesc) {
-        // {
-        //     // capy_profile!("additional_delay");
-        //     for _ in 0..self.additional_mig_delay {
-        //         thread::yield_now();
-        //     }
-        // }
-        capy_time_log!("INIT_MIG,({})", conn.1);
         let (local, remote) = conn;
-        thread_local! {
-            static BACKEND_PORT: Cell<u16> = Cell::new(0);
-        }
-        // eprintln!("initiate migration for connection {} <-> {}", origin, client);
 
-        //let origin = SocketAddrV4::new(self.local_ipv4_addr, origin_port);
-        // let target = SocketAddrV4::new(FRONTEND_IP, FRONTEND_PORT); // TEMP
-        let mut be_sockaddr: (MacAddress, SocketAddrV4);
-        static mut BE_IDX: usize = 0;
-        loop {
-            be_sockaddr = self.backend_servers[unsafe { BE_IDX }];
-            unsafe {
-                BE_IDX = (BE_IDX + 1) % 12;
-            }
-            if be_sockaddr.1 != local {
-                break;
-            }
-        }
-        
+        // Always send PREPARE_MIG to switch - switch will decide the target
+        capy_time_log!("INIT_MIG,({}),[{}->switch]", remote, local);
 
         let active = ActiveMigration::new(
             self.rt.clone(),
             self.local_ipv4_addr,
             self.local_link_addr,
-            // if self.local_ipv4_addr == FRONTEND_IP {
-            //     BACKEND_IP
-            // } else {
-            //     FRONTEND_IP
-            // },
-            // if self.local_link_addr == FRONTEND_MAC {
-            //     BACKEND_MAC
-            // } else {
-            //     FRONTEND_MAC
-            // },
-            *be_sockaddr.1.ip(),
-            be_sockaddr.0,
-            // FRONTEND_IP,
-            // FRONTEND_MAC,
+            SWITCH_IP,
+            SWITCH_MAC,
             self.self_udp_port,
-            // 10000,
-            // if self.local_ipv4_addr == FRONTEND_IP {
-            //     let port = BACKEND_PORT.get();
-            //     BACKEND_PORT.set((port + 1) % self.num_be);
-            //     10000 + port                
-            // } else {
-            //     10000
-            // },
-            be_sockaddr.1.port(),
-            // if self.self_udp_port == 10001 { 10000 } else { 10001 }, // dest_udp_port is unknown until it receives PREPARE_MIGRATION_ACK, so it's 0 initially.
+            DEST_UDP_PORT,  // Switch UDP port
             local,
             remote,
             Some(qd),
             self.mtu,
-        ); // Inho: Q. Why link_addr (MAC addr) is needed when the libOS has arp_table already? Is it possible to use the arp_table instead?
+        );
 
         let active = match self.active_migrations.entry(remote) {
             Entry::Occupied(..) => {

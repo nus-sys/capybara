@@ -6,6 +6,7 @@
 //==============================================================================
 
 use super::{
+    constants::{SWITCH_IP, SWITCH_MAC},
     peer::user_connection::MigrateOut,
     segment::{
         MigrationStage,
@@ -169,7 +170,7 @@ impl ActiveMigration {
                         hdr.flag_load = true;
                         self.last_sent_stage = MigrationStage::PrepareMigrationAck;
                         capy_log_mig!("[TX] PREPARE_MIG_ACK ({}, {})", hdr.origin, hdr.client);
-                        capy_time_log!("SEND_PREPARE_MIG_ACK,({})", hdr.client);
+                        capy_time_log!("SEND_PREPARE_MIG_ACK,({}),[{}:{}->{}]", hdr.client, self.local_ipv4_addr, self.self_udp_port, hdr.origin);
                         self.send(hdr, empty_buffer());
                         return Ok(TcpmigReceiveStatus::Ok);
                         // }
@@ -182,14 +183,10 @@ impl ActiveMigration {
             MigrationStage::PrepareMigration => {
                 match hdr.stage {
                     MigrationStage::PrepareMigrationAck => {
-                        capy_time_log!("RECV_PREPARE_MIG_ACK,({})", hdr.client);
                         // Change target address to actual target address.
-                        /*  self.remote_ipv4_addr = ipv4_hdr.get_src_addr(); */
-                        // Currently, we are running all backends on a single machine,
-                        // so we send the migration messages to the switch first,
-                        // and let the switch do the addressing to the backend.
-                        // Later if backends are on different machines, we need to uncomment this line again.
+                        self.remote_ipv4_addr = ipv4_hdr.get_src_addr();
                         self.dest_udp_port = hdr.get_source_udp_port();
+                        capy_time_log!("RECV_PREPARE_MIG_ACK,({}),[{}:{}->{}:{}]", hdr.client, self.remote_ipv4_addr, self.dest_udp_port, self.local_ipv4_addr, self.self_udp_port);
 
                         capy_log_mig!("PREPARE_MIG_ACK => ({}, {}) is PREPARED", hdr.origin, hdr.client);
                         return Ok(TcpmigReceiveStatus::PrepareMigrationAcked(
@@ -218,7 +215,7 @@ impl ActiveMigration {
                                 return Ok(TcpmigReceiveStatus::Ok);
                             },
                         };
-                        capy_time_log!("RECV_STATE,({})", self.client);
+                        capy_time_log!("RECV_STATE,({}),[{}->{}:{}]", self.client, hdr.origin, self.local_ipv4_addr, self.self_udp_port);
                         buf.trim(self.configured_state_size);
 
                         // let mut state = TcpState::deserialize(buf);
@@ -297,8 +294,8 @@ impl ActiveMigration {
             self.origin,
             self.client
         );
-        capy_time_log!("SEND_PREPARE_MIG,({})", self.client);
-        self.send(tcpmig_hdr, Buffer::Heap(DataBuffer::empty()));
+        capy_time_log!("SEND_PREPARE_MIG,({}),[{}->{}:{}](via switch)", self.client, self.origin, self.remote_ipv4_addr, self.dest_udp_port);
+        self.send_via_switch(tcpmig_hdr, Buffer::Heap(DataBuffer::empty()));
     }
 
     pub fn send_connection_state(&mut self, state: TcpState, user_data: MigrateOut) {
@@ -331,7 +328,8 @@ impl ActiveMigration {
         ); // PORT should be the sender of PREPARE_MIGRATION_ACK
 
         self.last_sent_stage = MigrationStage::ConnectionState;
-        capy_time_log!("SEND_STATE,({})", self.client);
+        let log_dest_ip = if self.remote_ipv4_addr == SWITCH_IP { self.local_ipv4_addr } else { self.remote_ipv4_addr };
+        capy_time_log!("SEND_STATE,({}),[{}->{}:{}]", self.client, self.origin, log_dest_ip, self.dest_udp_port);
         self.send(tcpmig_hdr, buf);
     }
 
@@ -344,18 +342,31 @@ impl ActiveMigration {
     }
 
     /// Sends a TCPMig segment from local to remote.
-    fn send(&self, tcpmig_hdr: TcpMigHeader, buf: Buffer) {
+    /// If `via_switch` is true, always send to switch (for PREPARE_MIG).
+    /// Otherwise, send directly to target, but route via switch if target IP == local IP.
+    fn send_with_routing(&self, tcpmig_hdr: TcpMigHeader, buf: Buffer, via_switch: bool) {
         debug!("TCPMig send {:?}", tcpmig_hdr);
-        // eprintln!("TCPMig sent: {:#?}\nto {:?}:{:?}", tcpmig_hdr, self.remote_link_addr, self.remote_ipv4_addr);
 
-        // Layer 4 protocol field marked as UDP because DPDK only supports standard Layer 4 protocols.
-        let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, self.remote_ipv4_addr, IpProtocol::UDP);
+        let (dst_ip, dst_mac) = if via_switch {
+            // PREPARE_MIG: Always send to switch
+            capy_log_mig!("[SEND] PREPARE_MIG via switch: {} -> {}", self.remote_ipv4_addr, SWITCH_IP);
+            (SWITCH_IP, SWITCH_MAC)
+        } else if self.remote_ipv4_addr == self.local_ipv4_addr {
+            // Same IP: route via switch
+            capy_log_mig!("[SEND] Same IP, routing via switch: {} -> {}", self.remote_ipv4_addr, SWITCH_IP);
+            (SWITCH_IP, SWITCH_MAC)
+        } else {
+            // Different IP: send directly
+            (self.remote_ipv4_addr, self.remote_link_addr)
+        };
+
+        let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, dst_ip, IpProtocol::UDP);
 
         if buf.len() / MAX_FRAGMENT_SIZE > u16::MAX as usize {
             panic!("TcpState too large")
         }
         let segment = TcpMigSegment::new(
-            Ethernet2Header::new(self.remote_link_addr, self.local_link_addr, EtherType2::Ipv4),
+            Ethernet2Header::new(dst_mac, self.local_link_addr, EtherType2::Ipv4),
             ip_hdr,
             tcpmig_hdr,
             buf,
@@ -364,6 +375,16 @@ impl ActiveMigration {
         for fragment in segment.fragments() {
             self.rt.transmit(Box::new(fragment));
         }
+    }
+
+    /// Send via switch (for PREPARE_MIG)
+    fn send_via_switch(&self, tcpmig_hdr: TcpMigHeader, buf: Buffer) {
+        self.send_with_routing(tcpmig_hdr, buf, true);
+    }
+
+    /// Send directly (or via switch if same IP)
+    fn send(&self, tcpmig_hdr: TcpMigHeader, buf: Buffer) {
+        self.send_with_routing(tcpmig_hdr, buf, false);
     }
 }
 

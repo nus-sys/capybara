@@ -15,7 +15,7 @@ pub(crate) const CLEAR: &'static str = "\x1B[0m";
 //==============================================================================
 
 #[allow(unused)]
-static mut DATA: Option<Vec<(i64, ArrayVec<u8, 128>)>> = None;
+static mut DATA: Option<Vec<(i64, ArrayVec<u8, 4096>)>> = None;
 
 //==============================================================================
 // Macros
@@ -85,7 +85,7 @@ pub fn __push_time_log(args: std::fmt::Arguments) {
 }
 
 #[allow(unused)]
-fn data() -> &'static mut Vec<(i64, ArrayVec<u8, 128>)> {
+fn data() -> &'static mut Vec<(i64, ArrayVec<u8, 4096>)> {
     unsafe { DATA.as_mut().expect("capy-time-log not initialised") }
 }
 

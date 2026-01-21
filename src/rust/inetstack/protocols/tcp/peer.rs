@@ -195,6 +195,8 @@ pub struct Inner {
     reactive_migration_enabled: bool,
     #[cfg(feature = "tcp-migration")]
     last_rps_signal: Option<(usize, usize)>,
+    #[cfg(feature = "tcp-migration")]
+    last_rps_log_time: Option<std::time::Instant>,
 
     #[cfg(feature = "tcp-migration")]
     migration_trigerred: HashSet<SocketAddrV4>,
@@ -759,6 +761,8 @@ impl Inner {
             #[cfg(feature = "tcp-migration")]
             last_rps_signal: None,
             #[cfg(feature = "tcp-migration")]
+            last_rps_log_time: None,
+            #[cfg(feature = "tcp-migration")]
             migration_trigerred: HashSet::new(),
 
             #[cfg(feature = "server-reply-analysis")]
@@ -1082,41 +1086,105 @@ impl TcpPeer {
     pub fn receive_rps_signal(&mut self, ip_hdr: &Ipv4Header, buf: Buffer) -> Result<(), Fail> {
         let sum = NetworkEndian::read_u32(&buf[12..16]) as usize;
         let individual = NetworkEndian::read_u32(&buf[16..20]) as usize;
-        capy_time_log!("RPS_SIGNAL,{},{}", sum, individual);
 
-        self.inner.borrow_mut().last_rps_signal = Some((sum, individual));
+        // Parse min_workload_server from rps_signal header (bytes 20-26)
+        let min_server_ip = Ipv4Addr::from(NetworkEndian::read_u32(&buf[20..24]));
+        let min_server_port = NetworkEndian::read_u16(&buf[24..26]);
+
+        #[cfg(feature = "capy-log")]
+        {
+            let src_udp_port = NetworkEndian::read_u16(&buf[0..2]);
+            let dst_udp_port = NetworkEndian::read_u16(&buf[2..4]);
+            let udp_len = NetworkEndian::read_u16(&buf[4..6]);
+            let signature = NetworkEndian::read_u32(&buf[8..12]);
+            capy_log_mig!("[RPS_SIGNAL] Received: src_ip={}, dst_ip={}", ip_hdr.get_src_addr(), ip_hdr.get_dest_addr());
+            capy_log_mig!("[RPS_SIGNAL] UDP: src_port={}, dst_port={}, len={}", src_udp_port, dst_udp_port, udp_len);
+            capy_log_mig!("[RPS_SIGNAL] signature=0x{:08X}, sum={}, individual={}", signature, sum, individual);
+            capy_log_mig!("[RPS_SIGNAL] min_workload_server={}:{}", min_server_ip, min_server_port);
+        }
+
+        // capy_time_log!("RPS_SIGNAL: sum={}, individual={}, min_server={}:{}", sum, individual, min_server_ip, min_server_port);
+
+        let mut inner = self.inner.borrow_mut();
+        inner.last_rps_signal = Some((sum, individual));
+
+        // Update min_workload_server in tcpmig
+        #[cfg(feature = "tcp-migration")]
+        inner.tcpmig.update_min_workload_server(min_server_ip, min_server_port);
+
         Ok(())
     }
 
     pub fn rps_signal_action(&mut self) {
-        {
-            let mut inner = self.inner.borrow_mut();
-            let (sum, individual) = match inner.last_rps_signal.take() {
-                Some(val) => val,
-                None => return,
-            };
+        let mut inner = self.inner.borrow_mut();
+        let (sum, individual) = match inner.last_rps_signal.take() {
+            Some(val) => val,
+            None => return,
+        };
 
-            let threshold = (sum as f64 * inner.rps_threshold) as usize;
-            let threshold_epsilon = (sum as f64 * (inner.rps_threshold + inner.threshold_epsilon)) as usize;
-            // eprintln!("Threshold: {}, individual: {}", threshold, individual);
-            #[cfg(not(feature = "manual-tcp-migration"))]
-            // if sum > inner.min_threshold && individual > threshold_epsilon {
-            if individual > inner.min_threshold && individual > threshold_epsilon {
-            // inho: set min_threshold to be capacity of an individual server 
-            // meaning that this server is migrating connections only when it reaches the saturation point. 
-                inner.rps_stats.set_threshold(threshold);
-                inner.reactive_migration_enabled = true;
-                if let Some(conns_to_migrate) = inner.rps_stats.connections_to_proactively_migrate() {
-                    drop(inner);
-                    for conn in conns_to_migrate {
-                        self.initiate_migration_by_addr(conn);
-                    }
-                }
-            } else {
-                inner.reactive_migration_enabled = false;
-            }
+        // Check if 1 second has passed since last log
+        let now = std::time::Instant::now();
+        let should_log = match inner.last_rps_log_time {
+            Some(last_time) => now.duration_since(last_time).as_secs() >= 1,
+            None => true,
+        };
+
+        // Migration decision logic (always run)
+        let all_conn_stats: Vec<((SocketAddrV4, SocketAddrV4), usize)> = inner.rps_stats.get_all_connection_stats();
+        let conn_stats: Vec<((SocketAddrV4, SocketAddrV4), usize)> = all_conn_stats
+            .into_iter()
+            .filter(|(conn, _)| inner.qds.contains_key(conn))
+            .collect();
+
+        // Reset stats after reading (so next interval starts fresh)
+        inner.rps_stats.reset_stats();
+
+        let num_conns = conn_stats.len();
+        let fair_share = if sum > 0 { sum / 12 } else { 0 };
+        let threshold = fair_share + fair_share / 5;  // fair_share * 1.2 (20% buffer)
+        let overloaded = individual > 2000 && individual > threshold && fair_share > 0;
+
+        // Calculate excess and select TWO connections to migrate (highest RPS among rps < excess && rps < 100)
+        // Exclude 10.0.1.7:30000 from migration
+        let excluded_client = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 7), 30000);
+        let migrate_conns: Vec<((SocketAddrV4, SocketAddrV4), usize)> = if overloaded && num_conns >= 2 {
+            let excess = individual - threshold;
+            let mut candidates: Vec<_> = conn_stats.iter()
+                .filter(|((_, remote), rps)| *remote != excluded_client && *rps < excess && *rps < 1000)
+                .map(|(conn, rps)| (*conn, *rps))
+                .collect();
+            candidates.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by RPS descending
+            candidates.into_iter().take(2).collect()
+        } else {
+            Vec::new()
+        };
+
+        // Log only once per second (get fresh stats at log time)
+        if should_log {
+            inner.last_rps_log_time = Some(now);
+            // Build (rps, q) pairs per connection
+            let recv_q_stats: std::collections::HashMap<_, _> = inner.recv_queue_stats.get_all_connection_stats()
+                .into_iter()
+                .collect();
+            let mut conn_rps_q: Vec<(usize, usize)> = conn_stats.iter()
+                .map(|(conn, rps)| (*rps, *recv_q_stats.get(conn).unwrap_or(&0)))
+                .collect();
+            conn_rps_q.sort_by(|a, b| b.0.cmp(&a.0)); // Sort by rps descending
+
+            drop(inner);
+
+            capy_time_log!("RPS_SIGNAL: sum={}, individual={}, fair={}, thresh={}, over={}, n={}, stats={:?}",
+                sum, individual, fair_share, threshold, overloaded as u8, num_conns, conn_rps_q);
+        } else {
+            drop(inner);
         }
-        self.inner.borrow_mut().rps_stats.reset_stats();
+
+        // Migration decision (always execute if needed, up to 2 connections)
+        let excess = individual.saturating_sub(threshold);
+        for (conn_key, conn_rps_val) in migrate_conns {
+            capy_time_log!("MIG_DECISION: MIGRATE conn={} rps={} (excess={}) -> switch", conn_key.1, conn_rps_val, excess);
+            self.initiate_migration_by_addr(conn_key);
+        }
     }
 
     pub fn migrate_out_and_send(&mut self, qd: QDesc) {
@@ -1235,14 +1303,10 @@ impl Inner {
             },
 
             TcpmigReceiveStatus::ReturnedBySwitch(local, remote) => {
-                // #[cfg(not(feature = "manual-tcp-migration"))]
-                // match self.established.get(&(local, remote)) {
-                //     Some(s) => s.cb.enable_stats(&mut self.recv_queue_stats, &mut self.rps_stats),
-                //     None => panic!("migration rejected for non-existent connection: {:?}", (local, remote)),
-                // }
-
-                // // Re-initiate another migration if manual migration returned by switch.
-                // #[cfg(feature = "manual-tcp-migration")]
+                // Check if connection still exists before re-initiating
+                if !self.qds.contains_key(&(local, remote)) {
+                    return Ok(());
+                }
                 self.initiate_migration_by_addr((local, remote));
             },
 

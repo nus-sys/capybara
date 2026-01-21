@@ -29,7 +29,7 @@ use std::net::{SocketAddrV4, Ipv4Addr};
 
 /// Size of a TCPMig header (in bytes).
 pub const TCPMIG_HEADER_SIZE: usize = 28;
-pub const RPS_SIGNAL_HEADER_SIZE: usize = 20;
+pub const RPS_SIGNAL_HEADER_SIZE: usize = 26;  // +6 bytes for min_workload_server (IP:4 + port:2)
 
 pub const MAGIC_NUMBER: u32 = 0xCAFEDEAD;
 pub const RPS_SIGNAL_SIGNATURE: u32 = 0xABCDABCD;
@@ -128,6 +128,10 @@ impl TcpMigHeader {
 
     pub fn get_source_udp_port(&self) -> u16 {
         self.source_udp_port
+    }
+
+    pub fn get_dest_udp_port(&self) -> u16 {
+        self.dest_udp_port
     }
 
     pub fn swap_src_dst_port(&mut self) {
