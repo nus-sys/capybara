@@ -12,7 +12,8 @@ control MigrationRequestIdentifier32b(
     Register< value32b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_client_ip = {
         void apply(inout value32b_t register_value, out bit<1> is_written) {
-            if(register_value == 0){
+            // if(register_value == 0){
+            if(true){
                 register_value = meta.client_ip;
                 is_written = 1;
             }else{
@@ -84,7 +85,8 @@ control MigrationRequestIdentifier16b(
     Register< value16b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_client_port = {
         void apply(inout value16b_t register_value, out bit<1> is_written) {
-            if(register_value == 0){
+            // if(register_value == 0){
+            if(true){
                 register_value = meta.client_port;
                 is_written = 1;
             }else{
@@ -157,7 +159,8 @@ control MigrationReplyIdentifier32b(
     Register< value32b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value32b_t, index_t, bit<1> >(reg) write_client_ip = {
         void apply(inout value32b_t register_value, out bit<1> is_written) {
-            if(register_value == 0){
+            // if(register_value == 0){
+            if(true){
                 register_value = meta.client_ip;
                 is_written = 1;
             }else{
@@ -230,7 +233,8 @@ control MigrationReplyIdentifier16b(
     Register< value16b_t, index_t >(TWO_POWER_SIXTEEN) reg;
     RegisterAction< value16b_t, index_t, bit<1> >(reg) write_client_port = {
         void apply(inout value16b_t register_value, out bit<1> is_written) {
-            if(register_value == 0){
+            // if(register_value == 0){
+            if(true){
                 register_value = meta.client_port;
                 is_written = 1;
             }else{

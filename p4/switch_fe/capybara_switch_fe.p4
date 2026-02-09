@@ -228,11 +228,11 @@ control Ingress(
     RegisterAction<index_t, _, index_t>(reg_be_idx) get_be_idx = {
         void apply(inout index_t val, out index_t rv) {
             rv = val;
-            // if(val == NUM_BACKENDS-1){
-            //     val = 0;
-            // }else{
-            //     val = val + 1;    
-            // }
+            if(val == 16-1){
+                val = 0;
+            }else{
+                val = val + 1;    
+            }
         }
     };
 
@@ -378,8 +378,8 @@ control Ingress(
                     meta.client_ip = hdr.ipv4.src_ip;
                     meta.client_port = hdr.tcp.src_port;
 
-                    meta.backend_idx = get_be_idx.execute(meta.client_port);
-                    // meta.backend_idx = get_be_idx.execute(0);
+                    // meta.backend_idx = get_be_idx.execute(meta.client_port);
+                    meta.backend_idx = get_be_idx.execute(0);
                     exec_read_backend_mac_hi32();
                     exec_read_backend_mac_lo16();
                     exec_read_backend_ip();
@@ -399,8 +399,8 @@ control Ingress(
 
                 // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
                 hdr.udp.checksum = 0;
-                // hdr.ethernet.dst_mac = BE_MAC; // for capy-proxy-switch-fe
-                // hdr.ipv4.dst_ip = BE_IP;
+                hdr.ethernet.dst_mac = BE_MAC; // for capy-proxy-switch-fe
+                hdr.ipv4.dst_ip = BE_IP;
             }
 
             if(meta.flag[0:0] == 1){ // chown
@@ -779,7 +779,7 @@ control Egress(
     RegisterAction<bit<32>, _, bit<1>>(reg_min_rps) init_reg_min_rps = {
         void apply(inout bit<32> val) {
             // if(val == 0){
-            val = TWO_POWER_SIXTEEN;
+            val = (1<<32) - 1;
             // }
         }
     };
@@ -899,7 +899,7 @@ control Egress(
                 exec_add_reg_individual_rps_1();
             }
         }else if(hdr.tcpmig.isValid() && meta.flag == 0b00100000) { // PREPARE_MIG
-            // exec_read_reg_min_rps_server_port(); 
+            exec_read_reg_min_rps_server_port(); 
             // exec_read_round_robin_server_port();
             // counter_update.execute(0);
         }

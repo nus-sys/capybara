@@ -252,7 +252,7 @@ def set_bcast(ports):
 
 
 p4 = bfrt.capybara_switch_fe.pipe
-num_backends = 12
+num_backends = 4
 
 ### Setup L2 learning
 sl2 = capybara_switch_fe(default_ttl=10000)
@@ -260,13 +260,13 @@ sl2.setup()
 set_bcast([24, 32, 36, 28, 16, 20])
 
 
-for i in range(int(num_backends/3)):
+for i in range(4):
     bfrt.pre.node.entry(MULTICAST_NODE_ID=10000 + i, MULTICAST_RID=10000 + i,
-        MULTICAST_LAG_ID=[], DEV_PORT=[24, 28, 36]).push()
+        MULTICAST_LAG_ID=[], DEV_PORT=[24]).push()
 
-mcast_node_ids = [i for i in range(10000, 10000 + int(num_backends/3))]
-xid_valid_list = [False] * int(num_backends/3)
-xid_list = [0] * int(num_backends/3)
+mcast_node_ids = [i for i in range(10000, 10004)]
+xid_valid_list = [False] * int(4)
+xid_list = [0] * int(4)
 # print(mcast_node_ids)
 # print(xid_valid_list)
 # print(xid_list)
@@ -282,9 +282,9 @@ bfrt.pre.mgid.entry(MGID=2, MULTICAST_NODE_ID=mcast_node_ids,
 
 # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=0, f1 = 0)
 
-for i in range(65536):
+# for i in range(65536):
     # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = 0)
-    p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = i % num_backends)
+    # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = i % num_backends)
     # p4.Ingress.reg_be_idx.mod(REGISTER_INDEX=i, f1 = (i/2) % 4) // for redis-benchmark distribution
   
 # for i in range(4):
@@ -305,12 +305,18 @@ for i in range(65536):
 #     p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
 #     p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xe805)
 #     p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.8'))
-#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000)
-for i in range(num_backends):
-    p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=i, f1=0x08c0ebb6)
-    p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=i, f1=0xc5ad)
-    p4.Ingress.backend_ip.mod(REGISTER_INDEX=i, f1=IPAddress('10.0.1.9'))
-    p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000)
+#     p4.Ingress.backend_port.mod(REGISTER_INDEX=i, f1=10000 + i)
+# WRR with initial equal weights (1:1:1:1) -> 4 slots each, 16 total
+num_ports = 4
+slots_per_port = 4  
+idx = 0
+for port_offset in range(num_ports):
+    for slot_offset in range(slots_per_port):
+        p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=idx, f1=0x08c0ebb6)
+        p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=idx, f1=0xc5ad)
+        p4.Ingress.backend_ip.mod(REGISTER_INDEX=idx, f1=IPAddress('10.0.1.9'))
+        p4.Ingress.backend_port.mod(REGISTER_INDEX=idx, f1=10000 + slot_offset)
+        idx += 1
 # p4.Ingress.backend_mac_hi32.mod(REGISTER_INDEX=0, f1=0x08c0ebb6)
 # p4.Ingress.backend_mac_lo16.mod(REGISTER_INDEX=0, f1=0xe805)
 # p4.Ingress.backend_ip.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.8'))

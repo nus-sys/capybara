@@ -383,6 +383,9 @@ control Ingress(
                 // hash2 = hash1;
 
                 // ig_dprsr_md.digest_type = TCP_MIGRATION_DIGEST;
+                if(hdr.ipv4.dst_ip == 0x0a000107){
+                    hdr.ipv4.dst_ip = hdr.ipv4.src_ip;
+                }
                 hash1 = meta.client_port;
                 hdr.udp.checksum = 0;
                 // hdr.ipv4.dst_ip = BE_IP;
@@ -428,13 +431,17 @@ control Ingress(
             // ipv4_host.apply();
             // l2_forwarding.apply();
             // counter_update.execute(0);
-            
+            if(meta.flag == 0b00100000){ // PREPARE_MIG
+                multicast(3);
+            }
+            else{    
+                tbl_rewrite_dst_mac.apply();
+            }
         }
         else{
             // dst_mac_rewrite.apply();
-            // l2_forwarding.apply();
+            l2_forwarding.apply();
         }
-        tbl_rewrite_dst_mac.apply();
         // l2_forwarding.apply();
         // exec_check_val();
         // exec_check_val2();
@@ -575,6 +582,7 @@ struct my_egress_headers_t {
 
 struct my_egress_metadata_t {
     port_mirror_meta_t  port_mirror_meta; // <== To Add
+    bit<32>             dst_ip;
     bit<16>             udp_dst_port;
     bit<8>              active_reg_idx;
     bit<8>              snapshot_reg_idx;
@@ -597,6 +605,7 @@ parser EgressParser(packet_in        pkt,
     PortMirroringEgressParser() port_mirror_parser; // <== To Add
     /* This is a mandatory state, required by Tofino Architecture */
     state start {
+        meta.dst_ip = 0;
         meta.udp_dst_port = 0;
         meta.active_reg_idx = 0;
         meta.snapshot_reg_idx = 0;
@@ -862,7 +871,7 @@ control Egress(
     RegisterAction<bit<32>, _, bit<1>>(reg_min_rps) init_reg_min_rps = {
         void apply(inout bit<32> val) {
             // if(val == 0){
-            val = TWO_POWER_SIXTEEN;
+            val = 1<<32 - 1; // set to max value
             // }
         }
     };
@@ -885,10 +894,11 @@ control Egress(
 
     Register<bit<16>, bit<8>> (1) reg_min_rps_server_port;
     RegisterAction<bit<16>, bit<8>, bit<16>>(reg_min_rps_server_port) write_reg_min_rps_server_port = {
-        void apply(inout bit<16> val) {
+        void apply(inout bit<16> val, out bit<16> return_val) {
             if(meta.is_min_rps_updated == 1) {
                 val = hdr.udp.dst_port;
             }
+            return_val = val;
         }
     };
     action exec_write_reg_min_rps_server_port(){
@@ -901,6 +911,27 @@ control Egress(
     };
     action exec_read_reg_min_rps_server_port(){
         hdr.udp.dst_port = read_reg_min_rps_server_port.execute(0);
+    }
+
+    Register<bit<32>, bit<8>> (1) reg_min_rps_server_ip;
+    RegisterAction<bit<32>, bit<8>, bit<32>>(reg_min_rps_server_ip) write_reg_min_rps_server_ip = {
+        void apply(inout bit<32> val, out bit<32> return_val) {
+            if(meta.is_min_rps_updated == 1) {
+                val = meta.dst_ip;
+            }
+            return_val = val;
+        }
+    };
+    action exec_write_reg_min_rps_server_ip(){
+        write_reg_min_rps_server_ip.execute(0);
+    }
+    RegisterAction<bit<32>, bit<8>, bit<32>>(reg_min_rps_server_ip) read_reg_min_rps_server_ip = {
+        void apply(inout bit<32> val, out bit<32> return_val) {
+            return_val = val;
+        }
+    };
+    action exec_read_reg_min_rps_server_ip(){
+        hdr.ipv4.dst_ip = read_reg_min_rps_server_ip.execute(0);
     }
 
     Register< bit<16>, _> (1) reg_round_robin_server_port; // value, key
@@ -951,27 +982,33 @@ control Egress(
             exec_update_active_reg_idx();
             exec_init_reg_sum_rps();
             exec_init_reg_min_rps();
+            // exec_read_reg_min_rps_server_port();
+            // exec_read_reg_min_rps_server_ip();
         }else if(hdr.rps_signal.isValid()){
             hdr.udp.dst_port = eg_intr_md.egress_rid;
             exec_read_snapshot_reg_idx();
             exec_read_reg_sum_rps();
             // Read individual RPS based on node (using udp.dst_port / egress_rid)
-            if(eg_intr_md.egress_port == 36){ // node8
-                if(meta.snapshot_reg_idx == 0){
+            if(meta.snapshot_reg_idx == 0){
+                if(eg_intr_md.egress_port == 36){ // node8
+                    meta.dst_ip = 0x0a000108;
                     exec_read_reg_individual_rps_node8_0();
-                }else{
-                    exec_read_reg_individual_rps_node8_1();
-                }
-            }else if(eg_intr_md.egress_port == 24){ // node9
-                if(meta.snapshot_reg_idx == 0){
+                }else if(eg_intr_md.egress_port == 24){ // node9
+                    meta.dst_ip = 0x0a000109;
                     exec_read_reg_individual_rps_node9_0();
-                }else{
-                    exec_read_reg_individual_rps_node9_1();
-                }
-            }else if(eg_intr_md.egress_port == 28){ // node10
-                if(meta.snapshot_reg_idx == 0){
+                }else if(eg_intr_md.egress_port == 28){ // node10
+                    meta.dst_ip = 0x0a00010A;
                     exec_read_reg_individual_rps_node10_0();
-                }else{
+                }
+            }else{
+                if(eg_intr_md.egress_port == 36){ // node8
+                    meta.dst_ip = 0x0a000108;
+                    exec_read_reg_individual_rps_node8_1();
+                }else if(eg_intr_md.egress_port == 24){ // node9
+                    meta.dst_ip = 0x0a000109;
+                    exec_read_reg_individual_rps_node9_1();
+                }else if(eg_intr_md.egress_port == 28){ // node10
+                    meta.dst_ip = 0x0a00010A;
                     exec_read_reg_individual_rps_node10_1();
                 }
             }
@@ -979,10 +1016,13 @@ control Egress(
             exec_poll_reg_min_rps();
             // if(meta.is_min_rps_updated == 1){
             exec_write_reg_min_rps_server_port();
+            exec_write_reg_min_rps_server_ip();
             // }
-            // if(meta.flag == 0b00100000){
-            //     exec_read_reg_min_rps_server_port();
-            // }
+
+            // Read min server info into rps_signal header
+            // exec_read_reg_min_rps_server_port();
+            // exec_read_reg_min_rps_server_ip();
+
             if(hdr.rps_signal.sum == 0){
                 drop();
             }
@@ -1019,7 +1059,8 @@ control Egress(
                 }
             }
         }else if(hdr.tcpmig.isValid() && meta.flag == 0b00100000) { // PREPARE_MIG
-            // exec_read_reg_min_rps_server_port(); 
+            exec_read_reg_min_rps_server_ip(); 
+            exec_read_reg_min_rps_server_port(); 
             // exec_read_round_robin_server_port();
             // counter_update.execute(0);
         }
@@ -1037,10 +1078,24 @@ control EgressDeparser(packet_out pkt,
     in    egress_intrinsic_metadata_for_deparser_t  eg_dprsr_md)
 {
     PortMirroringCommonDeparser() port_mirroring_deparser; // <== To Add
-
+    Checksum()  ipv4_checksum;
     apply {
         port_mirroring_deparser.apply(meta.port_mirror_meta, eg_dprsr_md.mirror_type); // <== To Add
-
+        if (hdr.udp.isValid()) {
+            hdr.ipv4.hdr_checksum = ipv4_checksum.update({
+                hdr.ipv4.version,
+                hdr.ipv4.ihl,
+                hdr.ipv4.diffserv,
+                hdr.ipv4.total_len,
+                hdr.ipv4.identification,
+                hdr.ipv4.flags,
+                hdr.ipv4.frag_offset,
+                hdr.ipv4.ttl,
+                hdr.ipv4.protocol,
+                hdr.ipv4.src_ip,
+                hdr.ipv4.dst_ip
+            });
+        }
         pkt.emit(hdr);
     }
 }

@@ -274,6 +274,12 @@ bfrt.pre.mgid.entry(MGID=2, MULTICAST_NODE_ID=mcast_node_ids,
         MULTICAST_NODE_L1_XID_VALID=xid_valid_list,
             MULTICAST_NODE_L1_XID=xid_list).push()
 
+# MGID 3: one packet to each port [24, 28, 36] - separate node
+bfrt.pre.node.entry(MULTICAST_NODE_ID=20000, MULTICAST_RID=20000,
+    MULTICAST_LAG_ID=[], DEV_PORT=[24, 28, 36]).push()
+bfrt.pre.mgid.entry(MGID=3, MULTICAST_NODE_ID=[20000],
+        MULTICAST_NODE_L1_XID_VALID=[False],
+            MULTICAST_NODE_L1_XID=[0]).push()
 
 # p4.Ingress.min_workload_ip.reg.mod(REGISTER_INDEX=0, f1=IPAddress('10.0.1.9'))
 # p4.Ingress.min_workload_port.reg.mod(REGISTER_INDEX=0, f1=10001)
