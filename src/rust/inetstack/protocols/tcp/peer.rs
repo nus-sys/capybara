@@ -197,6 +197,8 @@ pub struct Inner {
     last_rps_signal: Option<(usize, usize)>,
     #[cfg(feature = "tcp-migration")]
     last_rps_log_time: Option<std::time::Instant>,
+    #[cfg(feature = "tcp-migration")]
+    recv_queue_len_threshold: usize,
 
     #[cfg(feature = "tcp-migration")]
     migration_trigerred: HashSet<SocketAddrV4>,
@@ -763,6 +765,11 @@ impl Inner {
             #[cfg(feature = "tcp-migration")]
             last_rps_log_time: None,
             #[cfg(feature = "tcp-migration")]
+            recv_queue_len_threshold: std::env::var("RECV_QUEUE_LEN_THRESHOLD")
+                .unwrap_or_else(|_| String::from("2048"))
+                .parse::<usize>()
+                .expect("Invalid RECV_QUEUE_LEN_THRESHOLD value"),
+            #[cfg(feature = "tcp-migration")]
             migration_trigerred: HashSet::new(),
 
             #[cfg(feature = "server-reply-analysis")]
@@ -1087,9 +1094,9 @@ impl TcpPeer {
         let sum = NetworkEndian::read_u32(&buf[12..16]) as usize;
         let individual = NetworkEndian::read_u32(&buf[16..20]) as usize;
 
-        // Parse min_workload_server from rps_signal header (bytes 20-26)
-        let min_server_ip = Ipv4Addr::from(NetworkEndian::read_u32(&buf[20..24]));
-        let min_server_port = NetworkEndian::read_u16(&buf[24..26]);
+        // // Parse min_workload_server from rps_signal header (bytes 20-26)
+        // let min_server_ip = Ipv4Addr::from(NetworkEndian::read_u32(&buf[20..24]));
+        // let min_server_port = NetworkEndian::read_u16(&buf[24..26]);
 
         #[cfg(feature = "capy-log")]
         {
@@ -1100,17 +1107,19 @@ impl TcpPeer {
             capy_log_mig!("[RPS_SIGNAL] Received: src_ip={}, dst_ip={}", ip_hdr.get_src_addr(), ip_hdr.get_dest_addr());
             capy_log_mig!("[RPS_SIGNAL] UDP: src_port={}, dst_port={}, len={}", src_udp_port, dst_udp_port, udp_len);
             capy_log_mig!("[RPS_SIGNAL] signature=0x{:08X}, sum={}, individual={}", signature, sum, individual);
-            capy_log_mig!("[RPS_SIGNAL] min_workload_server={}:{}", min_server_ip, min_server_port);
+            // capy_log_mig!("[RPS_SIGNAL] min_workload_server={}:{}", min_server_ip, min_server_port);
         }
 
-        // capy_time_log!("RPS_SIGNAL: sum={}, individual={}, min_server={}:{}", sum, individual, min_server_ip, min_server_port);
+        // eprintln!("RPS_SIGNAL: sum={}, individual={}", sum, individual);
+
+        // eprintln!("RPS_SIGNAL: sum={}, individual={}, min_server={}:{}", sum, individual, min_server_ip, min_server_port);
 
         let mut inner = self.inner.borrow_mut();
         inner.last_rps_signal = Some((sum, individual));
 
         // Update min_workload_server in tcpmig
-        #[cfg(feature = "tcp-migration")]
-        inner.tcpmig.update_min_workload_server(min_server_ip, min_server_port);
+        // #[cfg(feature = "tcp-migration")]
+        // inner.tcpmig.update_min_workload_server(min_server_ip, min_server_port);
 
         Ok(())
     }
@@ -1139,33 +1148,40 @@ impl TcpPeer {
         // Reset stats after reading (so next interval starts fresh)
         inner.rps_stats.reset_stats();
 
-        let num_conns = conn_stats.len();
-        let fair_share = if sum > 0 { sum / 12 } else { 0 };
-        let threshold = fair_share + fair_share / 5;  // fair_share * 1.2 (20% buffer)
-        let overloaded = individual > 2000 && individual > threshold && fair_share > 0;
+        // Get queue length stats and calculate total queue length
+        let recv_q_stats: std::collections::HashMap<_, _> = inner.recv_queue_stats.get_all_connection_stats()
+            .into_iter()
+            .collect();
+        let total_queue_len: usize = recv_q_stats.values().sum();
+        let queue_threshold = inner.recv_queue_len_threshold;
 
-        // Calculate excess and select TWO connections to migrate (highest RPS among rps < excess && rps < 100)
+        let num_conns = conn_stats.len();
+        let fair_share = if sum > 0 { sum / 4 } else { 0 };
+        let threshold = fair_share + fair_share / 10;  // fair_share * 1.2 (20% buffer)
+        let overloaded = individual > 200 && individual > threshold && fair_share > 0 && total_queue_len > queue_threshold;
+
+        // Calculate excess and select TWO connections to migrate (highest RPS among rps < excess && rps < 200)
         // Exclude 10.0.1.7:30000 from migration
         let excluded_client = SocketAddrV4::new(Ipv4Addr::new(10, 0, 1, 7), 30000);
         let migrate_conns: Vec<((SocketAddrV4, SocketAddrV4), usize)> = if overloaded && num_conns >= 2 {
             let excess = individual - threshold;
             let mut candidates: Vec<_> = conn_stats.iter()
-                .filter(|((_, remote), rps)| *remote != excluded_client && *rps < excess && *rps < 1000)
+                .filter(|((_, remote), rps)| *remote != excluded_client && *rps < excess)
                 .map(|(conn, rps)| (*conn, *rps))
                 .collect();
             candidates.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by RPS descending
-            candidates.into_iter().take(2).collect()
+            candidates.into_iter().take(5).collect()
         } else {
             Vec::new()
         };
 
-        // Log only once per second (get fresh stats at log time)
-        if should_log {
-            inner.last_rps_log_time = Some(now);
+        // Log if 1 second passed OR migration triggered
+        let mig_triggered = !migrate_conns.is_empty();
+        if should_log || mig_triggered {
+            if should_log {
+                inner.last_rps_log_time = Some(now);
+            }
             // Build (rps, q) pairs per connection
-            let recv_q_stats: std::collections::HashMap<_, _> = inner.recv_queue_stats.get_all_connection_stats()
-                .into_iter()
-                .collect();
             let mut conn_rps_q: Vec<(usize, usize)> = conn_stats.iter()
                 .map(|(conn, rps)| (*rps, *recv_q_stats.get(conn).unwrap_or(&0)))
                 .collect();
@@ -1173,8 +1189,9 @@ impl TcpPeer {
 
             drop(inner);
 
-            capy_time_log!("RPS_SIGNAL: sum={}, individual={}, fair={}, thresh={}, over={}, n={}, stats={:?}",
-                sum, individual, fair_share, threshold, overloaded as u8, num_conns, conn_rps_q);
+            let mig_mark = if mig_triggered { "[MIG]" } else { "" };
+            capy_time_log!("RPS_SIGNAL{}: sum={}, individual={}, fair={}, thresh={}, over={}, n={}, total_q={}, q_thresh={}, stats={:?}",
+                mig_mark, sum, individual, fair_share, threshold, overloaded as u8, num_conns, total_queue_len, queue_threshold, conn_rps_q);
         } else {
             drop(inner);
         }

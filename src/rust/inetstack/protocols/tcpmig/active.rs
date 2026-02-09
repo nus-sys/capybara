@@ -360,6 +360,8 @@ impl ActiveMigration {
             (self.remote_ipv4_addr, self.remote_link_addr)
         };
 
+        capy_time_log!("MIG_SEND: stage={:?}, client={}, dst_ip={}", tcpmig_hdr.stage, tcpmig_hdr.client, dst_ip);
+
         let ip_hdr = Ipv4Header::new(self.local_ipv4_addr, dst_ip, IpProtocol::UDP);
 
         if buf.len() / MAX_FRAGMENT_SIZE > u16::MAX as usize {

@@ -40,7 +40,7 @@ def generate_per_conn_workload(total_pps, total_conn, zipf_alpha):
     total_conn: total number of connections (split between node5 and node6)
     """
 
-    if zipf_alpha == 0 or zipf_alpha == '':
+    if zipf_alpha == 0 or zipf_alpha == '' or zipf_alpha == '0':
         # Uniform distribution
         rps_per_conn = total_pps // total_conn
         remainder = total_pps % total_conn
@@ -82,8 +82,8 @@ def run_server(mig_delay, max_reactive_migs, max_proactive_migs, mig_per_n):
         /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/capybara_switch_fe_setup.py"'] 
     # cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
     #     /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/port_forward/port_forward.py"']
-    cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
-        /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/main_eval_setup.py"']
+    # cmd = [f'ssh sw1 "source /home/singtel/tools/set_sde.bash && \
+    #     /home/singtel/bf-sde-9.4.0/run_bfshell.sh -b /home/singtel/inho/Capybara/capybara/p4/switch_fe/main_eval_setup.py"']
     result = subprocess.run(
         cmd,
         shell=True,
@@ -607,6 +607,7 @@ def calc_latency_percentiles(experiment_id):
     Combines data from all longflow and shortflow clients.
     File format: latency_value,count (one per line)
     Returns: dict with median, 90th, 99th, 99.9th, 99.99th percentiles
+    Also saves 10, 20, 30, ..., 90, 99 percentiles to file.
     """
     latency_files = []
     # Longflow clients (node5, node6)
@@ -656,6 +657,26 @@ def calc_latency_percentiles(experiment_id):
             else:
                 results[name] = f'{sorted_pairs[-1][0]:.1f}'
 
+        # Calculate and save 10, 20, 30, ..., 90, 99 percentiles to file
+        extended_percentiles = [10, 20, 30, 40, 50, 60, 70, 80, 90, 99]
+        percentile_results = []
+        for p in extended_percentiles:
+            pct = p / 100.0
+            target_count = total_count * pct
+            cumulative = 0
+            for latency, count in sorted_pairs:
+                cumulative += count
+                if cumulative >= target_count:
+                    percentile_results.append(f'{p},{latency:.1f}')
+                    break
+            else:
+                percentile_results.append(f'{p},{sorted_pairs[-1][0]:.1f}')
+
+        # Save to file
+        with open(f'{DATA_PATH}/{experiment_id}.latency-percentiles', 'w') as f:
+            f.write('\n'.join(percentile_results))
+        print(f'Saved latency percentiles to {DATA_PATH}/{experiment_id}.latency-percentiles')
+
         return results
     except Exception as e:
         print(f'Error calculating latency percentiles: {e}')
@@ -673,6 +694,7 @@ def run_eval():
             for max_reactive_migs in MAX_REACTIVE_MIGS: 
                 for max_proactive_migs in MAX_PROACTIVE_MIGS:
                     for mig_per_n in MIG_PER_N:
+                      for zipf_alpha in ZIPF_ALPHAS:
                         for pps in CLIENT_PPS:
                             for conn in NUM_CONNECTIONS:
                                 # for num_thread in NUM_THREADS:
@@ -770,12 +792,12 @@ def run_eval():
                                 client_task = []
                                 # Generate per-connection workload distribution for longflow clients
                                 # conn = total connections, split between node5 and node6
-                                node5_workload, node6_workload = generate_per_conn_workload(pps, conn, ZIPF_ALPHA)
+                                node5_workload, node6_workload = generate_per_conn_workload(pps, conn, zipf_alpha)
                                 per_conn_workloads = {
                                     'node5': (node5_workload, ','.join(map(str, node5_workload))),
                                     'node6': (node6_workload, ','.join(map(str, node6_workload)))
                                 }
-                                print(f'Workload distribution (ZIPF_ALPHA={ZIPF_ALPHA}, total_conn={conn}):')
+                                print(f'Workload distribution (ZIPF_ALPHA={zipf_alpha}, total_conn={conn}):')
                                 print(f'  node5: {len(node5_workload)} conns, RPS range=[{max(node5_workload)}~{min(node5_workload)}], total={sum(node5_workload)} rps')
                                 print(f'  node6: {len(node6_workload)} conns, RPS range=[{max(node6_workload)}~{min(node6_workload)}], total={sum(node6_workload)} rps')
 
@@ -863,7 +885,7 @@ def run_eval():
                                         --output=trace \
                                         --rampup=0 \
                                         --shortflow \
-                                        --shortflow-duration=1111 \
+                                        --shortflow-duration=10000 \
                                         --exptid={DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}_shortflow \
                                         > {DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}_shortflow']
                                     task = host.run(cmd, quiet=False)
@@ -907,12 +929,13 @@ def run_eval():
                                         except:
                                             pass
 
-                                    # Print shortflow results from node7 and extract total connections
+                                    # Print shortflow results from node7 and extract total connections and 99p latency
                                     shortflow_total_conn = 0
+                                    shortflow_p99 = 'N/A'
                                     if SHORTFLOW_CLIENT_NODE:
                                         try:
                                             shortflow_log = f'{DATA_PATH}/{experiment_id}.{SHORTFLOW_CLIENT_NODE}_shortflow'
-                                            cmd = f'cat {shortflow_log} | grep -A3 "\\[ShortFlow Results\\]"'
+                                            cmd = f'cat {shortflow_log} | grep -A6 "\\[ShortFlow Results\\]"'
                                             sf_result = subprocess.run(
                                                 cmd,
                                                 shell=True,
@@ -926,6 +949,10 @@ def run_eval():
                                                 match = re.search(r'Total connections:\s*(\d+)', sf_result)
                                                 if match:
                                                     shortflow_total_conn = int(match.group(1))
+                                                # Extract 99th percentile latency
+                                                match_p99 = re.search(r'99th \(us\):\s*(\d+)', sf_result)
+                                                if match_p99:
+                                                    shortflow_p99 = match_p99.group(1)
                                         except:
                                             pass
 
@@ -933,7 +960,7 @@ def run_eval():
                                     percentiles = calc_latency_percentiles(experiment_id)
 
                                     # Print and save combined final result
-                                    combined_result = f'{SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {conn}, {shortflow_total_conn}, {DATA_SIZE}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n}, {total_rps}, {total_actual}, {total_dropped}, {total_never_sent}, {percentiles["median"]}, {percentiles["p90"]}, {percentiles["p99"]}, {percentiles["p999"]}, {percentiles["p9999"]}'
+                                    combined_result = f'{SERVER_APP}, {experiment_id}, {NUM_BACKENDS}, {conn}, {DATA_SIZE}, {zipf_alpha}, {RECV_QUEUE_LEN_THRESHOLD}, {mig_delay}, {max_reactive_migs}, {max_proactive_migs}, {mig_per_n}, {total_rps}, {total_actual}, {total_dropped}, {total_never_sent}, {percentiles["median"]}, {percentiles["p90"]}, {percentiles["p99"]}, {percentiles["p999"]}, {percentiles["p9999"]}, {shortflow_total_conn}, {shortflow_p99}'
                                     print(f'\n[COMBINED RESULT] {combined_result}\n\n')
                                     final_result = final_result + combined_result + '\n'
 
@@ -987,7 +1014,7 @@ def run_eval():
 def exiting():
     global final_result
     print('EXITING')
-    result_header = "SERVER_APP, ID, #BE, #CONN, #SHORT_CONN, DATA_SIZE, MIG_DELAY, MAX_REACTIVE_MIG, MAX_PROACTIVE_MIG, MIG_PER_N, RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th"
+    result_header = "SERVER_APP, ID, #BE, #CONN, DATA_SIZE, ZIPF_ALPHA, RECV_Q_THRESH, MIG_DELAY, MAX_REACTIVE_MIG, MAX_PROACTIVE_MIG, MIG_PER_N, RPS, Actual, Dropped, Never Sent, Median, 90th, 99th, 99.9th, 99.99th, #SHORT_CONN, SHORT_99th"
     print(f'\n\n\n\n\n{result_header}')
     print(final_result)
     with open(f'{DATA_PATH}/result.txt', "w") as file:
