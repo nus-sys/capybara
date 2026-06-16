@@ -244,16 +244,50 @@ repos and prints the diff + verdict).
 
 ---
 
-## 4. Files in this folder
-- `README.md`             — this document.
-- `splittest.c`           — the mid-record split/migration test (self-contained: RX decrypt + continuity + TX roundtrip).
-- `run_test.sh`           — leg 2: clones the pinned tlse, builds with Capybara's defines, runs `splittest.c`.
-- `verify_code_match.sh`  — leg 3: clones pinned tlse + Redis `dev-cowsay`, proves their tlse is identical on every migration path and that Redis calls the verified API.
+## 4. Companion check: application-layer partial requests (paper claim S2)
 
-Both scripts clone the upstream repos at the pinned commits (§ top), so the folder
+The paper also states (Application Connection State section): *"if a request spans the
+migration point, its unread bytes remain in the migrated TCP receive queue, so the
+target reassembles the request as on any TCP connection."* This is the application-layer
+analog of the TLS check above, verified the same way (read the code, do not assume).
+Reproduce with **`./verify_partial_request.sh`**. Two cases, both consistent with the claim:
+
+- **Redis (`capybara-redis` @ `dev-cowsay`) — relies on the TCP queue.** The migration
+  callback serializes only the TLS context, not Redis's parser buffer `querybuf`:
+  - `src/tls.c:690` `uconn_serialize` calls `tls_export_context(ctx, buf, buf_len, 1)` only;
+    no `querybuf` anywhere in the connection-manager region (`src/tls.c:640-710`).
+  - migration is signalled at a pop event (`src/ae_demikernel.c:359` manual path, `:380`
+    ETCPMIG path), i.e. before bytes are pulled into `querybuf`, so unread bytes stay in
+    the TCP RX queue and ride the TCP-state migration.
+
+  Redis does not move an app buffer; its unread bytes move with the TCP queue, as claimed.
+
+- **HTTP server (`capybara` @ 2e9aa95) — serializes its own buffer via the manager.**
+  `examples/rust/http-server.rs` keeps a per-connection request `Buffer` and migrates it
+  through the connection-manager `ApplicationState`:
+  - `impl ApplicationState for Buffer` with `serialize`/`deserialize` (`:127-145`),
+  - `ConnectionState::serialize` writes `buffer` + `session_data` (`:336-347`).
+
+  So an in-progress request already buffered by the app is migrated too.
+
+**What this fixed:** an earlier draft of S2 said "the server's partial-request buffer moves
+with the connection," implying every app's parser buffer is migrated automatically. That is
+false for Redis (`querybuf` is not serialized). S2 was reworded to the transport-level
+guarantee above, which holds for both apps; applications that do buffer partial requests
+(our HTTP framework) migrate them explicitly through the connection manager.
+
+## 5. Files in this folder
+- `README.md`                  — this document.
+- `splittest.c`                — the mid-record split/migration test (self-contained: RX decrypt + continuity + TX roundtrip).
+- `run_test.sh`                — leg 2: clones the pinned tlse, builds with Capybara's defines, runs `splittest.c`.
+- `verify_code_match.sh`       — leg 3: clones pinned tlse + Redis `dev-cowsay`, proves their tlse is identical on every migration path and that Redis calls the verified API.
+- `verify_partial_request.sh`  — §4: clones capybara + Redis, shows Redis keeps unread bytes in the TCP queue (querybuf not serialized) while the HTTP framework serializes its request buffer.
+
+All scripts clone the upstream repos at the pinned commits (§ top), so the folder
 needs nothing else; the upstream sources are not vendored here on purpose.
 
-## 5. One-line conclusion
+## 6. One-line conclusion
 The partial TLS record and all record-layer crypto state are serialized on export
 and restored on import (§1), a split-record migration decrypts correctly end to
-end (§2, 9/9), and the evaluated servers use this very API (§3). The claim holds.
+end (§2, 9/9), the evaluated servers use this very API (§3), and the application-layer
+partial-request claim holds for both evaluated apps (§4). The claims hold.
