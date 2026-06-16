@@ -246,21 +246,27 @@ repos and prints the diff + verdict).
 
 ## 4. Companion check: application-layer partial requests (paper claim S2)
 
-The paper also states (Application Connection State section): *"if a request spans the
-migration point, its unread bytes remain in the migrated TCP receive queue, so the
-target reassembles the request as on any TCP connection."* This is the application-layer
-analog of the TLS check above, verified the same way (read the code, do not assume).
-Reproduce with **`./verify_partial_request.sh`**. Two cases, both consistent with the claim:
+The paper states (Application Connection State section): *"bytes the application has not
+yet read move with the TCP state, so a request that is still arriving when migration occurs
+continues to arrive on the target."* This is the application-layer analog of the TLS check
+above, verified the same way (read the code, do not assume). Reproduce with
+**`./verify_partial_request.sh`**. Two app behaviors:
 
-- **Redis (`capybara-redis` @ `dev-cowsay`) — relies on the TCP queue.** The migration
-  callback serializes only the TLS context, not Redis's parser buffer `querybuf`:
+- **Redis (`capybara-redis` @ `dev-cowsay`) — unread bytes ride the TCP queue.** The
+  migration callback serializes only the TLS context, not Redis's parser buffer `querybuf`:
   - `src/tls.c:690` `uconn_serialize` calls `tls_export_context(ctx, buf, buf_len, 1)` only;
     no `querybuf` anywhere in the connection-manager region (`src/tls.c:640-710`).
   - migration is signalled at a pop event (`src/ae_demikernel.c:359` manual path, `:380`
-    ETCPMIG path), i.e. before bytes are pulled into `querybuf`, so unread bytes stay in
-    the TCP RX queue and ride the TCP-state migration.
+    ETCPMIG path), so bytes not yet read stay in the TCP RX queue and ride the TCP-state
+    migration.
 
-  Redis does not move an app buffer; its unread bytes move with the TCP queue, as claimed.
+  `querybuf` is not serialized and is not, in general, guaranteed empty at migration: a
+  command split across two reads would leave its first segment in `querybuf`, which would be
+  lost. The evaluated workload avoids this entirely — requests are single-segment `GET`s
+  (`eval/redis-bench/redis-bench.cpp:37`: `*2\r\n$3\r\nGET\r\n$<n>\r\n<key>\r\n`), so each
+  request is read in one pop and `querybuf` is empty whenever the server blocks (i.e. at
+  migration). An app that needed to migrate mid-command parser state would serialize
+  `querybuf` through the manager, exactly as the HTTP framework does for its buffer.
 
 - **HTTP server (`capybara` @ 2e9aa95) — serializes its own buffer via the manager.**
   `examples/rust/http-server.rs` keeps a per-connection request `Buffer` and migrates it
@@ -270,11 +276,15 @@ Reproduce with **`./verify_partial_request.sh`**. Two cases, both consistent wit
 
   So an in-progress request already buffered by the app is migrated too.
 
-**What this fixed:** an earlier draft of S2 said "the server's partial-request buffer moves
-with the connection," implying every app's parser buffer is migrated automatically. That is
-false for Redis (`querybuf` is not serialized). S2 was reworded to the transport-level
-guarantee above, which holds for both apps; applications that do buffer partial requests
-(our HTTP framework) migrate them explicitly through the connection manager.
+**Wording history (why S2 reads as it does):** the first draft said "the server's
+partial-request buffer moves with the connection," implying every app's parser buffer is
+migrated automatically — false for Redis (`querybuf` is not serialized). A second draft said
+"unread bytes remain in the TCP receive queue, so the target reassembles the request," which
+still overclaims for a command straddling two reads (the already-buffered segment is lost).
+The final wording states only the transport guarantee — *"bytes the application has not yet
+read move with the TCP state"* — which holds for every app and workload. App-buffered partial
+requests are migrated through the connection manager (HTTP framework), and Redis's read-only
+single-pop `GET` workload never has a partial buffered at migration.
 
 ## 5. Files in this folder
 - `README.md`                  — this document.
